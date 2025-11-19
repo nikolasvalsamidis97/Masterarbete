@@ -67,7 +67,6 @@ class BroadeningProfile:
     phi = (1/ np.pi) * (0.5*self.lorentz_FWHM_v) / ( (self.v_grid**2) + ((0.5*self.lorentz_FWHM_v)**2) )
     dphi_dL = ((1/np.pi) * 0.5 * (self.v_grid**2 - (self.lorentz_FWHM_v**2)/4.0) / (self.v_grid**2 + (self.lorentz_FWHM_v**2)/4.0)**2)
     phi_err = np.abs(dphi_dL) * self.lorentz_FWHM_v_err
-    print(phi.shape)
     return phi.to(u.s/u.km), phi_err.to(u.s/u.km)
   def gauss_Profile(self):
     # base 1×N Gaussian on the velocity grid
