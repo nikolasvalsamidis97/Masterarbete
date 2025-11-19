@@ -55,17 +55,28 @@ class BroadeningProfile:
     """
     gauss_FWHM_v    [km/s]
     """
-    return (2 * np.sqrt(np.log(2)) * self.b ).to(u.km/u.s)
+    gauss_FWHM_v_scalar = (2 * np.sqrt(np.log(2)) * self.b).to(u.km/u.s)
+
+    # make an array with the SAME SHAPE as lam0 (16, 1)
+    gauss_FWHM_v = (np.full_like(self.molecule.lam0.value,
+                                 gauss_FWHM_v_scalar.value)
+                    * gauss_FWHM_v_scalar.unit)
+    return gauss_FWHM_v
   
   def lorentz_Profile(self):
     phi = (1/ np.pi) * (0.5*self.lorentz_FWHM_v) / ( (self.v_grid**2) + ((0.5*self.lorentz_FWHM_v)**2) )
     dphi_dL = ((1/np.pi) * 0.5 * (self.v_grid**2 - (self.lorentz_FWHM_v**2)/4.0) / (self.v_grid**2 + (self.lorentz_FWHM_v**2)/4.0)**2)
     phi_err = np.abs(dphi_dL) * self.lorentz_FWHM_v_err
+    print(phi.shape)
     return phi.to(u.s/u.km), phi_err.to(u.s/u.km)
   def gauss_Profile(self):
-    phi = ((1/(self.b * np.sqrt(np.pi))) * np.exp(-(self.v_grid/self.b)**2)).to(1/(u.km/u.s))
-    phi_err = np.NaN
-    return phi.to(u.s/u.km), phi_err
+    # base 1×N Gaussian on the velocity grid
+    phi_single = ((1/(self.b * np.sqrt(np.pi))) *
+                  np.exp(-(self.v_grid/self.b)**2)).to(1/(u.km/u.s))
+    n_lines = self.molecule.lam0.shape[0]
+    phi = (np.repeat(phi_single.value, n_lines, axis=0) * phi_single.unit)
+    phi_err = np.full_like(phi.value, np.nan) * phi.unit
+    return phi.to(u.s/u.km), phi_err.to(u.s/u.km)
   def voigt_Profile(self):
     L  = self.lorentz_FWHM_v
     dL = self.lorentz_FWHM_v_err
@@ -209,7 +220,7 @@ class BroadeningProfile:
     # Chain rule to A_ul
     dL_dA   = lam0 / (2 * np.pi)
     dphi_dA_mag = dphi_dL_mag * dL_dA
-
+    
     # dσ/dA magnitude (sum of the two contributions)
     dsig0_dA = sig_0 / A
     dsig_dA_mag = sig_0 * dphi_dA_mag + phi * dsig0_dA
