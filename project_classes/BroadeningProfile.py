@@ -69,7 +69,6 @@ class BroadeningProfile:
     phi_err = np.abs(dphi_dL) * self.lorentz_FWHM_v_err
     return phi.to(u.s/u.km), phi_err.to(u.s/u.km)
   def gauss_Profile(self):
-    # base 1×N Gaussian on the velocity grid
     phi_single = ((1/(self.b * np.sqrt(np.pi))) *
                   np.exp(-(self.v_grid/self.b)**2)).to(1/(u.km/u.s))
     n_lines = self.molecule.lam0.shape[0]
