@@ -1,0 +1,9 @@
+
+plt.figure(figsize=(9, 5))
+lw=0.8, alpha=0.5,
+
+black
+brown
+darkgoldenrod
+lightseagreen
+darkred
