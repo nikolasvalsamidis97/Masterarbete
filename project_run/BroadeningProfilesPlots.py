@@ -40,7 +40,7 @@ plt.show()
 
 plt.figure()
 b_values = [0.01, 0.005, 0.001]   # km/s, broad → very narrow
-#werer
+
 for b_val in b_values:
     b_here = b_val * u.km/u.s
     prof_V = BroadeningProfile(Na, b_here, vlim, Npts, 'voigt')
