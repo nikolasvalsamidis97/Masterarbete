@@ -1,47 +1,50 @@
-import sys, pathlib
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from project_classes.Molecule import Molecule
-from project_classes.BroadeningProfile import BroadeningProfile
-from astropy import units as u
-from matplotlib import pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from astropy.modeling.models import Voigt1D
 
-Na   = Molecule('Na', 5800*u.AA, 6000*u.AA)
-b    = 0.01 * u.km/u.s          # Doppler parameter
-vlim = 10 * u.km/u.s
-Npts = 1000
-iline = 5                       # which line to plot
+# ------------------ Grid and basic params ------------------
+# Physical velocity grid [km/s]
+v = np.linspace(-50, 50, 1000)
+v0 = 0.0              # line centre [km/s]
+fwhm_common = 10.0    # common FWHM in km/s
 
-# --- profiles ---
-prof_G = BroadeningProfile(Na, b, vlim, Npts, 'gauss')
-prof_L = BroadeningProfile(Na, b, vlim, Npts, 'lorentz')
-prof_V = BroadeningProfile(Na, b, vlim, Npts, 'voigt')
+# Dimensionless x-axis: (v - v0)/FWHM
+x = (v - v0) / fwhm_common
 
-lam_G = prof_G.lam_sym[iline, :].to(u.AA).value
-phi_G = prof_G.sigmaArray_sym[iline, :].value
-lam_L = prof_L.lam_sym[iline, :].to(u.AA).value
-phi_L = prof_L.sigmaArray_sym[iline, :].value
-lam_V = prof_V.lam_sym[iline, :].to(u.AA).value
-phi_V = prof_V.sigmaArray_sym[iline, :].value
+# ------------------ Profiles ------------------
+def lorentzian(v, v0, fwhm):
+    gamma = fwhm / 2.0  # HWHM
+    return (1.0 / np.pi) * (gamma / ((v - v0)**2 + gamma**2))
 
-lam0 = Na.lam0[iline][0].to(u.AA).value   # line-centre wavelength
-lim = b.value/10
+def gaussian(v, v0, fwhm):
+    sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))  # from FWHM
+    return (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-(v - v0)**2 / (2.0 * sigma**2))
 
-plt.figure(figsize=(8, 5)) 
-plt.plot(lam_G, phi_G, lw=0.9, alpha=1, label='Gaussian', color = 'goldenrod')
-plt.plot(lam_L, phi_L, lw=0.9, alpha=1, label='Lorentzian', color = 'teal')
-plt.plot(lam_V, phi_V, lw=0.9, alpha=1, label='Voigt', color = 'darkred')
-plt.xlabel(r'Wavelength $\lambda$ [Å]')
-plt.ylabel(r'Normalized Profile $\phi(\lambda)$')
-plt.title(rf'Broadening profiles for Na, b = {b}')
-plt.xlim(lam0 - lim, lam0 + lim)       # only ±0.001 Å around line centre
-plt.xticks([lam0-lim, lam0, lam0+lim], [rf"-{lim}", rf"$\lambda_0= {lam0}$", rf"+{lim}"])
-plt.yticks([])
+phi_G = gaussian(v, v0, fwhm_common)
+phi_L = lorentzian(v, v0, fwhm_common)
+
+# Voigt profile using Voigt1D with same FWHM scale
+voigt_model = Voigt1D(x_0=v0, amplitude_L=1.0,
+                      fwhm_L=fwhm_common, fwhm_G=fwhm_common)
+phi_V_raw = voigt_model(v)
+
+# Normalize Voigt to unit area
+area_V = np.trapz(phi_V_raw, v)
+phi_V = phi_V_raw / area_V
+
+# ------------------ Plot ------------------
+plt.figure(figsize=(8, 5))
+
+plt.plot(x, phi_G, linewidth=0.9, color='brown',        label="Gaussian")
+plt.plot(x, phi_L, linewidth=0.9, color='darkgoldenrod', label="Lorentzian")
+plt.plot(x, phi_V, linewidth=0.9, color='lightseagreen', label="Voigt (Voigt1D)")
+
+plt.xlabel(r"$\mathrm{FWHM}$")
+plt.ylabel(r"Broadening profiles $\phi(v)$")
+plt.title("Gaussian, Lorentzian and Voigt profiles")
 plt.legend()
+plt.yticks([])
+
 plt.tight_layout()
 plt.savefig("Plots/BroadeningProfiles.pdf")
 plt.show()
-
-
-plt.figure(figsize=(8, 5))
-
