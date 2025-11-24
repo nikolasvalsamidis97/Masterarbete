@@ -4,33 +4,29 @@ from astropy.modeling.models import Voigt1D
 
 # ------------------ Grid and basic params ------------------
 # Physical velocity grid [km/s]
-v = np.linspace(-50, 50, 1000)
-v0 = 0.0              # line centre [km/s]
-fwhm_common = 10.0    # common FWHM in km/s
+v = np.linspace(-5, 5, 1000)
+fwhm_common = 1.0    # common FWHM in km/s
 
 # Dimensionless x-axis: (v - v0)/FWHM
-x = (v - v0) / fwhm_common
+x = (v) / fwhm_common
 
 # ------------------ Profiles ------------------
-def lorentzian(v, v0, fwhm):
-    gamma = fwhm / 2.0  # HWHM
-    return (1.0 / np.pi) * (gamma / ((v - v0)**2 + gamma**2))
+def gaussian(v):
+    fac = ((2*np.sqrt(np.log(2)))/ fwhm_common)
+    return np.exp(-(fac * v)**2)
 
-def gaussian(v, v0, fwhm):
-    sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))  # from FWHM
-    return (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-(v - v0)**2 / (2.0 * sigma**2))
+def lorentzian(v):
+    gamma = fwhm_common / 2.0
+    return 1.0 / (1.0 + (v / gamma)**2)
 
-phi_G = gaussian(v, v0, fwhm_common)
-phi_L = lorentzian(v, v0, fwhm_common)
+phi_G = gaussian(v)
+phi_L = lorentzian(v)
 
 # Voigt profile using Voigt1D with same FWHM scale
-voigt_model = Voigt1D(x_0=v0, amplitude_L=1.0,
+voigt_model = Voigt1D(x_0=0, amplitude_L=1,
                       fwhm_L=fwhm_common, fwhm_G=fwhm_common)
 phi_V_raw = voigt_model(v)
-
-# Normalize Voigt to unit area
-area_V = np.trapz(phi_V_raw, v)
-phi_V = phi_V_raw / area_V
+phi_V = phi_V_raw / np.max(phi_V_raw)
 
 # ------------------ Plot ------------------
 plt.figure(figsize=(8, 5))
