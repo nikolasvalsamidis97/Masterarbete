@@ -31,10 +31,12 @@ Na_broadening.plot_Symmetric_Crossection(line, domain2)
 star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte063-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 1*u.au, const.R_sun.value * u.m, const.M_sun.value * u.kg)
 
 # 4. Skapa object för strålningstryck
-Na_Ph = PhotonPressure(Na_broadening, star)
+atm_Temp = 300 * u.K
+Na_Ph = PhotonPressure(atm_Temp, Na_broadening, star)
 
 # 4.5 Exempelplott för strplningstryck som funktion av kolumndensitet
 Ncols = np.logspace(7, 25, 100) * u.cm**-2
+
 
 F_tot = []
 F_tot_err = []

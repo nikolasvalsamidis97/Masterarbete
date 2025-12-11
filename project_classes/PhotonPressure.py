@@ -9,7 +9,12 @@ import numpy as np
 
 class PhotonPressure:
   
-  def __init__(self, broadeing_profile: BroadeningProfile, star: Star):
+  def __init__(self, atm_Temp, broadeing_profile: BroadeningProfile, star: Star):
+    """
+    Creates a photon pressure object for a specific temperature
+
+    atm_Temp:                         Ambient temperature molecule resides in  
+    """
 
     self.broad_prof = broadeing_profile
     self.lam_sym = broadeing_profile.lam_sym
@@ -23,6 +28,11 @@ class PhotonPressure:
     self.lam_star_interp  = self.lam_sym
 
     self.F_ph_tot, self.F_ph_tot_err, self.F_ph_perline, self.F_ph_perline_err = None, None, None, None
+
+    self.E_l = broadeing_profile.molecule.E_l
+    self.g_l = broadeing_profile.molecule.g_l
+    self.Temp = atm_Temp.to(u.K) if isinstance(atm_Temp, u.Quantity) else _not_quantity("atm_Temp")
+    self.weights = self.excitation_weights()
 
   def get_interp_Spectra(self):
     """
@@ -83,6 +93,12 @@ class PhotonPressure:
     
     return trans, trans_err
   
+  def excitation_weights(self):
+    kb_eV = const.k_B.to(u.eV/u.K)
+    w_lower = self.g_l * np.exp(-(self.E_l)/(kb_eV * self.Temp))
+    w = w_lower/np.nansum(w_lower)
+    return w
+
   def calc_PhotonPressure(self, column_density):
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Trans, Trans_err = self.transmission(N_col)
@@ -95,7 +111,7 @@ class PhotonPressure:
     lam = self.lam_sym
     I = Flux * sig * T
 
-    F_ph_perline = (np.trapz(I, lam) / const.c).to(u.N)
+    F_ph_perline = (np.trapz(I, lam) / const.c).to(u.N) * self.weights
     F_ph_tot = np.nansum(F_ph_perline)
 
     N = N_col
@@ -104,7 +120,7 @@ class PhotonPressure:
     factor = (1-(N*sig))
     dF_dA = np.trapz((Flux * T * factor * sig_err)/ const.c, lam)
 
-    F_ph_perline_err = (np.abs(dF_dA)).to(u.N)
+    F_ph_perline_err = (np.abs(dF_dA)).to(u.N) * self.weights
     F_ph_tot_err = np.sqrt(np.nansum(F_ph_perline_err**2))
 
     return F_ph_tot, F_ph_tot_err, F_ph_perline, F_ph_perline_err
