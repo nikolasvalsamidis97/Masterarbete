@@ -29,30 +29,37 @@ Ncols = np.logspace(8, 16, 10) * u.cm**-2
 def normIntensity(N):
   return np.exp(-(N*sig))
 
+from matplotlib.ticker import MaxNLocator
 
-for i in range(len(bval)):
-  alpha = 1
-  b = bval[i]
-  color = colors[i]
+fig, axes = plt.subplots(1, len(bval), figsize=(10, 4), sharey=True)
 
-  plt.figure(figsize=(8, 8))
-  plt.title(rf"Voigt-broadened normalized intensity, $\Delta v_D = ${b}")
-  plt.xlabel(rf"Relative velocity {bval.unit}")
+# Common title for the whole figure
+fig.suptitle(r"Voigt-broadened normalized intensity", fontsize=14)
 
-  Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
-  sig = Na_broadening.sigmaArray_sym[line,:]
-  v = Na_broadening.v_grid_sym[0,:]
-  label = rf"\Delta v_D = {b}"
-  
-  for N in Ncols:
-    alpha -= 0.08
-    plt.plot(v, normIntensity(N), linewidth = 0.7,color = color, alpha = alpha)
+for ax, b, color in zip(axes, bval, colors):
+    alpha = 1
+    Na_broadening = BroadeningProfile(Na, b, vlim, Npts, 'Voigt')
+    sig = Na_broadening.sigmaArray_sym[line, :]
+    v   = Na_broadening.v_grid_sym[0, :]
 
-  plt.ylabel(rf"Normalized intensity $I = e^{{-(N \, \sigma_v)}}$")
-  plt.savefig(rf"Plots/BroadeningProfiles_Ncol_{b.value}.pdf")
-  plt.show()
+    for N in Ncols:
+        alpha -= 0.09
+        ax.plot(v, normIntensity(N), linewidth=0.7, color=color, alpha=alpha)
 
+    # Subtitle for each panel: broadening parameter
+    ax.set_title(rf"$\Delta v_D = {b}$", fontsize=11)
+    ax.set_xlabel(rf"Relative velocity {bval.unit}")
 
+    # Fewer x-axis ticks
+    ax.xaxis.set_major_locator(MaxNLocator(5))
 
+# Shared y-label on the left
+axes[0].set_ylabel(r"Normalized intensity $I = e^{-(N \, \sigma_v)}$")
+
+# Let matplotlib handle spacing
+fig.tight_layout()
+
+fig.savefig("Plots/BroadeningProfiles_combined.pdf")
+plt.show()
 
 
