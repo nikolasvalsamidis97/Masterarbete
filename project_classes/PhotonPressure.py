@@ -115,7 +115,7 @@ class PhotonPressure:
     F_ph_tot = np.nansum(F_ph_perline)
 
     N = N_col
-    dA = self.broad_prof.molecule.A_ul_err
+    # dA = self.broad_prof.molecule.A_ul_err
 
     factor = (1-(N*sig))
     dF_dA = np.trapz((Flux * T * factor * sig_err)/ const.c, lam)

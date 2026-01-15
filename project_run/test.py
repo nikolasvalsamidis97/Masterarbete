@@ -15,7 +15,7 @@ import numpy as np
 Na = Molecule('Na', 100 * u.AA, 9000*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
-b = 1 * u.km/u.s
+b = 1 * u.km/u.s        # b = v_D
 vlim = 10 * u.km/u.s
 Npts = 1000
 Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
@@ -33,3 +33,4 @@ print(Na_Ph_100K.calc_PhotonPressure(0 * u.cm**(-2))[0],
       Na_Ph_10000K.calc_PhotonPressure(0 * u.cm**(-2))[0])
 
 
+print(Na.mass)
