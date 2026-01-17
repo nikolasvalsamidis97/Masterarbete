@@ -12,7 +12,7 @@ import numpy as np
 ############################################################################################
 ######################################### KODGUIDE #########################################
 # 1. Hämtar molekyldata
-Na = Molecule('Na', 100 * u.AA, 9000*u.AA)
+Na = Molecule('Na I', 2400 * u.AA, 8100*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
 b = 1 * u.km/u.s        # b = v_D
@@ -21,16 +21,19 @@ Npts = 1000
 Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
 
 # 3. Hämta teoretiskt stjärnspectra
-star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte063-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 1*u.au, const.R_sun.value * u.m, const.M_sun.value * u.kg)
-
-# 4. Skapa object för strålningstryck
-Na_Ph_100K = PhotonPressure(100 * u.K, Na_broadening, star)
-Na_Ph_1000K = PhotonPressure(1000 * u.K, Na_broadening, star)
-Na_Ph_10000K = PhotonPressure(10000 * u.K, Na_broadening, star)
-
-print(Na_Ph_100K.calc_PhotonPressure(0 * u.cm**(-2))[0],
-      Na_Ph_1000K.calc_PhotonPressure(0 * u.cm**(-2))[0],
-      Na_Ph_10000K.calc_PhotonPressure(0 * u.cm**(-2))[0])
+star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte063-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 0.1*u.au, const.R_sun.value * u.m, const.M_sun.value * u.kg)
 
 
-print(Na.mass)
+
+Temp = np.linspace(100, 20000, 100) * u.K
+Ncol = 0 * u.cm**(-2)
+beta = []
+
+i = 0
+
+Na_Ph = PhotonPressure(Na_broadening, star)
+Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp)
+
+beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
+plt.plot(Temp, beta)
+plt.show()

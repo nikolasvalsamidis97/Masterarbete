@@ -9,7 +9,7 @@ import numpy as np
 
 class PhotonPressure:
   
-  def __init__(self, atm_Temp, broadeing_profile: BroadeningProfile, star: Star):
+  def __init__(self, broadeing_profile: BroadeningProfile, star: Star):
     """
     Creates a photon pressure object for a specific temperature
 
@@ -31,8 +31,8 @@ class PhotonPressure:
 
     self.E_l = broadeing_profile.molecule.E_l
     self.g_l = broadeing_profile.molecule.g_l
-    self.Temp = atm_Temp.to(u.K) if isinstance(atm_Temp, u.Quantity) else _not_quantity("atm_Temp")
-    self.weights = self.excitation_weights()
+    self.J_l = broadeing_profile.molecule.J_l
+    self.fik = broadeing_profile.molecule.fik
 
   def get_interp_Spectra(self):
     """
@@ -93,34 +93,60 @@ class PhotonPressure:
     
     return trans, trans_err
   
-  def excitation_weights(self):
+  def excitation_weights(self, Temp_atm):
     kb_eV = const.k_B.to(u.eV/u.K)
-    w_lower = self.g_l * np.exp(-(self.E_l)/(kb_eV * self.Temp))
-    w = w_lower/np.nansum(w_lower)
+    El = self.E_l
+    gl = self.g_l
+    T = Temp_atm
+
+    El_kb = El/kb_eV
+
+    w_lower = gl * np.exp(-El_kb/T)
+    w = w_lower/np.nansum(w_lower, axis=0)
+    self.w = w
     return w
 
-  def calc_PhotonPressure(self, column_density):
+  def calc_PhotonPressure(self, column_density, Temp_atm):
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Trans, Trans_err = self.transmission(N_col)
     
-    T = Trans
-    T_err = Trans_err
     sig = self.crossection_sym
     sig_err = self.crossection_err_sym
     Flux = self.flux_star_interp
     lam = self.lam_sym
-    I = Flux * sig * T
+    
+    Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+    weights = self.excitation_weights(Temp)
 
-    F_ph_perline = (np.trapz(I, lam) / const.c).to(u.N) * self.weights
-    F_ph_tot = np.nansum(F_ph_perline)
+    I = Flux * sig * Trans
+
+    F_ph_perline = (np.trapz(I, lam) / const.c).to(u.N) * weights.T           # Transpose weights so we get the photon pressure per line for all temperatures
+    F_ph_perline = F_ph_perline.T                     # Transpose back
+    F_ph_tot = np.nansum(F_ph_perline, axis = 0)
 
     N = N_col
     # dA = self.broad_prof.molecule.A_ul_err
 
     factor = (1-(N*sig))
-    dF_dA = np.trapz((Flux * T * factor * sig_err)/ const.c, lam)
+    dF_dA = np.trapz((Flux * Trans * factor * sig_err)/ const.c, lam)
 
-    F_ph_perline_err = (np.abs(dF_dA)).to(u.N) * self.weights
+    F_ph_perline_err = (np.abs(dF_dA)).to(u.N) * weights.T
+    F_ph_perline_err = F_ph_perline_err.T
     F_ph_tot_err = np.sqrt(np.nansum(F_ph_perline_err**2))
 
     return F_ph_tot, F_ph_tot_err, F_ph_perline, F_ph_perline_err
+
+  def beta_Values(self, F_ph_tot, F_ph_tot_err):
+    mass_star = self.star.mass
+    mass_species = self.broad_prof.molecule.mass
+    radius = self.star.radius
+    G = const.G.cgs
+
+    F_ph = F_ph_tot
+    F_ph_err = F_ph_tot_err
+    F_grav = ((G * mass_star * mass_species) / (radius)**2).to(u.N)
+
+    beta = F_ph / F_grav
+    beta_err = F_ph_err/F_grav
+
+    return(beta, beta_err)

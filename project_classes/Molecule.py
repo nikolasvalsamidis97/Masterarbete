@@ -21,7 +21,7 @@ class Molecule:
 
     self.data = self.set_Nist_Data(self.species, self.lam_min, self.lam_max, self.A_ul_min)
     self.mass = Formula(self.species).mass * u.u
-    self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.E_u, self.E_l = self.pandas_to_numpy(self.data)
+    self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.E_u, self.E_l, self.J_l, self.fik = self.pandas_to_numpy(self.data)
     self.sig_0, self.sig_0_err = self.calc_central_crossection()
 
   def get_Name(self):
@@ -38,8 +38,10 @@ class Molecule:
     gl = pd.to_numeric(data['g_l']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
     Eu = pd.to_numeric(data['E_u']).to_numpy().reshape(-1, 1) * u.eV
     El = pd.to_numeric(data['E_l']).to_numpy().reshape(-1, 1) * u.eV
+    J_l = pd.to_numeric(data['J_l']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    fik = pd.to_numeric(data['fik']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
 
-    return Aul, Aul_err, lam0, gu, gl, Eu, El
+    return Aul, Aul_err, lam0, gu, gl, Eu, El, J_l, fik
 
   def set_Nist_Data(self,
                     species,
@@ -66,10 +68,9 @@ class Molecule:
     # Wavelength in nm. If observed wavelength is missing i will use Ritz
     lam_obs = pd.to_numeric(df['Observed'], errors='coerce')
     lam_ritz = pd.to_numeric(df['Ritz'], errors='coerce')
-    lam_obs = lam_obs.fillna(lam_ritz)
+    #lam_obs = lam_obs.fillna(lam_ritz)
 
     A_ul = pd.to_numeric(df['Aki'], errors='coerce')
-    
 
     Acc = df['Acc.']
     ACC_FRAC = {                     # Map onto Acc-code. Source: 'https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html#OUTACC' Search for "estimated accuracy"
@@ -103,6 +104,8 @@ class Molecule:
     ji = df['Lower level'].str.split('|',n=2 , expand=True)[2].str.strip()
     jk = df['Upper level'].str.split('|',n=2 , expand=True)[2].str.strip()
 
+    fik = pd.to_numeric(df['fik'], errors='coerce')
+
     def parse_j(series: pd.Series) -> pd.Series:                                  # For turning spin values (string) into floats
       s = series.astype(str).str.strip().str.strip('()')
       mask = s.str.contains('/', regex=False, na=False)
@@ -131,6 +134,7 @@ class Molecule:
                           'J_u'       : Jk,               # dimless
                           'g_l'       : Gi,               # dimless
                           'g_u'       : Gk,               # dimless
+                          'fik'       : fik,              # dimless
                           'transition': df['Transition'].astype(str)
                           })
 
