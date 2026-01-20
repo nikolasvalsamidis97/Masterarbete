@@ -156,4 +156,4 @@ class Molecule:
     sig0_err = sig0 * (self.A_ul_err/self.A_ul)
 
     return sig0, sig0_err
-    
+  

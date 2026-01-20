@@ -5,15 +5,20 @@ from astropy.table import Table
 
 class Star:
   
-  def __init__(self, path: str, distance, radius, mass):
+  def __init__(self, path: str, distance, radius, mass, vsini, epsilon):
     """
-    path: str       Filepath for theoretical spectra
+    path:       str               Filepath for theoretical spectra
+    distance:   Quantity          Distance to star
+    radius:     Quantity          Radius of star
+    mass:       Quantity          Mass of star
+    vsini:      Quantity          Projected rotational velocity
+    epsilon:    Quantity          Limb darkening
     """
     self.path = path
     self.distance = distance.to(u.au) if isinstance(distance, u.Quantity) else _not_quantity("distance")
     self.radius = radius.to(u.m) if isinstance(radius, u.Quantity) else _not_quantity("radius")
-    self.lam_star, self.flux_star = self.read_Spectra()
     self.mass = mass.to(u.kg) if isinstance(mass, u.Quantity) else _not_quantity("mass")
+    self.lam_star, self.flux_star = self.read_Spectra()
     
   def read_Spectra(self):
     """
@@ -25,13 +30,24 @@ class Star:
     flux = VOtab['FLUX'].value              #(u.erg/u.s/(u.cm**2)/u.AA)
     flux = flux * (u.erg/u.s/(u.cm**2)/u.AA)
     lam = self.air_to_vacuum(lam) * u.AA
+
     omega = (self.radius.to(u.m)/self.distance.to(u.m))**2
     flux *= omega
 
-    return lam, flux 
+    return lam, flux
   
   def air_to_vacuum(self, lam_air_A):
     s2 = (1e4/lam_air_A)**2
     n_minus_1 = 1e-8*(8342.13 + 2406030/(130 - s2) + 15997/(38.9 - s2))
     n = 1 + n_minus_1
     return lam_air_A * n
+
+  def rotate_spectra(self, flux_interp, lam_interp, vsini, epsilon):
+    vsini = vsini.to(u.km / u.s) if isinstance(vsini, u.Quantity) else _not_quantity("vsini")
+    epsilon = epsilon.to(u.dimensionless_unscaled) if isinstance(epsilon, u.Quantity) else _not_quantity("epsilon")
+    flux_interp = flux_interp
+    lam_interp = lam_interp
+    r = self.radius
+    return r
+    
+

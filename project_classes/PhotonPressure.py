@@ -40,7 +40,7 @@ class PhotonPressure:
     The interpolation is done over a asymmetric spectra so the symmetrical lambdagrid has to be used
     profile: Class= Broadeing_profile
     """
-    lam_sym = self.lam_sym.value          # (Nlines, Npts)
+    lam_sym = self.lam_sym.to_value(u.AA)          # (Nlines, Npts)
     lam_star = self.lam_star.value
     flux_star = self.flux_star.value
     L = lam_sym.shape[0]
@@ -96,15 +96,27 @@ class PhotonPressure:
   def excitation_weights(self, Temp_atm):
     kb_eV = const.k_B.to(u.eV/u.K)
     El = self.E_l
-    gl = self.g_l
+    gl =  self.g_l
     T = Temp_atm
 
-    El_kb = El/kb_eV
+    # Find all levels for calculating the partition function for all T
+    Eg = np.column_stack([El.value, gl])
+    mask = np.isfinite(Eg).all(axis=1) 
+    Eg = Eg[mask]
+    Eg_unique, idx, inv = np.unique(Eg, axis=0, return_index=True, return_inverse=True)
+    El_unique = (Eg_unique[:,0]).reshape(-1,1) * u.eV
+    gl_unique = (Eg_unique[:,1]).reshape(-1,1) * u.dimensionless_unscaled
 
-    w_lower = gl * np.exp(-El_kb/T)
-    w = w_lower/np.nansum(w_lower, axis=0)
-    self.w = w
-    return w
+    # Calculate the boltzmann factor, for all levels available and calculate the partition function
+    El_kb_unique = El_unique / kb_eV
+    exp_unique = np.exp(-El_kb_unique/T)
+    boltz_unique = gl_unique * np.exp(-El_kb_unique / T)
+    Z = np.nansum((gl_unique * exp_unique), axis=0)
+
+    # Calculate the weights for each line
+    w_line = boltz_unique[inv] / Z
+
+    return w_line
 
   def calc_PhotonPressure(self, column_density, Temp_atm):
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
@@ -114,7 +126,7 @@ class PhotonPressure:
     sig_err = self.crossection_err_sym
     Flux = self.flux_star_interp
     lam = self.lam_sym
-    
+
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
     weights = self.excitation_weights(Temp)
 
