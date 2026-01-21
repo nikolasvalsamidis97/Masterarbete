@@ -113,7 +113,7 @@ class PhotonPressure:
     boltz_unique = gl_unique * np.exp(-El_kb_unique / T)
     Z = np.nansum((gl_unique * exp_unique), axis=0)
 
-    # Calculate the weights for each line
+    # Calculate the weights for each line (assigning weights back into same shape array, corresponding to the amount of lines)
     w_line = boltz_unique[inv] / Z
 
     return w_line

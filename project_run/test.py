@@ -12,7 +12,7 @@ import numpy as np
 ############################################################################################
 ######################################### KODGUIDE #########################################
 # 1. Hämtar molekyldata
-Na = Molecule('Na I', 2000 * u.AA, 9000*u.AA)
+Na = Molecule('Na I', 1000 * u.AA, 9000*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
 b = 1 * u.km/u.s        # b = v_D
@@ -26,17 +26,15 @@ epsilon = 0 * u.dimensionless_unscaled
 star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte065-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 
             0.01*u.au, const.R_sun.value * u.m, const.M_sun.value * u.kg, vsini, epsilon)
 
-Temp = np.linspace(100, 10000, 10) * u.K
-#Temp = 1000 * u.K
-Ncol = 0 * u.cm**(-2)
-beta = []
+# Temp = np.linspace(100, 1000, 100) * u.K
+# #Temp = 1000 * u.K
+# Ncol = 0 * u.cm**(-2)
+# beta = []
 
-i = 0
+# Na_Ph = PhotonPressure(Na_broadening, star)
+# Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp)
 
-Na_Ph = PhotonPressure(Na_broadening, star)
-Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp)
+# beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
 
-beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
-print(beta)
 # plt.plot(Temp, beta)
 # plt.show()
