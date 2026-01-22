@@ -22,7 +22,7 @@ class PhotonPressure:
     self.crossection_err_sym = broadeing_profile.sigmaArray_sym_err
     
     self.star = star
-    self.flux_star = star.flux_star
+    self.flux_star = star.flux_star_rot
     self.lam_star = star.lam_star
     self.flux_star_interp = self.get_interp_Spectra()
     self.lam_star_interp  = self.lam_sym
@@ -41,8 +41,8 @@ class PhotonPressure:
     profile: Class= Broadeing_profile
     """
     lam_sym = self.lam_sym.to_value(u.AA)          # (Nlines, Npts)
-    lam_star = self.lam_star.value
-    flux_star = self.flux_star.value
+    lam_star = self.lam_star.to_value(u.AA)
+    flux_star = self.flux_star.to_value(self.flux_star.unit)
     L = lam_sym.shape[0]
 
     F_star_interp = np.empty_like(lam_sym, dtype=float)
@@ -118,13 +118,16 @@ class PhotonPressure:
 
     return w_line
 
-  def calc_PhotonPressure(self, column_density, Temp_atm):
+  def calc_PhotonPressure(self, column_density, Temp_atm, distance):
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Trans, Trans_err = self.transmission(N_col)
+    d = distance
+    R_star = self.star.radius
+    omega = (d/R_star)**2
     
     sig = self.crossection_sym
     sig_err = self.crossection_err_sym
-    Flux = self.flux_star_interp
+    Flux = self.flux_star_interp * omega
     lam = self.lam_sym
 
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")

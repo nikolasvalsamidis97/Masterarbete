@@ -24,17 +24,22 @@ epsilon = 0 * u.dimensionless_unscaled
 
 # 3. Hämta teoretiskt stjärnspectra
 star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte065-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 
-            0.01*u.au, const.R_sun.value * u.m, const.M_sun.value * u.kg, vsini, epsilon)
+            const.R_sun.value * u.m, const.M_sun.value * u.kg, vsini, epsilon)
 
-# Temp = np.linspace(100, 1000, 100) * u.K
-# #Temp = 1000 * u.K
-# Ncol = 0 * u.cm**(-2)
-# beta = []
+flux_star_rot = star.flux_star_rot
+flux_star_unrot = star.flux_star_unrot
+lam_star = star.lam_star
 
-# Na_Ph = PhotonPressure(Na_broadening, star)
-# Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp)
+distance = 0.1 * u.au
+Temp = np.linspace(100, 1000, 100) * u.K
+#Temp = 1000 * u.K
+Ncol = 0 * u.cm**(-2)
+beta = []
 
-# beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
+Na_Ph = PhotonPressure(Na_broadening, star)
+Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp, distance)
 
-# plt.plot(Temp, beta)
-# plt.show()
+beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
+
+plt.plot(Temp, beta)
+plt.show()
