@@ -11,9 +11,7 @@ class PhotonPressure:
   
   def __init__(self, broadeing_profile: BroadeningProfile, star: Star):
     """
-    Creates a photon pressure object for a specific temperature
-
-    atm_Temp:                         Ambient temperature molecule resides in  
+    Creates a photon pressure object for a Star object
     """
 
     self.broad_prof = broadeing_profile
@@ -81,16 +79,19 @@ class PhotonPressure:
     return 0
 
   def transmission(self, column_density):
-    N = column_density
+    N = np.atleast_1d(column_density.to(u.cm**-2)) 
+
     sigma = self.crossection_sym.to(u.cm**2)
     sigma_err = self.crossection_err_sym.to(u.cm**2)
-    tau = N * sigma                             # Optical depth τ
+
+    tau = sigma[:, :, None] * N[None, None, :]                            # Optical depth τ
     trans = np.exp(-tau)                        # Transmission  T = exp(-τ)
     absorbtion = 1 - trans                      # Absorbtion    A = 1 - exp(-1)
 
-    tau_err = N * sigma_err
+    tau_err = sigma_err[:, :, None] * N[None, None, :] 
     trans_err = np.exp(-tau) * tau_err
     
+    print(f"Transmission coefficient calculated with shape: {trans.shape}")
     return trans, trans_err
   
   def excitation_weights(self, Temp_atm):
@@ -119,11 +120,26 @@ class PhotonPressure:
     return w_line
 
   def calc_PhotonPressure(self, column_density, Temp_atm, distance):
+    """
+    Calculates the photon pressure and the per line pressure
+
+    ** Inputs **
+    column_density:           Array of column densities                   [cm-2]
+    Temp_atm:                 Planetary atmospheric temperature           [K]
+    distance                  Distance between object and its star        [length]
+
+    ** Returns **
+    F_ph_tot:                 Total photon pressure                       [N]           [N_temp, N_col]
+    F_ph_tot_err:             Error in the total photon pressure -||-     [N]           - || -
+    F_ph_perline,             Per line photon pressure                    [N]           [N_lines, N_temp, N_col]
+    F_ph_perline_err          Error per line                              [N]           - || -
+
+    """
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Trans, Trans_err = self.transmission(N_col)
     d = distance
     R_star = self.star.radius
-    omega = (d/R_star)**2
+    omega = (R_star/d)**2
     
     sig = self.crossection_sym
     sig_err = self.crossection_err_sym
@@ -133,25 +149,46 @@ class PhotonPressure:
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
     weights = self.excitation_weights(Temp)
 
-    I = Flux * sig * Trans
+    # Trans: (lines, lam, Ncol)
+    # Flux:  (lines, lam)
+    # sig:   (lines, lam)
+    # weights: (lines, Temp)
 
-    F_ph_perline = (np.trapz(I, lam) / const.c).to(u.N) * weights.T           # Transpose weights so we get the photon pressure per line for all temperatures
-    F_ph_perline = F_ph_perline.T                     # Transpose back
-    F_ph_tot = np.nansum(F_ph_perline, axis = 0)
+    I = Flux[:, :, None] * sig[:, :, None] * Trans                          # (lines, lam, Ncol)
+
+    F_ph_perline = (np.trapz(I, lam[:, :, None], axis=1) / const.c).to(u.N)           # (lines, Ncol)                   
+    F_ph_perline = F_ph_perline[:, None, :] * weights[:, :, None]                     # (lines, Temp, Ncol)
+
+    print(f"Per line photon pressure calculated with shape: {F_ph_perline.shape}") # (lines, Temp, Ncol)
+
+    F_ph_tot = np.nansum(F_ph_perline, axis = 0)                            # (Temp, Ncol)
+
+    print(f"Total photon pressure calculated with shape: {F_ph_tot.shape}")
 
     N = N_col
     # dA = self.broad_prof.molecule.A_ul_err
 
-    factor = (1-(N*sig))
-    dF_dA = np.trapz((Flux * Trans * factor * sig_err)/ const.c, lam)
+    factor = (1-(N[None, None, :]*sig[:, :, None]))
+    sig_err = sig_err[:, :, None]
+    dF_dA = np.trapz((Flux[:, :, None] * Trans * factor * sig_err)/ const.c, lam[:, :, None], axis = 1)
 
-    F_ph_perline_err = (np.abs(dF_dA)).to(u.N) * weights.T
-    F_ph_perline_err = F_ph_perline_err.T
-    F_ph_tot_err = np.sqrt(np.nansum(F_ph_perline_err**2))
+    F_ph_perline_err = (np.abs(dF_dA)).to(u.N)[:, None, :] * weights[:, :, None]
+    F_ph_tot_err = np.sqrt(np.nansum(F_ph_perline_err**2, axis=0))
 
     return F_ph_tot, F_ph_tot_err, F_ph_perline, F_ph_perline_err
 
   def beta_Values(self, F_ph_tot, F_ph_tot_err):
+    """
+    Calculates the beta ratio for a given photon pressure
+
+    ** Inputs **
+    F_ph_tot:               Total photon pressure         [N]         [N_temp, N_col]
+    F_ph_tot_err            Error of above value          [N]         - || -
+
+    ** Returns **
+    beta:                   Beta values                   [Unitless]  [N_temp, N_col]
+    beta_err                Errors in beta                [Unitless]  - || -  
+    """
     mass_star = self.star.mass
     mass_species = self.broad_prof.molecule.mass
     radius = self.star.radius
@@ -164,4 +201,5 @@ class PhotonPressure:
     beta = F_ph / F_grav
     beta_err = F_ph_err/F_grav
 
+    print(f"Beta values calculated successfully with the shape: {beta.shape}")
     return(beta, beta_err)

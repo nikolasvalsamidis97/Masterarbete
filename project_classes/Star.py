@@ -10,6 +10,9 @@ class Star:
   
   def __init__(self, path: str, radius, mass, vsini, epsilon):
     """
+    Creates a star object
+
+    ** Inputs **
     path:       str               Filepath for theoretical spectra
     distance:   Quantity          Distance to star
     radius:     Quantity          Radius of star
@@ -30,8 +33,15 @@ class Star:
   def read_Spectra(self):
     """
     Reads a spectra from a file, rotationally broadens it and returns the flux in vacuum
+
+    ** Returns **
+    lam:          The lambda array from the stellar spectra       [Å]               [lambda, ]
+    flux_rot      Rotatationally broadened spectra                [Flux units]      [F, ]
+    flux_unrot    Original spectra                                [Flux units]      [F_orig, ]
     """
     VOtab = Table.read(self.path, format='votable')
+
+    # Byt till ascii
 
     lam = VOtab['WAVELENGTH'].value          #u.AA
     flux = VOtab['FLUX'].value              #(u.erg/u.s/(u.cm**2)/u.AA)
@@ -64,7 +74,7 @@ class Star:
     flux_star = flux.to_value(u.erg/u.s/(u.cm**2)/u.AA)
 
     lnlam_star = np.log(lam_star)
-    dlnlam_star = np.median(np.diff(lnlam_star)) / 4      # Double the resolution of the stars spectra
+    dlnlam_star = np.median(np.diff(lnlam_star)) / 4      # quadruple the resolution of the stars spectra
     N = int(np.floor((lnlam_star[-1] - lnlam_star[0]) / dlnlam_star)) + 1
     lnlam = lnlam_star[0] + dlnlam_star * np.arange(N)
 
@@ -73,7 +83,6 @@ class Star:
     dv = (c_kms * dlnlam_star)
     half = int(np.ceil(vsini / dv))
     dv_axis = (np.arange(-half, half+1) * dv)              # The grid of dv the kernel will use in km/s
-
     x = dv_axis / vsini
     g = np.zeros_like(x)
 

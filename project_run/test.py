@@ -31,15 +31,13 @@ flux_star_unrot = star.flux_star_unrot
 lam_star = star.lam_star
 
 distance = 0.1 * u.au
-Temp = np.linspace(100, 1000, 100) * u.K
+Temp = np.linspace(100, 1000, 10) * u.K
 #Temp = 1000 * u.K
-Ncol = 0 * u.cm**(-2)
-beta = []
+Ncol = np.logspace(7, 20, 100) * u.cm**(-2)
+#Ncol = 0 * u.cm**(-2)
 
 Na_Ph = PhotonPressure(Na_broadening, star)
 Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp, distance)
-
+print()
 beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
 
-plt.plot(Temp, beta)
-plt.show()

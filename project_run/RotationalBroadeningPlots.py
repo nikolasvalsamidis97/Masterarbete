@@ -20,7 +20,7 @@ Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
 vsini = 10 * u.km / u.s
 vsini2 = 20 * u.km / u.s
 epsilon = 0.0 * u.dimensionless_unscaled
-epsilon2 = 0.8 * u.dimensionless_unscaled
+epsilon2 = 0.9 * u.dimensionless_unscaled
 
 # 3. Hämta teoretiskt stjärnspectra
 star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte065-1.0-0.0a+0.0.BT-NextGen.7.dat.xml',
@@ -43,18 +43,19 @@ flux_star_rot3 = star3.flux_star_rot
 flux_star_rot4 = star4.flux_star_rot
 
 Na_5891 = 5891.583264
-width = 2
+width = 1.5
+alpha = 0.5
 
-plt.figure(figsize=[9,4])
+plt.figure(figsize=[12,4])
 plt.title(rf"Rotationally broadened spectra ({Na.species}: {Na_5891:.4f} {lam_star.unit.to_string('latex_inline')})")
 
 plt.plot(lam_star, flux_star_unrot, color="black", label="Stellar flux")
 
 plt.plot(lam_star, flux_star_rot, color="red",label=rf"$vsini$ = {vsini}, $\epsilon$ = {epsilon}")
-plt.plot(lam_star, flux_star_rot2, color="pink",label=rf"$vsini$ = {vsini}, $\epsilon$ = {epsilon2}")
+plt.plot(lam_star, flux_star_rot2, color="red", linestyle = ":", alpha=alpha,label=rf"$vsini$ = {vsini}, $\epsilon$ = {epsilon2}")
 
 plt.plot(lam_star, flux_star_rot3, color="blue",label=rf"$vsini$ = {vsini2}, $\epsilon$ = {epsilon}")
-plt.plot(lam_star, flux_star_rot4, color="cyan",label=rf"$vsini$ = {vsini2}, $\epsilon$ = {epsilon2}")
+plt.plot(lam_star, flux_star_rot4, color="blue", linestyle = ":", alpha=alpha, label=rf"$vsini$ = {vsini2}, $\epsilon$ = {epsilon2}")
 
 
 plt.xlabel(rf"Wavelength [{lam_star.unit.to_string('latex_inline')}]")
