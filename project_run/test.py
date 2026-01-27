@@ -23,8 +23,10 @@ vsini = 13 * u.km / u.s
 epsilon = 0 * u.dimensionless_unscaled
 
 # 3. Hämta teoretiskt stjärnspectra
-star = Star('TS/models_1758706196/bt-nextgen-agss2009/lte065-1.0-0.0a+0.0.BT-NextGen.7.dat.xml', 
+star = Star('TS/models_1769507931/bt-nextgen-agss2009/lte057-4.0-3.0a+0.4.BT-NextGen.7.dat.txt', 
             const.R_sun.value * u.m, const.M_sun.value * u.kg, vsini, epsilon)
+
+star.print_header()
 
 flux_star_rot = star.flux_star_rot
 flux_star_unrot = star.flux_star_unrot
@@ -38,6 +40,5 @@ Ncol = np.logspace(7, 20, 100) * u.cm**(-2)
 
 Na_Ph = PhotonPressure(Na_broadening, star)
 Na_ph_calc, _, _, _ = Na_Ph.calc_PhotonPressure(Ncol, Temp, distance)
-print()
 beta, _ = Na_Ph.beta_Values(Na_ph_calc, 0)
 

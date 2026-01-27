@@ -20,7 +20,7 @@ Npts = 1000
 
 ## 2.5 Möjlighet att plotta profil och tvärsnitt för en linje. För att se linje: print(Na.data)
 #print(Na.data)
-line = 5
+line = 2
 domain1 = 'velocity'
 domain2 = 'wavelength'
 

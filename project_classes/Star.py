@@ -2,8 +2,8 @@ from project_func.errors import _not_quantity
 import numpy as np
 from astropy import units as u
 from astropy import constants as const
-from astropy.table import Table
-from matplotlib import pyplot as plt
+from astropy.io import ascii
+import re
 
 
 class Star:
@@ -19,6 +19,12 @@ class Star:
     mass:       Quantity          Mass of star
     vsini:      Quantity          Projected rotational velocity
     epsilon:    Quantity          Limb darkening
+
+    ** Functions **
+    print_header:     Prints the header of the model
+
+    ** Callables **
+    header:           Header of the model
     """
     self.path = path
     self.radius = radius.to(u.m) if isinstance(radius, u.Quantity) else _not_quantity("radius")
@@ -27,24 +33,28 @@ class Star:
     self.epsilon = epsilon.to(u.dimensionless_unscaled) if isinstance(epsilon, u.Quantity) else _not_quantity("epsilon")
 
     self.lam_star, self.flux_star_rot, self.flux_star_unrot = self.read_Spectra()
-
-
-    
+    self.header = self.set_header(path)
+  
   def read_Spectra(self):
     """
     Reads a spectra from a file, rotationally broadens it and returns the flux in vacuum
+    Also creates a header for the star
 
     ** Returns **
     lam:          The lambda array from the stellar spectra       [Å]               [lambda, ]
     flux_rot      Rotatationally broadened spectra                [Flux units]      [F, ]
     flux_unrot    Original spectra                                [Flux units]      [F_orig, ]
     """
-    VOtab = Table.read(self.path, format='votable')
+    tab = ascii.read(
+      self.path,
+      format="basic",
+      comment="#",
+      names=("WAVELENGTH", "FLUX"),
+      guess=False
+    )
 
-    # Byt till ascii
-
-    lam = VOtab['WAVELENGTH'].value          #u.AA
-    flux = VOtab['FLUX'].value              #(u.erg/u.s/(u.cm**2)/u.AA)
+    lam = tab["WAVELENGTH"].value          #u.AA
+    flux = tab['FLUX'].value              #(u.erg/u.s/(u.cm**2)/u.AA)
     flux = flux * (u.erg/u.s/(u.cm**2)/u.AA)
     lam = self.air_to_vacuum(lam) * u.AA
 
@@ -59,6 +69,44 @@ class Star:
 
     return lam, flux_rot, flux_unrot
   
+  def set_header(self, path):
+    hdr = {
+        "model": {"value": None, "unit": None},
+        "teff":  {"value": None, "unit": "K"},
+        "logg":  {"value": None, "unit": "log10(cm/s2)"},
+        "meta":  {"value": None, "unit": "dex"},
+        "alpha": {"value": None, "unit": "dex"},
+    }
+
+    with open(path, "r", encoding="utf-8") as f:
+      for line in f:
+        if not line.lstrip().startswith("#"):
+          break
+
+        s = line.lstrip("#").strip()
+        if not s:
+          continue
+
+        if hdr["model"]["value"] is None and "=" not in s and s.startswith("BT-"):
+          hdr["model"]["value"] = s
+          continue
+
+        m = re.match(r"^(teff|logg|meta|alpha)\s*=\s*([+-]?\d+(?:\.\d+)?)", s, re.I)
+        if m:
+          key = m.group(1).lower()
+          hdr[key]["value"] = float(m.group(2))
+    return hdr  
+
+  def print_header(self):
+    for k, d in self.header.items():
+      if isinstance(d, dict):
+        unit = d.get("unit")
+        val  = d.get("value")
+        print(f"{k:6s}: {val}" if not unit else f"{k:6s}: {val} {unit}")
+      else:
+        print(f"{k:6s}: {d}")
+
+
   def air_to_vacuum(self, lam_air_A):
     s2 = (1e4/lam_air_A)**2
     n_minus_1 = 1e-8*(8342.13 + 2406030/(130 - s2) + 15997/(38.9 - s2))
