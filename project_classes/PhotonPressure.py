@@ -88,22 +88,20 @@ class PhotonPressure:
     trans = np.exp(-tau)                        # Transmission  T = exp(-τ)
     absorbtion = 1 - trans                      # Absorbtion    A = 1 - exp(-1)
 
-    tau_err = sigma_err[:, :, None] * N[None, None, :] 
-    trans_err = np.exp(-tau) * tau_err
+    # tau_err = sigma_err[:, :, None] * N[None, None, :] 
+    # trans_err = np.exp(-tau) * tau_err
+    trans_err = None
     
-    print(f"Transmission coefficient calculated with shape: {trans.shape}")
-    return trans, trans_err
+    return trans, trans_err 
   
   def excitation_weights(self, Temp_atm):
     kb_eV = const.k_B.to(u.eV/u.K)
     El = self.E_l
     gl =  self.g_l
     T = Temp_atm
-
+    
     # Find all levels for calculating the partition function for all T
     Eg = np.column_stack([El.value, gl])
-    mask = np.isfinite(Eg).all(axis=1) 
-    Eg = Eg[mask]
     Eg_unique, idx, inv = np.unique(Eg, axis=0, return_index=True, return_inverse=True)
     El_unique = (Eg_unique[:,0]).reshape(-1,1) * u.eV
     gl_unique = (Eg_unique[:,1]).reshape(-1,1) * u.dimensionless_unscaled
@@ -119,10 +117,12 @@ class PhotonPressure:
 
     return w_line
 
-  def calc_PhotonPressure(self, column_density, Temp_atm, distance):
+  def calc_PhotonPressure(self, column_density, Temp_atm, distance, chunk_size=8):
     """
-    Calculates the photon pressure and the per line pressure
+    Chunked over N_col to reduce memory.
+    Does NOT store/return per-line arrays (returns None for them).
 
+  
     ** Inputs **
     column_density:           Array of column densities                   [cm-2]
     Temp_atm:                 Planetary atmospheric temperature           [K]
@@ -135,47 +135,111 @@ class PhotonPressure:
     F_ph_perline_err          Error per line                              [N]           - || -
 
     """
+    
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
-    Trans, Trans_err = self.transmission(N_col)
+    Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+
     d = distance
     R_star = self.star.radius
-    omega = (R_star/d)**2
-    
-    sig = self.crossection_sym
-    sig_err = self.crossection_err_sym
-    Flux = self.flux_star_interp * omega
-    lam = self.lam_sym
+    omega = (R_star / d) ** 2
 
-    Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
-    weights = self.excitation_weights(Temp)
+    sig = self.crossection_sym                 # (lines, lam)
+    sig_err = self.crossection_err_sym         # (lines, lam)
+    Flux = self.flux_star_interp * omega       # (lines, lam)
+    lam = self.lam_sym                         # (lines, lam)
 
-    # Trans: (lines, lam, Ncol)
-    # Flux:  (lines, lam)
-    # sig:   (lines, lam)
-    # weights: (lines, Temp)
+    weights = self.excitation_weights(Temp)    # (lines, Temp)
 
-    I = Flux[:, :, None] * sig[:, :, None] * Trans                          # (lines, lam, Ncol)
+    n_T = weights.shape[1]
+    n_col = len(N_col)
 
-    F_ph_perline = (np.trapz(I, lam[:, :, None], axis=1) / const.c).to(u.N)           # (lines, Ncol)                   
-    F_ph_perline = F_ph_perline[:, None, :] * weights[:, :, None]                     # (lines, Temp, Ncol)
+    # Allocate only total outputs
+    F_ph_tot = np.zeros((n_T, n_col)) * u.N
+    F_ph_tot_err2 = np.zeros((n_T, n_col)) * (u.N**2)
+  
 
-    print(f"Per line photon pressure calculated with shape: {F_ph_perline.shape}") # (lines, Temp, Ncol)
+    #### Stripping units before loop. Comment this part for old calculations with units
+    Flux_unit = Flux.unit
+    sig_unit = sig.unit
+    sig_err_unit = sig_err.unit
+    lam_unit = lam.unit
 
-    F_ph_tot = np.nansum(F_ph_perline, axis = 0)                            # (Temp, Ncol)
+    force_unit = (Flux_unit * sig_unit * lam_unit / const.c.unit)
+    err_unit = (Flux_unit * sig_err_unit * lam_unit / const.c.unit)
 
-    print(f"Total photon pressure calculated with shape: {F_ph_tot.shape}")
+    Flux = np.asarray(Flux.value, dtype=np.float64)
+    sig = np.asarray(sig.value, dtype=np.float64)
+    sig_err = np.asarray(sig_err.value, dtype=np.float64)
+    lam = np.asarray(lam.value, dtype=np.float64)
 
-    N = N_col
-    # dA = self.broad_prof.molecule.A_ul_err
+    weights = np.asarray(weights, dtype=np.float64)
+    ##### 
 
-    factor = (1-(N[None, None, :]*sig[:, :, None]))
-    sig_err = sig_err[:, :, None]
-    dF_dA = np.trapz((Flux[:, :, None] * Trans * factor * sig_err)/ const.c, lam[:, :, None], axis = 1)
+    # Chunk loop over N_col
+    N_chunks = 0
+    for j0 in range(0, n_col, chunk_size):
+      N_chunks += 1
+      j1 = min(j0 + chunk_size, n_col)
+      N_chunk = N_col[j0:j1]  # (chunk,)
 
-    F_ph_perline_err = (np.abs(dF_dA)).to(u.N)[:, None, :] * weights[:, :, None]
-    F_ph_tot_err = np.sqrt(np.nansum(F_ph_perline_err**2, axis=0))
+      # Transmission for this chunk only
+      Trans, Trans_err = self.transmission(N_chunk)   # (lines, lam, chunk)
+      Trans = np.asarray(Trans, dtype=np.float64)     # Comment this for old calculations with units
 
-    return F_ph_tot, F_ph_tot_err, F_ph_perline, F_ph_perline_err
+      # Integrand (lines, lam, chunk)
+      I_chunk = Flux[:, :, None] * sig[:, :, None] * Trans
+
+      # Per-line force for this chunk (lines, chunk)
+      #F_line_chunk = (np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c).to(u.N) # Comment this for new calculations without units
+      F_line_chunk = ((np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c.to_value(u.m / u.s)) * force_unit).to(u.N)  # Comment this for old calculations with units
+
+      # Apply excitation weights -> (lines, Temp, chunk)
+      F_line_T_chunk =F_line_chunk[:, None, :] * weights[:, :, None]
+
+      # Total force -> (Temp, chunk)
+      F_ph_tot[:, j0:j1] = np.nansum(F_line_T_chunk, axis=0)
+
+      ######## Comment for new calculations without units
+      # --- Error propagation (chunked) ---
+      # factor = (1 - (N_chunk[None, None, :] * sig[:, :, None]))  # (lines, lam, chunk)
+
+      # dF_dA = np.trapz(
+      #   (Flux[:, :, None] * Trans * factor * sig_err[:, :, None]) / const.c,
+      #   lam[:, :, None],
+      #   axis=1
+      # )  # (lines, chunk)
+      ########
+
+      ######## Comment this for old calculations with units
+      N_col_val = N_col.to_value(1 / u.cm**2)
+      N_chunk_val = N_col_val[j0:j1] 
+      factor = (1.0 - (N_chunk_val[None, None, :] * sig[:, :, None]))
+
+      dF_dA = np.trapz(
+        (Flux[:, :, None] * Trans * factor * sig_err[:, :, None]) / const.c.to_value(u.m/u.s),
+        lam[:, :, None],
+        axis=1
+      )  # (lines, chunk)
+      dF_dA = (dF_dA * Flux_unit * sig_err_unit * lam_unit / const.c.unit).to(u.N)
+      #########
+
+      F_line_err_T_chunk = (np.abs(dF_dA)).to(u.N)[:, None, :] * weights[:, :, None]  # (lines, Temp, chunk)
+      F_ph_tot_err2[:, j0:j1] = np.nansum(F_line_err_T_chunk**2, axis=0)
+
+      print(f"Chunk {N_chunks} completed")
+
+    F_ph_tot_err = np.sqrt(F_ph_tot_err2)
+
+    print(f"Total photon pressure has been calculated in {N_chunks} chunks")
+
+    # --- Store only totals on the object ---
+    self.F_ph_tot = F_ph_tot
+    self.F_ph_tot_err = F_ph_tot_err
+    self.F_ph_perline = None
+    self.F_ph_perline_err = None
+
+    return F_ph_tot, F_ph_tot_err, None, None
+
 
   def beta_Values(self, F_ph_tot, F_ph_tot_err):
     """
