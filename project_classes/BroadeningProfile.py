@@ -8,18 +8,17 @@ from matplotlib import pyplot as plt
 
 class BroadeningProfile:
   
-  def __init__(self, molecule: Molecule, b, vlim, N:int, profileType:str = 'Voigt'):
+  def __init__(self, molecule: Molecule, b, N:int, profileType:str = 'Voigt'):
     """
     Contains both the broadeing profile and calculates the crossection using the profile
     molecule:    Molecule
     b:           broadening parameter                 [km/s]
-    vlim:        maximum broading                     [km/s]
     N:           resolution of the velocity grid      [int]
     profileType: Type of broadening.                  Ex. "Lorentz", "Gauss" or "Voigt"
     """
     self.molecule = molecule
     self.b = b.to(u.km /u.s) if isinstance(b, u.Quantity) else _not_quantity("b (broadening parameter)")
-    self.vlim = vlim.to(u.km/u.s) if isinstance(vlim, u.Quantity) else _not_quantity("vlim")
+    self.vlim = self.set_vlim()
     self.N = N
     self.profileType = profileType
     self.v_grid = self.velocity_Grid()
@@ -35,6 +34,13 @@ class BroadeningProfile:
     self.lam_sym = self.half_to_symmetric_lam()
     
     
+  def set_vlim(self):
+    fwhm_l, _ = self.FWHM_lorentz()
+    fwhm_Lmax = np.nanmax(fwhm_l).to(u.km/u.s)
+    fwhm_g = self.FWHM_gauss()[0].to(u.km/u.s)
+    vlim = np.maximum(6 * fwhm_g, 25 * fwhm_Lmax)
+    return vlim.to(u.km/u.s)
+  
   def velocity_Grid(self):
     """
     A fixed velocity grid, shared by all profiles
