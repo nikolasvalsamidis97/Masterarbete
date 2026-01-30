@@ -4,6 +4,15 @@ from astropy import units as u
 from astropy import constants as const
 from astropy.io import ascii
 import re
+from synphot import SpectralElement, SourceSpectrum, Observation
+from synphot.models import Empirical1D
+import requests
+from io import BytesIO
+from astropy.table import Table
+# Optional Vega support (only needed if you ever want magsys="vegamag")
+from synphot.config import conf as synconf
+
+
 
 
 class Star:
@@ -34,6 +43,7 @@ class Star:
 
     self.lam_star, self.flux_star_rot, self.flux_star_unrot = self.read_Spectra()
     self.header = self.set_header(path)
+
   
   def read_Spectra(self):
     """
@@ -106,7 +116,6 @@ class Star:
       else:
         print(f"{k:6s}: {d}")
 
-
   def air_to_vacuum(self, lam_air_A):
     s2 = (1e4/lam_air_A)**2
     n_minus_1 = 1e-8*(8342.13 + 2406030/(130 - s2) + 15997/(38.9 - s2))
@@ -147,6 +156,79 @@ class Star:
 
     return lam_star * u.AA, flux_rot_star * u.erg/u.s/(u.cm**2)/u.AA
 
-
+  def get_bandpass_svo(self, photcalid: str) -> SpectralElement:
+    """
+    photcalid example inputs:
+    "2MASS/2MASS.H/AB"
+    "2MASS/2MASS.H/Vega"
+    """
     
+    url = "https://svo2.cab.inta-csic.es/svo/theory/fps/fps.php?PhotCalID=" + photcalid
+    vot_bytes = requests.get(url).content
 
+    tab = Table.read(BytesIO(vot_bytes), format="votable")
+
+    bp_wave = np.array(tab["Wavelength"]) * u.AA
+    bp_thru = np.array(tab["Transmission"])
+
+    band = SpectralElement(Empirical1D, points=bp_wave, lookup_table=bp_thru)
+
+    return band
+  
+  def synthetic_mag(self, photcalid: str, distance: u.Quantity, magsys: str="abmag", use_rot: bool=True):
+    """
+    Returns synthetic magnitude of this stars spectrum using given SVO PhotCalID
+
+    distance: Distance to the star from earth
+    magsys: "abmag" or "vegamag"
+    """
+
+    R_star = self.radius.to_value(u.m)
+    d_earth_star = distance.to_value(u.m)
+
+    band = self.get_bandpass_svo(photcalid)
+
+    lam = self.lam_star
+    flux = self.flux_star_rot if use_rot else self.flux_star_unrot
+
+    flux_scaled = flux * (R_star / d_earth_star)**2
+
+    source = SourceSpectrum(Empirical1D, points=lam, lookup_table=flux_scaled)
+    obs = Observation(source, band, force="taper")
+
+    if magsys.lower() == "vegamag":
+        # synphot needs an explicit Vega spectrum reference
+        synconf.vega_file = "https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_011.fits"
+        vega = SourceSpectrum.from_vega()
+        return obs.effstim("vegamag", vegaspec=vega)
+    
+    return obs.effstim(magsys.lower())
+
+  def scale_factor_from_target_mag(self, 
+                                   photcalid: str, 
+                                   distance: u.Quantity,
+                                   m_target: float, 
+                                   magsys: str="abmag", 
+                                   use_rot: bool=True
+                                   ):
+    """
+    Computes a scale factor from a synthetic magnitude from current star and given target magnitude
+    
+    photcalid example inputs: "2MASS/2MASS.H/AB" or "2MASS/2MASS.H/Vega"
+    distance: Distance to the star from earth
+    m_target: target magnitude (from comparison)
+    magsys: "abmag" or "vegamag"
+
+    Formulat to calc k:
+    k = 10^(-0.4 (m_target - m_synthetic))
+
+    To compare with observed data use:
+    F_new(lambda) = k * F_old(lambda)
+    """
+    m_synthetic = self.synthetic_mag(photcalid, distance, magsys=magsys, use_rot=use_rot)
+    m_synthetic = m_synthetic.value
+    m_target = m_target
+
+    k = 10**(-0.4 * (m_target - m_synthetic))
+
+    return k
