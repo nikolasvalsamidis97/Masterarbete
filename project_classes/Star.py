@@ -175,7 +175,7 @@ class Star:
 
     return band
   
-  def synthetic_mag(self, photcalid: str, distance: u.Quantity, magsys: str="abmag", use_rot: bool=True):
+  def synthetic_mag(self, photcalid: str, distance: u.Quantity, magsys: str="vegamag", use_rot: bool=True):
     """
     Returns synthetic magnitude of this stars spectrum using given SVO PhotCalID
 
@@ -186,13 +186,16 @@ class Star:
     R_star = self.radius.to_value(u.m)
     d_earth_star = distance.to_value(u.m)
 
-    band = self.get_bandpass_svo(photcalid)
+    band = self.get_bandpass_svo(photcalid) # Bandpass/filter curve
 
     lam = self.lam_star
     flux = self.flux_star_rot if use_rot else self.flux_star_unrot
 
     flux_scaled = flux * (R_star / d_earth_star)**2
 
+    # SourceSpectrum: Creates a source spectrum with values given to it
+    # Empirical1D: “don’t use a blackbody / power law / analytic function — just use these points and interpolate.”
+    # "Taper": Use when bandpass extends beyond spectra
     source = SourceSpectrum(Empirical1D, points=lam, lookup_table=flux_scaled)
     obs = Observation(source, band, force="taper")
 
@@ -202,33 +205,44 @@ class Star:
         vega = SourceSpectrum.from_vega()
         return obs.effstim("vegamag", vegaspec=vega)
     
+    # effstim: Returns synthetic observed spectra
     return obs.effstim(magsys.lower())
 
-  def scale_factor_from_target_mag(self, 
-                                   photcalid: str, 
+  def scale_factors_from_targets(self, 
+                                   targets: dict, 
                                    distance: u.Quantity,
-                                   m_target: float, 
-                                   magsys: str="abmag", 
-                                   use_rot: bool=True
+                                   magsys: dict, 
+                                   use_rot: bool=True,
+                                   photcalid_map: dict=None
                                    ):
     """
-    Computes a scale factor from a synthetic magnitude from current star and given target magnitude
+    Computes scale factors from synthetic magnitudes from current star and given target magnitude. 
+    The mean of the scale factors can be used to scale the stellar radius according to
+    R_new = sqrt(k_mean) * R_old
     
     photcalid example inputs: "2MASS/2MASS.H/AB" or "2MASS/2MASS.H/Vega"
     distance: Distance to the star from earth
     m_target: target magnitude (from comparison)
     magsys: "abmag" or "vegamag"
 
-    Formulat to calc k:
+    Formula to calc k:
     k = 10^(-0.4 (m_target - m_synthetic))
 
     To compare with observed data use:
     F_new(lambda) = k * F_old(lambda)
     """
-    m_synthetic = self.synthetic_mag(photcalid, distance, magsys=magsys, use_rot=use_rot)
-    m_synthetic = m_synthetic.value
-    m_target = m_target
 
-    k = 10**(-0.4 * (m_target - m_synthetic))
+    k_vals = {}
+    for survey, filters in targets.items():                       # "2MASS", "J"
+      for band, m_target in filters.items():                      # "J", 10.2 
+        photcalid = photcalid_map[survey][band]                   # photcalid_map["2MASS"]["J"] -> "2MASS/2MASS.J/Vega"
+        ms = magsys[survey]                                       # magsys["2MASS"] -> "vegamag"
+        m_synthetic = self.synthetic_mag(photcalid, distance, magsys=ms, use_rot=use_rot)   # synthetic_mag("2MASS/2MASS.J/Vega", d_to_object, magsys="vegamag", use_rot=True) -> m_synthetic
+        print(survey, filters, m_synthetic.value)
+        k_vals[f"{survey}_{band}"] = 10**(-0.4 * (m_target - m_synthetic.value))   # k = 10^(-0.4 (m_target - m_synthetic))
+    
+    k_mean = np.mean(list(k_vals.values()))
 
-    return k
+    self.radius = self.radius * np.sqrt(k_mean)
+
+    return k_vals

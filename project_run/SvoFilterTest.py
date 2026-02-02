@@ -16,9 +16,8 @@ Na = Molecule('Na I', 1000 * u.AA, 9000*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
 b = 1 * u.km/u.s        # b = v_D
-vlim = 10 * u.km/u.s
-Npts = 1000
-Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
+Npts = 150
+Na_broadening = BroadeningProfile(Na, b , Npts, 'Voigt')
 vsini = 13 * u.km / u.s
 epsilon = 0 * u.dimensionless_unscaled
 
@@ -27,15 +26,58 @@ star = Star('TS/models_1769507931/bt-nextgen-agss2009/lte057-4.0-3.0a+0.4.BT-Nex
             const.R_sun.value * u.m, const.M_sun.value * u.kg, vsini, epsilon)
 
 d_to_object = 10 * u.pc
-photcalid_ab = "2MASS/2MASS.H/AB"
-photcalid_vega = "2MASS/2MASS.H/Vega"
 
-m_target_ab = 4
-delta_H = 2.5*np.log10(3631.0/1007.99)
-m_target_vega = m_target_ab - delta_H
+# β-pic example for an comparison with observed magnitudes
+targets = {
+  "2MASS": {
+    "J": 3.669, "H": 3.544, "Ks": 3.526
+    },
+  "Gaia":  {
+    "G": 3.823242, "Gbp": 3.921584, "Grp": 3.660152
+    },
+  # "SDSS":  {
+  #   "u": 12.5, "g": 11.5, "r": 10.8, "i": 10.5, "z": 10.3
+  #   },
+  "TESS":  {
+    "TESS": 3.82
+  },
+}
 
-k_ab = star.scale_factor_from_target_mag(photcalid_ab, d_to_object, m_target_ab, "abmag")
-k_vega = star.scale_factor_from_target_mag(photcalid_vega, d_to_object, m_target_vega, "vegamag")
+MAGSYS = {
+  "2MASS": "vegamag",
+  "Gaia":  "vegamag",
+  # "SDSS":  "abmag",
+  "TESS":  "vegamag",
+}
 
-print(k_ab)
-print(k_vega)
+PHOTCALID = {
+  "2MASS": {
+    "J":  "2MASS/2MASS.J/Vega",
+    "H":  "2MASS/2MASS.H/Vega",
+    "Ks": "2MASS/2MASS.Ks/Vega",
+  },
+  "Gaia": {
+    "G":  "GAIA/GAIA3.G/Vega",
+    "Gbp": "GAIA/GAIA3.Gbp/Vega",
+    "Grp": "GAIA/GAIA3.Grp/Vega",
+  },
+  # "SDSS": {
+  #   "u": "SLOAN/SDSS.u/AB",
+  #   "g": "SLOAN/SDSS.g/AB",
+  #   "r": "SLOAN/SDSS.r/AB",
+  #   "i": "SLOAN/SDSS.i/AB",
+  #   "z": "SLOAN/SDSS.z/AB",
+  # },
+  "TESS": {
+    "TESS": "TESS/TESS.Red/Vega",
+  },
+}
+
+print("Old stellar radius before scaling:", star.radius.to(u.R_sun))
+
+k_vals = star.scale_factors_from_targets(targets, d_to_object, magsys=MAGSYS, use_rot=True, photcalid_map=PHOTCALID)
+print("Scale factors k for each band:")
+for survey, k in k_vals.items():
+  print(f"  {survey}: {k}")
+
+print(f"New stellar radius after scaling: {star.radius.to(u.R_sun)}")

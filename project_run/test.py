@@ -16,9 +16,8 @@ Na = Molecule('Na I', 1000 * u.AA, 9000*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
 b = 1 * u.km/u.s        # b = v_D
-vlim = 10 * u.km/u.s
-Npts = 1000
-Na_broadening = BroadeningProfile(Na, b , vlim, Npts, 'Voigt')
+Npts = 150
+Na_broadening = BroadeningProfile(Na, b, Npts, 'Voigt')
 vsini = 13 * u.km / u.s
 epsilon = 0 * u.dimensionless_unscaled
 
@@ -45,9 +44,9 @@ flux_star_unrot = star.flux_star_unrot
 lam_star = star.lam_star
 
 
-# plt.plot(lam_star, flux_star_rot)
-# plt.plot(lam_star, flux_star_rot_calib)
-# plt.show()
+plt.plot(lam_star, flux_star_rot)
+plt.plot(lam_star, flux_star_rot_calib)
+plt.show()
 
 distance = 0.1 * u.au
 Temp = np.linspace(100, 1000, 10) * u.K
