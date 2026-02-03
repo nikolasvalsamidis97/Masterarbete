@@ -156,7 +156,7 @@ class Star:
 
     return lam_star * u.AA, flux_rot_star * u.erg/u.s/(u.cm**2)/u.AA
 
-  def get_bandpass_svo(self, photcalid: str) -> SpectralElement:
+  def get_bandpass_svo(self, photcalid: str):
     """
     photcalid example inputs:
     "2MASS/2MASS.H/AB"
@@ -172,8 +172,8 @@ class Star:
     bp_thru = np.array(tab["Transmission"])
 
     band = SpectralElement(Empirical1D, points=bp_wave, lookup_table=bp_thru)
-
-    return band
+    lam_pivot = band.pivot().to(u.AA)
+    return band, lam_pivot
   
   def synthetic_mag(self, photcalid: str, distance: u.Quantity, magsys: str="vegamag", use_rot: bool=True):
     """
@@ -186,7 +186,7 @@ class Star:
     R_star = self.radius.to_value(u.m)
     d_earth_star = distance.to_value(u.m)
 
-    band = self.get_bandpass_svo(photcalid) # Bandpass/filter curve
+    band, lam_pivot = self.get_bandpass_svo(photcalid) # Bandpass/filter curve
 
     lam = self.lam_star
     flux = self.flux_star_rot if use_rot else self.flux_star_unrot
@@ -203,11 +203,10 @@ class Star:
         # synphot needs an explicit Vega spectrum reference
         synconf.vega_file = "https://ssb.stsci.edu/trds/calspec/alpha_lyr_stis_011.fits"
         vega = SourceSpectrum.from_vega()
-        return obs.effstim("vegamag", vegaspec=vega)
+        return obs.effstim("vegamag", vegaspec=vega), lam_pivot
     
     # effstim: Returns synthetic observed spectra
-    return obs.effstim(magsys.lower())
-
+    return obs.effstim(magsys.lower()), lam_pivot
   def scale_factors_from_targets(self, 
                                    targets: dict, 
                                    distance: u.Quantity,
@@ -233,16 +232,17 @@ class Star:
     """
 
     k_vals = {}
+    lam_pivots = {}
     for survey, filters in targets.items():                       # "2MASS", "J"
       for band, m_target in filters.items():                      # "J", 10.2 
         photcalid = photcalid_map[survey][band]                   # photcalid_map["2MASS"]["J"] -> "2MASS/2MASS.J/Vega"
         ms = magsys[survey]                                       # magsys["2MASS"] -> "vegamag"
-        m_synthetic = self.synthetic_mag(photcalid, distance, magsys=ms, use_rot=use_rot)   # synthetic_mag("2MASS/2MASS.J/Vega", d_to_object, magsys="vegamag", use_rot=True) -> m_synthetic
-        print(survey, filters, m_synthetic.value)
+        m_synthetic, lam_pivot = self.synthetic_mag(photcalid, distance, magsys=ms, use_rot=use_rot)   # synthetic_mag("2MASS/2MASS.J/Vega", d_to_object, magsys="vegamag", use_rot=True) -> m_synthetic
+        lam_pivots[f"{survey}_{band}"] = lam_pivot
         k_vals[f"{survey}_{band}"] = 10**(-0.4 * (m_target - m_synthetic.value))   # k = 10^(-0.4 (m_target - m_synthetic))
     
     k_mean = np.mean(list(k_vals.values()))
 
     self.radius = self.radius * np.sqrt(k_mean)
 
-    return k_vals
+    return k_vals, lam_pivots
