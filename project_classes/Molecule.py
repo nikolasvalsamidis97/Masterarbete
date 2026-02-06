@@ -20,7 +20,7 @@ class Molecule:
     self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
 
     self.data = self.set_Nist_Data(self.species, self.lam_min, self.lam_max, self.A_ul_min)
-    self.mass = Formula(self.species).mass * u.u
+    self.mass = Formula(self.species.strip("I")).mass * u.u                          # Dela upp "Na I" -> "Na" för att få rätt molekylvikt
     self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.E_u, self.E_l, self.J_l, self.fik = self.pandas_to_numpy(self.data)
     self.sig_0, self.sig_0_err = self.calc_central_crossection()
 

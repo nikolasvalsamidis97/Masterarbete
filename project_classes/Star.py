@@ -174,7 +174,6 @@ class Star:
     band = SpectralElement(Empirical1D, points=bp_wave, lookup_table=bp_thru)
     lam_pivot = band.pivot().to(u.AA)
     return band, lam_pivot
-  
   def synthetic_mag(self, photcalid: str, distance: u.Quantity, magsys: str="vegamag", use_rot: bool=True):
     """
     Returns synthetic magnitude of this stars spectrum using given SVO PhotCalID
@@ -211,8 +210,8 @@ class Star:
                                    targets: dict, 
                                    distance: u.Quantity,
                                    magsys: dict, 
+                                   photcalid_map: dict=None,
                                    use_rot: bool=True,
-                                   photcalid_map: dict=None
                                    ):
     """
     Computes scale factors from synthetic magnitudes from current star and given target magnitude. 

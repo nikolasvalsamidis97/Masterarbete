@@ -151,7 +151,7 @@ class PhotonPressure:
     weights = self.excitation_weights(Temp)    # (lines, Temp)
 
     n_T = weights.shape[1]
-    n_col = len(N_col)
+    n_col = N_col.shape[0]
 
     # Allocate only total outputs
     F_ph_tot = np.zeros((n_T, n_col)) * u.N
@@ -185,7 +185,7 @@ class PhotonPressure:
       # Transmission for this chunk only
       Trans, Trans_err = self.transmission(N_chunk)   # (lines, lam, chunk)
       Trans = np.asarray(Trans, dtype=np.float64)     # Comment this for old calculations with units
-
+      
       # Integrand (lines, lam, chunk)
       I_chunk = Flux[:, :, None] * sig[:, :, None] * Trans
 
@@ -241,7 +241,7 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def beta_Values(self, F_ph_tot, F_ph_tot_err):
+  def beta_Values(self, F_ph_tot, F_ph_tot_err, distance):
     """
     Calculates the beta ratio for a given photon pressure
 
@@ -255,12 +255,12 @@ class PhotonPressure:
     """
     mass_star = self.star.mass
     mass_species = self.broad_prof.molecule.mass
-    radius = self.star.radius
+    d = distance
     G = const.G.cgs
 
     F_ph = F_ph_tot
     F_ph_err = F_ph_tot_err
-    F_grav = ((G * mass_star * mass_species) / (radius)**2).to(u.N)
+    F_grav = ((G * mass_star * mass_species) / (d)**2).to(u.N)
 
     beta = F_ph / F_grav
     beta_err = F_ph_err/F_grav
