@@ -1,6 +1,6 @@
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from project_classes.Molecule import Molecule
+from project_classes.Atom import Molecule
 from project_classes.BroadeningProfile import BroadeningProfile
 from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Star import Star

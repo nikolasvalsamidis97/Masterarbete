@@ -1,159 +1,86 @@
-import numpy as np
-from molmass import Formula
-from astropy import units as u
+import astropy.units as u
 from project_func.errors import _not_quantity
-from astroquery.nist import Nist
+from molmass import Formula
 import pandas as pd
+from radis.io.exomol import fetch_exomol
+from radis.api.exomolapi import MdbExomol, get_exomol_full_isotope_name
+import numpy as np
 
 class Molecule:
-  
-  def __init__(self, species: str, lam_min, lam_max, A_ul_min = 0 / u.s):
-    """
-    species:        Chemical formula of molecule
-    lam_min:        Minimum data wavelength                     Quantity
-    lam_max:        Maximum data wavelength                     Quantity
-    A_ul_min:       Minimum value of spontaneous deexitation    Quantity
-    """
-    self.species = species
-    self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
-    self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
-    self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
+  def __init__(self, species: "str", lam_min, lam_max, A_ul_min, path: str, database: str, localdatabase: str):
+      self.species = species
+      self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
+      self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
+      self.wavenum_min = (1 / self.lam_max).to(u.cm**-1)
+      self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
+      self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
+      self.path = path
+      self.database = database
+      self.localdatabase = localdatabase
 
-    self.data = self.set_Nist_Data(self.species, self.lam_min, self.lam_max, self.A_ul_min)
-    self.mass = Formula(self.species.strip("I")).mass * u.u                          # Dela upp "Na I" -> "Na" för att få rätt molekylvikt
-    self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.E_u, self.E_l, self.J_l, self.fik = self.pandas_to_numpy(self.data)
-    self.sig_0, self.sig_0_err = self.calc_central_crossection()
+      self.data = self.fetch_exomol()
+      self.mass = Formula(self.species).mass * u.u
 
-  def get_Name(self):
-    print(self.species)
+      self.i_upper, self.i_lower, self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.j_l, self.j_u = self.pandas_to_numpy()
+      
 
-  def pandas_to_numpy(self, data):
-    """
-    Numpy arrays with dimensions (N_lines, None) ex. (16,)
-    """
-    Aul = pd.to_numeric(data['A_ul']).to_numpy().reshape(-1, 1) / u.s
-    Aul_err = pd.to_numeric(data['Acc']).to_numpy().reshape(-1, 1) / u.s
-    lam0 = pd.to_numeric(data['lam_obs']).to_numpy().reshape(-1, 1) * u.AA
-    gu = pd.to_numeric(data['g_u']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-    gl = pd.to_numeric(data['g_l']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-    Eu = pd.to_numeric(data['E_u']).to_numpy().reshape(-1, 1) * u.eV
-    El = pd.to_numeric(data['E_l']).to_numpy().reshape(-1, 1) * u.eV
-    J_l = pd.to_numeric(data['J_l']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-    fik = pd.to_numeric(data['fik']).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+      self.A_ul_err = np.zeros_like(self.A_ul) * u.s**-1
 
-    return Aul, Aul_err, lam0, gu, gl, Eu, El, J_l, fik
 
-  def set_Nist_Data(self,
-                    species,
-                    wav_min, 
-                    wav_max, 
-                    A_ul):
-    """
-    wav_min:    Minimum wavelength as float in Angstrom
-    wav_max:    Maximum wavelength as float in Angstrom
-    A_ul:       Minimum A_ul as float in 1/s
-    """
+  def fetch_exomol(self):
+      """
+      Fetches data from ExoMol database using the radis package. The data is filtered according to the input parameters and stored in a pandas dataframe.
 
-    tab = Nist.query(wav_min, 
-                    wav_max, 
-                    linename = species, 
-                    energy_level_unit = 'eV',
-                    wavelength_type='vacuum', 
-                    output_order='wavelength')
-    
-    df = tab.to_pandas()
-    # Ion identification
-    spec = df.get('Spectrum')
+      ** Returns **
+      data:         
+      """
 
-    # Wavelength in nm. If observed wavelength is missing i will use Ritz
-    lam_obs = pd.to_numeric(df['Observed'], errors='coerce')
-    lam_ritz = pd.to_numeric(df['Ritz'], errors='coerce')
-    lam_obs = lam_obs.fillna(lam_ritz)
+      path = self.path
+      nurange = [self.wavenum_min.value, self.wavenum_max.value]
 
-    A_ul = pd.to_numeric(df['Aki'], errors='coerce')
+      mdb = MdbExomol(
+          path=path,
+          molecule=self.species,
+          database=self.database,
+          local_databases=self.localdatabase,  # folder where it will download/cache
+          nurange=nurange,
+          engine="pytables",              # easiest for pandas workflow
+          skip_optional_data=True,
+      )
 
-    Acc = df['Acc.']
-    ACC_FRAC = {                     # Map onto Acc-code. Source: 'https://physics.nist.gov/PhysRefData/ASD/Html/lineshelp.html#OUTACC' Search for "estimated accuracy"
-    'AAA': 0.003,
-    'AA': 0.01,
-    'A+': 0.02,
-    'A': 0.03,
-    'B+': 0.07,
-    'B': 0.10,
-    'C+': 0.18,
-    'C': 0.25,
-    'D+': 0.40,
-    'D': 0.50,
-    'E': 0.50
-    }
-    Acc = Acc.map(ACC_FRAC) * A_ul
-    
+      # get local cached trans files, then load them
+      mgr = mdb.get_datafile_manager()
+      local_files = [mgr.cache_file(f) for f in mdb.trans_file]
 
-    eiek = df['Ei           Ek'].str.split('-', n=1, expand=True)
-    ei = eiek[0].str.strip(' []?') # lower energy (Ei)
-    ek = eiek[1].str.strip(' []?') # upper energy (Ek)
-    Ei = pd.to_numeric(ei, errors='coerce')
-    Ek = pd.to_numeric(ek, errors='coerce')
+      cols = ["i_upper","i_lower","A","nu_lines","elower","gup","jlower","jupper","Sij0"]
+      df = mdb.load(
+          local_files,
+          columns=cols,
+          lower_bound=[("nu_lines", self.wavenum_min.value)],
+          upper_bound=[("nu_lines", self.wavenum_max.value)],
+          output="pandas",              # returns pandas
+      )
 
-    gigk = df['gi   gk'].str.split('-', n=1, expand=True)
-    gi = gigk[0].str.strip()
-    gk = gigk[1].str.strip()
-    Gi = pd.to_numeric(gi, errors='coerce')
-    Gk = pd.to_numeric(gk, errors='coerce')
+      states = mgr.read(mgr.cache_file(mdb.states_file))   # pandas df, has columns i, g, J, E
+      gmap = dict(zip(states["i"], states["g"]))
+      df["glower"] = df["i_lower"].map(gmap)
 
-    ji = df['Lower level'].str.split('|',n=2 , expand=True)[2].str.strip()
-    jk = df['Upper level'].str.split('|',n=2 , expand=True)[2].str.strip()
+      return df
 
-    fik = pd.to_numeric(df['fik'], errors='coerce')
+  def pandas_to_numpy(self):
+      """
+      Numpy arrays with dimensions (N_lines, None) ex. (16,)
+      """
+      i_upper = pd.to_numeric(self.data['i_upper']).to_numpy().reshape(-1, 1)
+      i_lower = pd.to_numeric(self.data['i_lower']).to_numpy().reshape(-1, 1)
+      A_ul = pd.to_numeric(self.data['A']).to_numpy().reshape(-1, 1) / u.s
+      A_ul_err = np.zeros_like(A_ul) * u.s**-1
+      wav_cm1 = pd.to_numeric(self.data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
+      lam0 = (1 / wav_cm1).to(u.AA)
+      g_u = pd.to_numeric(self.data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+      g_l = pd.to_numeric(self.data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+      j_l = pd.to_numeric(self.data["jlower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+      j_u = pd.to_numeric(self.data["jupper"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
 
-    def parse_j(series: pd.Series) -> pd.Series:                                  # For turning spin values (string) into floats
-      s = series.astype(str).str.strip().str.strip('()')
-      mask = s.str.contains('/', regex=False, na=False)
-      out = pd.to_numeric(s, errors='coerce')
-      if mask.any():
-        parts = s[mask].str.split('/', n=1, expand=True)
-        num = pd.to_numeric(parts[0].str.strip(), errors='coerce')
-        den = pd.to_numeric(parts[1].str.strip(), errors='coerce')
-        out.loc[mask] = num / den
-      return out
-    
-    Ji = parse_j(ji)
-    Jk = parse_j(jk)
-
-    if species == 'H':
-      spec = 'H'
-
-    output = pd.DataFrame({
-                          'Ion'       : spec,             # string
-                          'lam_obs'   : lam_obs,          # Å
-                          'A_ul'      : A_ul,             # 1/s
-                          'Acc'       : Acc,              # Accuracy of A_ul
-                          'E_l'       : Ei,               # eV
-                          'E_u'       : Ek,               # eV
-                          'J_l'       : Ji,               # dimless
-                          'J_u'       : Jk,               # dimless
-                          'g_l'       : Gi,               # dimless
-                          'g_u'       : Gk,               # dimless
-                          'fik'       : fik,              # dimless
-                          'transition': df['Transition'].astype(str)
-                          })
-
-    # Sorting the values with respect to observed wavelength
-    out_f = (output
-          .sort_values('lam_obs', kind='mergesort')
-          .drop_duplicates(subset=['lam_obs', 'transition', 'A_ul'])
-          .reset_index(drop=True))
-
-    data = out_f
-
-    return data
-
-  def calc_central_crossection(self):
-    # Returns σ_0 in cm^2 km/s such that s = integral(σ_0 * φ) [cm^2]
-  
-    sig0 = (self.A_ul * (self.lam0**3/(8 * np.pi)) * (self.g_u/self.g_l))                 # σ_v = σ_λ = σ_0 * φ_λ = σ_0 * φ_v * c/λ
-    sig0 = sig0.to(u.cm**2 * u.km / u.s)
-    sig0_err = sig0 * (self.A_ul_err/self.A_ul)
-
-    return sig0, sig0_err
-  
+      return i_upper, i_lower, A_ul, A_ul_err, lam0, g_u, g_l, j_l, j_u
+      

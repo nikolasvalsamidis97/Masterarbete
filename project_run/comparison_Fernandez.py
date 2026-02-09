@@ -1,6 +1,6 @@
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from project_classes.Molecule import Molecule
+from project_classes.Atom import Atom
 from project_classes.BroadeningProfile import BroadeningProfile
 from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Star import Star
@@ -19,7 +19,39 @@ import numpy as np
 neutral_atoms_list = [
   "Na I","Li I","Be I","B I","Mg I","Al I","Si I","Ca I","Sc I","Ti I","V I","Cr I","Mn I","Fe I","Co I","Ni I"
 ]
-atoms = {sp: Molecule(sp, 150 * u.AA, 50000*u.AA) for sp in neutral_atoms_list}
+
+# neutral_atoms_list = [
+#   "H I",
+#   "He I","He II",
+#   "Li I","Li II","Li III",
+#   "Be I","Be II","Be III",
+#   "B I","B II","B III",
+#   "C I","C II","C III",
+#   "N I","N II","N III",
+#   "O I","O II","O III",
+#   "F I","F II","F III",
+#   "Ne I","Ne II","Ne III",
+#   "Na I","Na II","Na III",
+#   "Mg I","Mg II","Mg III",
+#   "Al I","Al II","Al III",
+#   "Si I","Si II","Si III",
+#   "P I","P II","P III",
+#   "S I","S II","S III",
+#   "Cl I","Cl II","Cl III",
+#   "Ar I","Ar II","Ar III",
+#   "K I","K II","K III",
+#   "Ca I","Ca II","Ca III",
+#   "Sc I","Sc II","Sc III",
+#   "Ti I","Ti II","Ti III",
+#   "V I","V II","V III",
+#   "Cr I","Cr II","Cr III",
+#   "Mn I","Mn II","Mn III",
+#   "Fe I","Fe II","Fe III",
+#   "Co I","Co II","Co III",
+#   "Ni I","Ni II","Ni III",
+# ]
+
+atoms = {sp: Atom(sp, 150 * u.AA, 50000*u.AA) for sp in neutral_atoms_list}
 
 for sp, atom in atoms.items():
   print(f"Number of lines for {sp}: {atom.lam0.shape[0]}")
@@ -38,7 +70,7 @@ vsini = 130 * u.km / u.s
 epsilon = 0.5 * u.dimensionless_unscaled                                                              # As in Fernandez et al. 2006 (e.g., Gray 1976)
 beta_pic = Star('TS/models_1770121505/bt-nextgen-agss2009/lte080-4.0-0.0a+0.0.BT-NextGen.7.dat.txt', 
                1.75*const.R_sun.value * u.m, 1.75*const.M_sun.value * u.kg, vsini, epsilon)
-d_earth_to_pic = 19.44 * u.pc                                                                               # Distance to β Pic
+d_earth_to_pic = 19.3 * u.pc                                                                               # Distance to β Pic
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Calibration made with information from Tycho catalog and Fernandez et al. 2006
@@ -71,7 +103,7 @@ print(f"Old radius: {r_old.to(u.R_sun):.3f}, New radius: {r_new.to(u.R_sun):.3f}
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 pps_obj = {sp: PhotonPressure(broad_prof, beta_pic) for sp, broad_prof in broadening_profiles.items()}
 
-Temp_atm = [300] *u.K
+Temp_atm = [1] *u.K
 Ncol = [0] * u.cm**(-2)
 d_atom_to_pic = 100 * u.au
 chunk_size = 1

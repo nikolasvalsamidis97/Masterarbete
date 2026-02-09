@@ -1,3 +1,4 @@
+from project_classes.Atom import Atom
 from project_classes.Molecule import Molecule
 from project_func.errors import _not_quantity
 from astropy import constants as const
@@ -8,7 +9,7 @@ from matplotlib import pyplot as plt
 
 class BroadeningProfile:
   
-  def __init__(self, molecule: Molecule, b, N:int, profileType:str = 'Voigt'):
+  def __init__(self, molecule: Atom, b, N:int, profileType:str = 'Voigt'):
     """
     Contains both the broadeing profile and calculates the crossection using the profile
     molecule:    Molecule

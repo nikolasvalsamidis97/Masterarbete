@@ -1,0 +1,55 @@
+Hi Alexis,
+
+I have calibrated the fluxes for the rotated spectra. I only found B and V magnitudes (tycho-2 catalogue) for all of them, thus I only used those 2 magnitudes and the parallax distance. The factor alpha is the one by which you have to multiply the spectrum (10^y, where y is the second column, log F_lambda) to get the value at 1 AU. Files (rotated spectra) are in my strider home directory. The reason why the factor for beta Pic is larger is that the model spectrum (previous version) has a smaller magnitude.
+
+Regards,
+
+Rodrigo.
+
+1) AU Mic
+
+files:
+HRspec_M1V_7.dat
+HRspec_M1V_IR_7.dat
+
+alpha = (1.07 +/- 0.02)*1e-13
+
+2) HD 107146
+
+files:
+HRspec_G2V_4.dat
+HRspec_G2V_IR_4.dat
+
+alpha = (2.31 +/- 0.08)*1e-13
+
+3) TW Hya
+
+files:
+HRspec_K8V_16.dat
+HRspec_K8V_IR_16.dat
+
+alpha = (2.9 +/- 0.6)*1e-13
+
+4) HR 4796
+
+files:
+HRspec_A0V_159.dat
+HRspec_A0V_IR_159.dat
+
+alpha = (6.2 +/- 0.4)*1e-13
+
+5) HD 141569
+
+files:
+HRspec_B95V_257.dat
+HRspec_B95V_IR_257.dat
+
+alpha = (3.3 +/- 0.4)*1e-13
+
+6) beta Pic
+
+files:
+HRspec_A5V_130.dat
+HRspec_A5V_IR_130.dat
+
+alpha = (5.24 +/- 0.08)*1e-5
