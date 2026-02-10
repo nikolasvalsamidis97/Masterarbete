@@ -66,8 +66,8 @@ class Atom:
     spec = df.get('Spectrum')
 
     # Wavelength in nm. If observed wavelength is missing i will use Ritz
-    lam_obs = pd.to_numeric(df['Observed'], errors='coerce')
-    lam_ritz = pd.to_numeric(df['Ritz'], errors='coerce')
+    lam_obs = pd.to_numeric(df['Observed'], errors='coerce').astype(float)
+    lam_ritz = pd.to_numeric(df['Ritz'], errors='coerce').astype(float)
     lam_obs = lam_obs.fillna(lam_ritz)
 
     A_ul = pd.to_numeric(df['Aki'], errors='coerce')

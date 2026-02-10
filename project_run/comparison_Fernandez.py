@@ -12,46 +12,138 @@ import numpy as np
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # This file compares the results from "Braking the gas in the β Pictoris debris disk" (Fernandez et al. 2006) with the results from this code.
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
+beta_values_Fernandez = {
+    "H I": (1.6e-3, 0.1e-3),
+    "He I": (0.0, 0.0),
 
+    "Li I": (900, 40),
+    "Be I": (62, 7),
+    "Be II": (124, 6),
+
+    "B I": (30, 10),
+    "B II": (0.07, 0.04),
+    "B III": (19, 1),
+
+    "C I": (3.3e-2, 0.1e-2),
+    "C II": (2.3e-3, 0.2e-3),
+    "C III": (8.5e-6, 0.9e-6),
+
+    "N I": (2.1e-4, 0.1e-4),
+    "N II": (7.5e-6, 0.5e-6),
+    "N III": (7.0e-6, 1.0e-6),
+
+    "O I": (3.3e-4, 0.2e-4),
+    "O II": (3.1e-9, 0.7e-9),
+    "O III": (6.5e-7, 0.6e-7),
+
+    "F II": (3.5e-6, 0.9e-6),
+    "F III": (5.0e-9, 1.0e-9),
+
+    "Ne III": (9.0e-8, 2.0e-8),
+
+    "Na I": (360, 20),
+
+    "Mg I": (74, 8),
+    "Mg II": (9, 2),
+    "Mg III": (0.0, 0.0),
+
+    "Al I": (53, 6),
+    "Al II": (0.36, 0.05),
+    "Al III": (12, 1),
+
+    "Si I": (6.0, 0.6),
+    "Si II": (9, 9),
+    "Si III": (5.8e-4, 0.6e-4),
+
+    "P I": (3.4, 0.6),
+    "P II": (2.2e-3, 0.3e-3),
+    "P III": (5.0e-4, 2.0e-4),
+
+    "S I": (0.56, 0.09),
+    "S II": (9.0e-5, 1.0e-5),
+    "S III": (2.0e-4, 1.0e-4),
+
+    "Cl I": (2.3e-3, 0.4e-3),
+    "Cl II": (3.7e-7, 0.4e-7),
+    "Cl III": (3.0e-6, 2.0e-6),
+
+    "Ar I": (1.7e-6, 0.3e-6),
+    "Ar III": (1.5e-7, 0.2e-7),
+
+    "K I": (200, 20),
+    "K III": (4.4e-4, 0.2e-4),
+
+    "Ca I": (330, 40),
+    "Ca II": (50, 10),
+
+    "Sc I": (220, 20),
+    # "Sc II": (1.3e3, 0.4e3), --- IGNORE --- (This value seems to be a typo in Fernandez et al. 2006, as it is much higher than the values for Sc I and Sc III. The value for Sc II is likely meant to be 1.3e-3, which would be more consistent with the other values for Sc.)
+    "Sc III": (9.0e-2, 3.0e-2),
+
+    "Ti I": (97, 5),
+    "Ti II": (28, 2),
+    "Ti III": (5.0e-4, 0.1e-4),
+
+    "V I": (72, 4),
+    "V II": (4.4, 0.2),
+
+    "Cr I": (93, 5),
+    "Cr II": (6.0e-7, 3.0e-7),
+    # "Cr III": ... excluded
+
+    "Mn I": (28, 3),
+    "Mn II": (7, 1),
+    # "Mn III": ... excluded
+
+    "Fe I": (27, 2),
+    "Fe II": (5.0, 0.3),
+    "Fe III": (3.0e-7, 0.6e-7),
+
+    "Co I": (16, 1),
+    "Co III": (4.0e-7, 2.0e-7),
+
+    "Ni I": (26, 2),
+    "Ni II": (7.0e-2, 2.0e-2),
+    "Ni III": (3.0e-7, 2.0e-7),
+}
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Creating an atom with line data for Na I. (All available lines from NIST in the range 150-50000 Å)
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
-neutral_atoms_list = [
-  "Na I","Li I","Be I","B I","Mg I","Al I","Si I","Ca I","Sc I","Ti I","V I","Cr I","Mn I","Fe I","Co I","Ni I"
+all_atoms_list = [
+  "H I",
+  "He I","He II",
+  "Li I","Li II","Li III",
+  "Be I","Be II","Be III",
+  "B I","B II","B III",
+  "C I","C II","C III",
+  "N I","N II","N III",
+  "O I","O II","O III",
+  "F I","F II","F III",
+  "Ne I","Ne II","Ne III",
+  "Na I","Na II","Na III",
+  "Mg I","Mg II","Mg III",
+  "Al I","Al II","Al III",
+  "Si I","Si II","Si III",
+  "P I","P II","P III",
+  "S I","S II","S III",
+  "Cl I","Cl II","Cl III",
+  "Ar I","Ar II","Ar III",
+  "K I","K II","K III",
+  "Ca I","Ca II","Ca III",
+  "Sc I","Sc II","Sc III",  # Note: Sc II is included in the atom list, but will be ignored in the comparison with Fernandez et al. 2006 due to the likely typo in their reported beta value for Sc II.
+  "Ti I","Ti II","Ti III",
+  "V I","V II","V III",
+  "Cr I","Cr II", #"Cr III" --- IGNORE ---
+  "Mn I","Mn II", #"Mn III" --- IGNORE ---
+  "Fe I","Fe II", "Fe III",
+  "Co I","Co II", "Co III",
+  "Ni I","Ni II", "Ni III",
 ]
+wav_min = 50 * u.AA
+wav_max = 50000 * u.AA
 
-# neutral_atoms_list = [
-#   "H I",
-#   "He I","He II",
-#   "Li I","Li II","Li III",
-#   "Be I","Be II","Be III",
-#   "B I","B II","B III",
-#   "C I","C II","C III",
-#   "N I","N II","N III",
-#   "O I","O II","O III",
-#   "F I","F II","F III",
-#   "Ne I","Ne II","Ne III",
-#   "Na I","Na II","Na III",
-#   "Mg I","Mg II","Mg III",
-#   "Al I","Al II","Al III",
-#   "Si I","Si II","Si III",
-#   "P I","P II","P III",
-#   "S I","S II","S III",
-#   "Cl I","Cl II","Cl III",
-#   "Ar I","Ar II","Ar III",
-#   "K I","K II","K III",
-#   "Ca I","Ca II","Ca III",
-#   "Sc I","Sc II","Sc III",
-#   "Ti I","Ti II","Ti III",
-#   "V I","V II","V III",
-#   "Cr I","Cr II","Cr III",
-#   "Mn I","Mn II","Mn III",
-#   "Fe I","Fe II","Fe III",
-#   "Co I","Co II","Co III",
-#   "Ni I","Ni II","Ni III",
-# ]
+atoms = {sp: Atom(sp, wav_min, wav_max) for sp in all_atoms_list}
 
-atoms = {sp: Atom(sp, 150 * u.AA, 50000*u.AA) for sp in neutral_atoms_list}
 
 for sp, atom in atoms.items():
   print(f"Number of lines for {sp}: {atom.lam0.shape[0]}")
@@ -109,11 +201,91 @@ d_atom_to_pic = 100 * u.au
 chunk_size = 1
 
 pps = {sp: pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size) for sp, pp in pps_obj.items()}
-for sp, (pp_calc, pp_err, _, _) in pps.items():
-  print(f"{sp}: Photon Pressure = {pp_calc:} ± {pp_err}")  
+# for sp, (pp_calc, pp_err, _, _) in pps.items():
+#   print(f"{sp}: Photon Pressure = {pp_calc:} ± {pp_err}")  
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Calculating the beta values for Na I and comparing with Fernandez et al. 2006
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 beta_vals = {sp: pp.beta_Values(*pps[sp][:2], d_atom_to_pic) for sp, pp in pps_obj.items()}
-for sp, (beta, beta_err) in beta_vals.items():
-  print(f"{sp}: Beta = {beta} ± {beta_err}")
+# for sp, (beta, beta_err) in beta_vals.items():
+#   print(f"{sp}: Beta = {beta} ± {beta_err}")
+
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+# Plotting the beta values and comparing with Fernandez et al. 2006
+# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+
+common = [k for k in beta_values_Fernandez.keys() if k in beta_vals]
+
+my_beta = np.array([beta_vals[k][0].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], dtype=float)
+my_err  = np.array([beta_vals[k][1].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], dtype=float)
+
+fern_beta = np.array([beta_values_Fernandez[k][0] for k in common], dtype=float)
+fern_err  = np.array([beta_values_Fernandez[k][1] for k in common], dtype=float)
+
+plt.figure(figsize=(10, 6))
+
+# Black markers
+plt.errorbar(
+  my_beta, fern_beta,
+  fmt='o', color='black', ms=2,
+  label='Species (x=this work, y=Fernandez)'
+)
+
+# X-error bars (blue)
+plt.errorbar(
+  my_beta, fern_beta,
+  xerr=my_err,
+  fmt='none',
+  ecolor='blue',
+  capsize=3,
+  elinewidth=1
+)
+
+# Y-error bars (red)
+plt.errorbar(
+  my_beta, fern_beta,
+  yerr=fern_err,
+  fmt='none',
+  ecolor='red',
+  capsize=3,
+  elinewidth=1
+)
+
+# Reference line y = x (in DATA space)
+mn = np.nanmin([my_beta.min(), fern_beta.min()])
+mx = np.nanmax([my_beta.max(), fern_beta.max()])
+plt.plot([mn, mx], [mn, mx], 'k--', linewidth=1, label='y = x')
+
+# --- OPTIONAL: sqrt axis scaling (compresses large betas, expands small betas) ---
+# Uncomment this block and comment out the "square" forward/inverse block if you want sqrt-style scaling.
+
+forward = lambda x: np.sqrt(np.clip(np.asarray(x, dtype=float), 0.0, None))
+inverse = lambda u: np.square(np.clip(np.asarray(u, dtype=float), 0.0, None))
+
+# forward = lambda x: np.square(np.clip(np.asarray(x, dtype=float), 0.0, None))
+# inverse = lambda u: np.sqrt(np.clip(np.asarray(u, dtype=float), 0.0, None))
+
+plt.xlim(left=0)
+plt.ylim(bottom=0)
+
+plt.xscale('function', functions=(forward, inverse))
+plt.yscale('function', functions=(forward, inverse))
+
+plt.xlabel(r'$\beta$ (This work)')
+plt.ylabel(r'$\beta$ (Fernandez et al. 2006)')
+plt.legend()
+plt.tight_layout()
+plt.savefig('Plots/beta_comparison.pdf')
+plt.show()
+
+diff = np.abs(my_beta - fern_beta)
+print(f"Mean absolute difference in beta values: {diff}")
+
+for i, sp in enumerate(common):
+    print(
+        f"{sp:<6} | "
+        f"mine: {my_beta[i]:>10.3f} ± {my_err[i]:>10.3f} | "
+        f"Fernandez: {fern_beta[i]:>10.3f} ± {fern_err[i]:>10.3f}"
+    )

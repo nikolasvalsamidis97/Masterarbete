@@ -226,11 +226,11 @@ class PhotonPressure:
       F_line_err_T_chunk = (np.abs(dF_dA)).to(u.N)[:, None, :] * weights[:, :, None]  # (lines, Temp, chunk)
       F_ph_tot_err2[:, j0:j1] = np.nansum(F_line_err_T_chunk**2, axis=0)
 
-      print(f"Chunk {N_chunks} completed")
+      # print(f"Chunk {N_chunks} completed")
 
     F_ph_tot_err = np.sqrt(F_ph_tot_err2)
 
-    print(f"Total photon pressure has been calculated in {N_chunks} chunks")
+    # print(f"Total photon pressure has been calculated in {N_chunks} chunks")
 
     # --- Store only totals on the object ---
     self.F_ph_tot = F_ph_tot
@@ -265,5 +265,5 @@ class PhotonPressure:
     beta = F_ph / F_grav
     beta_err = F_ph_err/F_grav
 
-    print(f"Beta values calculated successfully with the shape: {beta.shape}")
+    # print(f"Beta values calculated successfully with the shape: {beta.shape}")
     return(beta, beta_err)
