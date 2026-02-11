@@ -77,7 +77,7 @@ beta_values_Fernandez = {
     "Ca II": (50, 10),
 
     "Sc I": (220, 20),
-    # "Sc II": (1.3e3, 0.4e3), --- IGNORE --- (This value seems to be a typo in Fernandez et al. 2006, as it is much higher than the values for Sc I and Sc III. The value for Sc II is likely meant to be 1.3e-3, which would be more consistent with the other values for Sc.)
+    "Sc II": (1.3e3, 0.4e3), 
     "Sc III": (9.0e-2, 3.0e-2),
 
     "Ti I": (97, 5),
@@ -130,7 +130,7 @@ all_atoms_list = [
   "Ar I","Ar II","Ar III",
   "K I","K II","K III",
   "Ca I","Ca II","Ca III",
-  "Sc I","Sc II","Sc III",  # Note: Sc II is included in the atom list, but will be ignored in the comparison with Fernandez et al. 2006 due to the likely typo in their reported beta value for Sc II.
+  "Sc I","Sc II","Sc III",
   "Ti I","Ti II","Ti III",
   "V I","V II","V III",
   "Cr I","Cr II", #"Cr III" --- IGNORE ---
@@ -224,68 +224,39 @@ my_err  = np.array([beta_vals[k][1].to_value(u.dimensionless_unscaled).ravel()[0
 fern_beta = np.array([beta_values_Fernandez[k][0] for k in common], dtype=float)
 fern_err  = np.array([beta_values_Fernandez[k][1] for k in common], dtype=float)
 
-plt.figure(figsize=(10, 6))
+fig, ax = plt.subplots(figsize=(7, 7))
 
-# Black markers
-plt.errorbar(
+ax.errorbar(
   my_beta, fern_beta,
-  fmt='o', color='black', ms=2,
+  xerr=my_err, yerr=fern_err,
+  fmt='o', color='black', ecolor='black',
+  ms=2, capsize=3, elinewidth=1, markeredgewidth=0.5,
   label='Species (x=this work, y=Fernandez)'
 )
 
-# X-error bars (blue)
-plt.errorbar(
-  my_beta, fern_beta,
-  xerr=my_err,
-  fmt='none',
-  ecolor='blue',
-  capsize=3,
-  elinewidth=1
-)
+ax.set_xscale('log')
+ax.set_yscale('log')
 
-# Y-error bars (red)
-plt.errorbar(
-  my_beta, fern_beta,
-  yerr=fern_err,
-  fmt='none',
-  ecolor='red',
-  capsize=3,
-  elinewidth=1
-)
+ax.set_xlim(1e-5, 2e3)
+ax.set_ylim(1e-5, 2e3)
 
-# Reference line y = x (in DATA space)
-mn = np.nanmin([my_beta.min(), fern_beta.min()])
-mx = np.nanmax([my_beta.max(), fern_beta.max()])
-plt.plot([mn, mx], [mn, mx], 'k--', linewidth=1, label='y = x')
+# Equality line for log scales
+ax.plot([0, 2000], [0, 2000], 'k--', linewidth=1, label='y = x')
 
-# --- OPTIONAL: sqrt axis scaling (compresses large betas, expands small betas) ---
-# Uncomment this block and comment out the "square" forward/inverse block if you want sqrt-style scaling.
+ax.set_xlabel(r'$\beta$ (This work)', fontsize=12)
+ax.set_ylabel(r'$\beta$ (Fernandez et al. 2006)', fontsize=12)
+ax.tick_params(axis='both', which='major', labelsize=13)
 
-forward = lambda x: np.sqrt(np.clip(np.asarray(x, dtype=float), 0.0, None))
-inverse = lambda u: np.square(np.clip(np.asarray(u, dtype=float), 0.0, None))
-
-# forward = lambda x: np.square(np.clip(np.asarray(x, dtype=float), 0.0, None))
-# inverse = lambda u: np.sqrt(np.clip(np.asarray(u, dtype=float), 0.0, None))
-
-plt.xlim(left=0)
-plt.ylim(bottom=0)
-
-plt.xscale('function', functions=(forward, inverse))
-plt.yscale('function', functions=(forward, inverse))
-
-plt.xlabel(r'$\beta$ (This work)')
-plt.ylabel(r'$\beta$ (Fernandez et al. 2006)')
-plt.legend()
-plt.tight_layout()
-plt.savefig('Plots/beta_comparison.pdf')
+fig.tight_layout()
+fig.savefig('Plots/beta_comparison.pdf')
 plt.show()
 
 diff = np.abs(my_beta - fern_beta)
 print(f"Mean absolute difference in beta values: {diff}")
 
 for i, sp in enumerate(common):
-    print(
-        f"{sp:<6} | "
-        f"mine: {my_beta[i]:>10.3f} ± {my_err[i]:>10.3f} | "
-        f"Fernandez: {fern_beta[i]:>10.3f} ± {fern_err[i]:>10.3f}"
-    )
+  print(
+    f"{sp:<6} | "
+    f"mine: {my_beta[i]:>10.3f} ± {my_err[i]:>10.3f} | "
+    f"Fernandez: {fern_beta[i]:>10.3f} ± {fern_err[i]:>10.3f}"
+  )
