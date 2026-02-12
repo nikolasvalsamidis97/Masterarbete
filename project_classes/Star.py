@@ -66,7 +66,8 @@ class Star:
     lam = tab["WAVELENGTH"].value          #u.AA
     flux = tab['FLUX'].value              #(u.erg/u.s/(u.cm**2)/u.AA)
     flux = flux * (u.erg/u.s/(u.cm**2)/u.AA)
-    lam = self.air_to_vacuum(lam) * u.AA
+    n = self.air_to_vacuum(lam)
+    lam = lam * n * u.AA
 
     mask = np.isfinite(lam) & (lam > 0)
     lam = lam[mask]
@@ -120,7 +121,7 @@ class Star:
     s2 = (1e4/lam_air_A)**2
     n_minus_1 = 1e-8*(8342.13 + 2406030/(130 - s2) + 15997/(38.9 - s2))
     n = 1 + n_minus_1
-    return lam_air_A * n
+    return n
   
   def rot_kernel(self, lam, flux):
     vsini = self.vsini.to_value(u.km/u.s)
@@ -225,9 +226,6 @@ class Star:
 
     Formula to calc k:
     k = 10^(-0.4 (m_target - m_synthetic))
-
-    To compare with observed data use:
-    F_new(lambda) = k * F_old(lambda)
     """
 
     k_vals = {}
@@ -242,6 +240,23 @@ class Star:
     
     k_mean = np.mean(list(k_vals.values()))
 
+    self.old_radius = self.radius
     self.radius = self.radius * np.sqrt(k_mean)
 
     return k_vals, lam_pivots
+
+
+  def convert_from_log10(self, alpha=1, dist_for_spec=1*const.au):
+    # For already rotated, vacuum spectra in log 10 flux units
+    # If scaling (alpha) provided plug in
+    # If distance for calibration provided, plug in to convert to surface flux
+    lam = self.lam_star
+    flux_log10 = self.flux_star_unrot
+    flux = 10**flux_log10.to_value(u.erg/u.s/(u.cm**2)/u.AA) * (u.erg/u.s/(u.cm**2)/u.AA)
+    n = self.air_to_vacuum(lam.to_value(u.AA))   # reverting the vacuum to air wavelengths
+    lam = lam / n
+    self.lam_star = lam
+
+    self.flux_star_unrot = flux * alpha * (dist_for_spec / self.radius)**2  # convert to surface flux
+    self.flux_star_rot = self.flux_star_unrot                    # since already broadened
+    return lam, flux

@@ -1,5 +1,5 @@
 import numpy as np
-from molmass import Formula
+import periodictable as pt
 from astropy import units as u
 from project_func.errors import _not_quantity
 from astroquery.nist import Nist
@@ -20,7 +20,7 @@ class Atom:
     self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
 
     self.data = self.set_Nist_Data(self.species, self.lam_min, self.lam_max, self.A_ul_min)
-    self.mass = Formula(self.species.strip("I")).mass * u.u                          # Removing "I" from the species name for molmass formula parsing. This is because molmass does not recognize the ionization state in the chemical formula.
+    self.mass = pt.elements.symbol(self.species.split()[0]).mass * u.u                          # Removing "I" from the species name for molmass formula parsing. This is because molmass does not recognize the ionization state in the chemical formula.
     self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.E_u, self.E_l, self.J_l, self.fik = self.pandas_to_numpy(self.data)
     self.sig_0, self.sig_0_err = self.calc_central_crossection()
 

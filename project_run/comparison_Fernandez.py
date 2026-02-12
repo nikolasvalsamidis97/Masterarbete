@@ -193,6 +193,11 @@ print(f"Old radius: {r_old.to(u.R_sun):.3f}, New radius: {r_new.to(u.R_sun):.3f}
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Calculating the photon pressure for Na I and comparing with Fernandez et al. 2006
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
+# Uncomment the 3 lines below to fernandez spectra for calculations
+beta_pic = Star('TS/Spectra/bPic1AUSpec.dat', 
+               1.75*const.R_sun.value * u.m, 1.75*const.M_sun.value * u.kg, vsini, epsilon)
+beta_pic.convert_from_log10()
+
 pps_obj = {sp: PhotonPressure(broad_prof, beta_pic) for sp, broad_prof in broadening_profiles.items()}
 
 Temp_atm = [1] *u.K
@@ -201,16 +206,19 @@ d_atom_to_pic = 100 * u.au
 chunk_size = 1
 
 pps = {sp: pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size) for sp, pp in pps_obj.items()}
-# for sp, (pp_calc, pp_err, _, _) in pps.items():
-#   print(f"{sp}: Photon Pressure = {pp_calc:} ± {pp_err}")  
+
+# Include calibration error from Fernandez. Comment for regular error est
+cal = 0.04
+pps_cal = {}
+for sp, (F, Ferr, a, b) in pps.items():
+  Ferr_new = np.sqrt(Ferr**2 + (cal * F)**2)
+  pps_cal[sp] = (F, Ferr_new, a, b)
+pps = pps_cal
+
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Calculating the beta values for Na I and comparing with Fernandez et al. 2006
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 beta_vals = {sp: pp.beta_Values(*pps[sp][:2], d_atom_to_pic) for sp, pp in pps_obj.items()}
-# for sp, (beta, beta_err) in beta_vals.items():
-#   print(f"{sp}: Beta = {beta} ± {beta_err}")
-
-
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Plotting the beta values and comparing with Fernandez et al. 2006
@@ -241,7 +249,7 @@ ax.set_xlim(1e-5, 2e3)
 ax.set_ylim(1e-5, 2e3)
 
 # Equality line for log scales
-ax.plot([0, 2000], [0, 2000], 'k--', linewidth=1, label='y = x')
+ax.plot([0, 2000], [0, 2000], 'k--', linewidth=1, label='y = x', color = "red")
 
 ax.set_xlabel(r'$\beta$ (This work)', fontsize=12)
 ax.set_ylabel(r'$\beta$ (Fernandez et al. 2006)', fontsize=12)
