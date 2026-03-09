@@ -246,7 +246,7 @@ class Star:
     return k_vals, lam_pivots
 
 
-  def convert_from_log10(self, alpha=1, dist_for_spec=1*const.au):
+  def convert_from_log10(self):
     # For already rotated, vacuum spectra in log 10 flux units
     # If scaling (alpha) provided plug in
     # If distance for calibration provided, plug in to convert to surface flux
@@ -257,6 +257,15 @@ class Star:
     lam = lam / n
     self.lam_star = lam
 
-    self.flux_star_unrot = flux * alpha * (dist_for_spec / self.radius)**2  # convert to surface flux
+    self.flux_star_unrot = flux
     self.flux_star_rot = self.flux_star_unrot                    # since already broadened
     return lam, flux
+  
+  def get_mag(self, band: str, distance: u.Quantity, system: str="vegamag", use_rot: bool=True):
+    """
+    band: SVO PhotCalID, e.g. "TYCHO/TYCHO.B/Vega" or "Generic/Johnson.B/Vega"
+    distance: distance to the star
+    system: "vegamag" or "abmag"
+    """
+    m, _ = self.synthetic_mag(band, distance, magsys=system, use_rot=use_rot)
+    return m

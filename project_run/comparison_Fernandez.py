@@ -139,7 +139,7 @@ all_atoms_list = [
   "Co I","Co II", "Co III",
   "Ni I","Ni II", "Ni III",
 ]
-wav_min = 50 * u.AA
+wav_min = 150 * u.AA
 wav_max = 50000 * u.AA
 
 atoms = {sp: Atom(sp, wav_min, wav_max) for sp in all_atoms_list}
@@ -159,10 +159,12 @@ broadening_profiles = {sp: BroadeningProfile(atom, b, Npts, 'Voigt') for sp, ato
 # Creating synthetic star, using the same parameters as in Fernandez et al. 2006 (Teff = 8000 K, logg = 4.0, [Fe/H] = 0.0)
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 vsini = 130 * u.km / u.s
-epsilon = 0.5 * u.dimensionless_unscaled                                                              # As in Fernandez et al. 2006 (e.g., Gray 1976)
+epsilon = 0.5 * u.dimensionless_unscaled
+R0 = 1.75 * const.R_sun
+M0 = 1.75 * const.M_sun                                                         # As in Fernandez et al. 2006 (e.g., Gray 1976)
 beta_pic = Star('TS/models_1770121505/bt-nextgen-agss2009/lte080-4.0-0.0a+0.0.BT-NextGen.7.dat.txt', 
-               1.75*const.R_sun.value * u.m, 1.75*const.M_sun.value * u.kg, vsini, epsilon)
-d_earth_to_pic = 19.3 * u.pc                                                                               # Distance to β Pic
+               R0, M0, vsini, epsilon)
+d_earth_to_pic = 19.3 * u.pc                                                                             # Distance to β Pic
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Calibration made with information from Tycho catalog and Fernandez et al. 2006
@@ -172,6 +174,7 @@ targets_pic = {
     "B": 4.056, "V": 3.870
   },
 }
+
 MAGSYS_pic = {
   "TYCHO": "vegamag",
 }
@@ -190,81 +193,234 @@ k_vals, lam_pivot = beta_pic.scale_factors_from_targets(targets_pic, d_earth_to_
 r_new = beta_pic.radius
 print(f"Old radius: {r_old.to(u.R_sun):.3f}, New radius: {r_new.to(u.R_sun):.3f}")
 
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-# Calculating the photon pressure for Na I and comparing with Fernandez et al. 2006
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-# Uncomment the 3 lines below to fernandez spectra for calculations
-beta_pic = Star('TS/Spectra/bPic1AUSpec.dat', 
-               1.75*const.R_sun.value * u.m, 1.75*const.M_sun.value * u.kg, vsini, epsilon)
-beta_pic.convert_from_log10()
+def compute_beta_arrays(star_obj, broadening_profiles, beta_values_Fernandez,
+                        d_atom_to_pic, include_fluxcal_4pct=False):
+    """Return aligned arrays: my_beta, my_err, fern_beta, fern_err (same species order)."""
+    # Photon pressure objects
+    pps_obj = {sp: PhotonPressure(broad_prof, star_obj) for sp, broad_prof in broadening_profiles.items()}
 
-pps_obj = {sp: PhotonPressure(broad_prof, beta_pic) for sp, broad_prof in broadening_profiles.items()}
+    Temp_atm = [1] * u.K
+    Ncol = [1] * u.cm**(-2)
+    chunk_size = 1
 
-Temp_atm = [1] *u.K
-Ncol = [0] * u.cm**(-2)
-d_atom_to_pic = 100 * u.au
-chunk_size = 1
+    # Photon pressure
+    pps = {sp: pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size)
+           for sp, pp in pps_obj.items()}
 
-pps = {sp: pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size) for sp, pp in pps_obj.items()}
+    # Add 4% flux calibration uncertainty (multiplicative) in quadrature
+    if include_fluxcal_4pct:
+        cal = 0.04
+        pps_cal = {}
+        for sp, (F, Ferr, a, b) in pps.items():
+            Ferr_new = np.sqrt(Ferr**2 + (cal * F)**2)
+            pps_cal[sp] = (F, Ferr_new, a, b)
+        pps = pps_cal
 
-# Include calibration error from Fernandez. Comment for regular error est
-cal = 0.04
-pps_cal = {}
-for sp, (F, Ferr, a, b) in pps.items():
-  Ferr_new = np.sqrt(Ferr**2 + (cal * F)**2)
-  pps_cal[sp] = (F, Ferr_new, a, b)
-pps = pps_cal
+    # Betas
+    beta_vals = {sp: pps_obj[sp].beta_Values(*pps[sp][:2], d_atom_to_pic) for sp in pps_obj.keys()}
 
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-# Calculating the beta values for Na I and comparing with Fernandez et al. 2006
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-beta_vals = {sp: pp.beta_Values(*pps[sp][:2], d_atom_to_pic) for sp, pp in pps_obj.items()}
+    # Align with Fernandez dict
+    common = [k for k in beta_values_Fernandez.keys() if k in beta_vals]
 
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-# Plotting the beta values and comparing with Fernandez et al. 2006
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+    my_beta = np.array([beta_vals[k][0].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], float)
+    my_err  = np.array([beta_vals[k][1].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], float)
 
-common = [k for k in beta_values_Fernandez.keys() if k in beta_vals]
+    fern_beta = np.array([beta_values_Fernandez[k][0] for k in common], float)
+    fern_err  = np.array([beta_values_Fernandez[k][1] for k in common], float)
 
-my_beta = np.array([beta_vals[k][0].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], dtype=float)
-my_err  = np.array([beta_vals[k][1].to_value(u.dimensionless_unscaled).ravel()[0] for k in common], dtype=float)
+    return common, my_beta, my_err, fern_beta, fern_err
 
-fern_beta = np.array([beta_values_Fernandez[k][0] for k in common], dtype=float)
-fern_err  = np.array([beta_values_Fernandez[k][1] for k in common], dtype=float)
 
-fig, ax = plt.subplots(figsize=(7, 7))
+def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, title=None, save_name=None, xlabel=r'$\beta$ (This work)', ylabel=r'$\beta$ (Fernandez et al. 2006)'):
+    fig, ax = plt.subplots(figsize=(7, 7))
 
-ax.errorbar(
-  my_beta, fern_beta,
-  xerr=my_err, yerr=fern_err,
-  fmt='o', color='black', ecolor='black',
-  ms=2, capsize=3, elinewidth=1, markeredgewidth=0.5,
-  label='Species (x=this work, y=Fernandez)'
+    ax.errorbar(
+        my_beta, fern_beta,
+        xerr=my_err, yerr=fern_err,
+        fmt='o', color='black', ecolor='black',
+        ms=2, capsize=3, elinewidth=1, markeredgewidth=0.5,
+    )
+
+    # limits
+    if zoom_beta_gt_1:
+        lo, hi = 1.0, 2e3
+    else:
+        lo, hi = 1e-5, 2e3
+
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+    # y=x line (works for log too)
+    ax.plot([lo, hi], [lo, hi], 'r--', linewidth=1)
+
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.tick_params(axis='both', which='major', labelsize=13)
+
+    if title:
+        ax.set_title(title, fontsize=12)
+
+    fig.tight_layout()
+    if save_name is not None:
+        fig.savefig(f"Plots/{save_name}.pdf")
+    plt.show()
+    return fig, ax
+
+
+# -----------------------------
+# Stars (two cases)
+# -----------------------------
+
+alpha=5.24e-5
+dist_for_spec=1 * const.au
+# fern_radius = 1.75 * const.R_sun
+fern_radius = r_new
+fern_beta_pic = Star('TS/Spectra/HRspec_A5V_130.dat',
+               fern_radius, 1.75*const.M_sun, vsini, epsilon)
+fern_beta_pic.convert_from_log10()
+fern_beta_pic.flux_star_rot = fern_beta_pic.flux_star_unrot * alpha * (dist_for_spec / fern_beta_pic.radius)**2  # convert to surface flux
+
+# -----------------------------
+# Compute arrays for both cases
+# -----------------------------
+d_atom_to_pic = 1 * u.au
+
+# A) Using your BT-NextGen model spectrum (no 4% fluxcal)
+common_A, my_beta_A, my_err_A, fern_beta_A, fern_err_A = compute_beta_arrays(
+    beta_pic, broadening_profiles, beta_values_Fernandez,
+    d_atom_to_pic, include_fluxcal_4pct=False
 )
 
-ax.set_xscale('log')
-ax.set_yscale('log')
+# B) Using Fernandez spectrum + 4% flux calibration uncertainty
+common_B, my_beta_B, my_err_B, fern_beta_B, fern_err_B = compute_beta_arrays(
+    fern_beta_pic, broadening_profiles, beta_values_Fernandez,
+    d_atom_to_pic, include_fluxcal_4pct=True
+)
 
-ax.set_xlim(1e-5, 2e3)
-ax.set_ylim(1e-5, 2e3)
+# -----------------------------
+# Make 4 plots (same style, no legend)
+# -----------------------------
+# 1) Model spectrum, full range
+plot_compare(my_beta_A, my_err_A, fern_beta_A, fern_err_A, zoom_beta_gt_1=False, title="Bt-NextGen model spectrum", save_name="Betacomp/Bt-NextGen")
 
-# Equality line for log scales
-ax.plot([0, 2000], [0, 2000], 'k--', linewidth=1, label='y = x', color = "red")
+# 2) Model spectrum, zoom β>1
+plot_compare(my_beta_A, my_err_A, fern_beta_A, fern_err_A, zoom_beta_gt_1=True, title="Bt-NextGen model spectrum (β>1)", save_name="Betacomp/Bt-NextGen_zoom")
 
-ax.set_xlabel(r'$\beta$ (This work)', fontsize=12)
-ax.set_ylabel(r'$\beta$ (Fernandez et al. 2006)', fontsize=12)
-ax.tick_params(axis='both', which='major', labelsize=13)
+# 3) Fernandez spectrum (+4%), full range
+plot_compare(my_beta_B, my_err_B, fern_beta_B, fern_err_B, zoom_beta_gt_1=False, title="Fernandez spectrum (+4% flux error) ", save_name="Betacomp/Fernandez")
 
-fig.tight_layout()
-fig.savefig('Plots/beta_comparison.pdf')
-plt.show()
+# 4) Fernandez spectrum (+4%), zoom β>1
+plot_compare(my_beta_B, my_err_B, fern_beta_B, fern_err_B, zoom_beta_gt_1=True, title="Fernandez spectrum (+4% flux error, β>1)", save_name="Betacomp/Fernandez_zoom")
 
-diff = np.abs(my_beta - fern_beta)
-print(f"Mean absolute difference in beta values: {diff}")
 
-for i, sp in enumerate(common):
-  print(
-    f"{sp:<6} | "
-    f"mine: {my_beta[i]:>10.3f} ± {my_err[i]:>10.3f} | "
-    f"Fernandez: {fern_beta[i]:>10.3f} ± {fern_err[i]:>10.3f}"
-  )
+# 5) Fernandez vs Model, (+4% flux error)
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=False, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error)", save_name="Betacomp/Bt-NextGen_vs_Fernandez", xlabel=r'$\beta$ (Bt-NextGen)', ylabel=r'$\beta$ (Fernandez spectrum)')
+
+# 5) Fernandez vs Model, (+4% flux error)
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=True, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error, β>1)", save_name="Betacomp/Bt-NextGen_vs_Fernandez_zoom", xlabel=r'$\beta$ (Bt-NextGen)', ylabel=r'$\beta$ (Fernandez spectrum)')
+
+# -----------------------------
+# Paired (stacked) comparison figures (2 + 2 + 2)
+# -----------------------------
+
+def plot_compare_two_cases(
+    my_beta_top, my_err_top, fern_beta_top, fern_err_top,
+    my_beta_bot, my_err_bot, fern_beta_bot, fern_err_bot,
+    zoom_beta_gt_1=False,
+    save_name=None,
+    xlabel=r'$\beta$ (This work)',
+    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+):
+    """
+    Two-panel (vertical) comparison figure with shared axes:
+    """
+
+    # limits
+    if zoom_beta_gt_1:
+        lo, hi = 1.0, 2e3
+    else:
+        lo, hi = 1e-5, 2e3
+
+    fig = plt.figure(figsize=(7, 14))
+    gs = fig.add_gridspec(2, 1, hspace=0)
+
+    ax_top = fig.add_subplot(gs[0, 0])
+    ax_bot = fig.add_subplot(gs[1, 0], sharex=ax_top, sharey=ax_top)
+
+    fig.subplots_adjust(left=0.12, right=0.98, bottom=0.08, top=0.98, hspace=0)
+    
+    def _panel(ax, my_beta, my_err, fern_beta, fern_err, panel_tag):
+        ax.errorbar(
+            my_beta, fern_beta,
+            xerr=my_err, yerr=fern_err,
+            fmt='o', color='black', ecolor='black',
+            ms=2, capsize=3, elinewidth=1, markeredgewidth=0.5,
+        )
+
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+
+        # y=x reference line
+        ax.plot([lo, hi], [lo, hi], 'r--', linewidth=1)
+
+        ax.tick_params(axis='both', which='major', labelsize=13)
+
+        # panel label only
+        ax.text(
+            0.04, 0.94, panel_tag,
+            transform=ax.transAxes,
+            fontsize=12,
+            va='top',
+            ha='left'
+        )
+
+        # force square plotting box
+        ax.set_box_aspect(1)
+
+    _panel(ax_top, my_beta_top, my_err_top, fern_beta_top, fern_err_top, '(a)')
+    _panel(ax_bot, my_beta_bot, my_err_bot, fern_beta_bot, fern_err_bot, '(b)')
+
+    ax_top.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    ax_top.spines['bottom'].set_visible(False)
+    ax_bot.spines['top'].set_visible(True)
+
+    ax_top.set_anchor('S')
+    ax_bot.set_anchor('N')
+
+    # labels: only one x label
+    ax_top.set_xlabel('')
+    ax_top.set_ylabel(ylabel, fontsize=12)
+    ax_bot.set_xlabel(xlabel, fontsize=12)
+    ax_bot.set_ylabel(ylabel, fontsize=12)
+
+    if save_name is not None:
+        fig.savefig(f"Plots/{save_name}.pdf", bbox_inches="tight", pad_inches=0.02)
+
+    plt.show()
+    return fig, (ax_top, ax_bot)
+
+# Paired figure: full range (unzoomed)
+plot_compare_two_cases(
+    my_beta_A, my_err_A, fern_beta_A, fern_err_A,
+    my_beta_B, my_err_B, fern_beta_B, fern_err_B,
+    zoom_beta_gt_1=False,
+    save_name="Betacomp/Validation_pair_full",
+    xlabel=r'$\beta$ (This work)',
+    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+)
+
+# Paired figure: zoom β>1
+plot_compare_two_cases(
+    my_beta_A, my_err_A, fern_beta_A, fern_err_A,
+    my_beta_B, my_err_B, fern_beta_B, fern_err_B,
+    zoom_beta_gt_1=True,
+    save_name="Betacomp/Validation_pair_zoom",
+    xlabel=r'$\beta$ (This work)',
+    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+)

@@ -86,7 +86,6 @@ class PhotonPressure:
 
     tau = sigma[:, :, None] * N[None, None, :]                            # Optical depth τ
     trans = np.exp(-tau)                        # Transmission  T = exp(-τ)
-    absorbtion = 1 - trans                      # Absorbtion    A = 1 - exp(-1)
 
     # tau_err = sigma_err[:, :, None] * N[None, None, :] 
     # trans_err = np.exp(-tau) * tau_err
@@ -190,7 +189,7 @@ class PhotonPressure:
       I_chunk = Flux[:, :, None] * sig[:, :, None] * Trans
 
       # Per-line force for this chunk (lines, chunk)
-      #F_line_chunk = (np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c).to(u.N) # Comment this for new calculations without units
+      # F_line_chunk = (np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c).to(u.N) # Comment this for new calculations without units
       F_line_chunk = ((np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c.to_value(u.m / u.s)) * force_unit).to(u.N)  # Comment this for old calculations with units
 
       # Apply excitation weights -> (lines, Temp, chunk)
