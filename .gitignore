@@ -447,3 +447,4 @@ project_run/Betabictest.py
 project_run/getmagtest.py
 project_run/spectra_comparison.py
 project_run/test.py
+project_run/planet_test.py

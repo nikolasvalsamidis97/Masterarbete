@@ -240,26 +240,28 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def beta_Values(self, F_ph_tot, F_ph_tot_err, distance):
+  def beta_Values(self, F_ph_tot, F_ph_tot_err, mass_body, r):
     """
     Calculates the beta ratio for a given photon pressure
 
     ** Inputs **
     F_ph_tot:               Total photon pressure         [N]         [N_temp, N_col]
     F_ph_tot_err            Error of above value          [N]         - || -
+    mass_body:              Mass of the central gravitating body
+    r:                      Distance from the host to the absorbing species [length]
 
     ** Returns **
     beta:                   Beta values                   [Unitless]  [N_temp, N_col]
     beta_err                Errors in beta                [Unitless]  - || -  
     """
-    mass_star = self.star.mass
+    mass_body = mass_body.to(u.g) if isinstance(mass_body, u.Quantity) else _not_quantity("mass_body")
     mass_species = self.broad_prof.molecule.mass
-    d = distance
+    d = r.to(u.cm) if isinstance(r, u.Quantity) else _not_quantity("r")
     G = const.G.cgs
 
     F_ph = F_ph_tot
     F_ph_err = F_ph_tot_err
-    F_grav = ((G * mass_star * mass_species) / (d)**2).to(u.N)
+    F_grav = ((G * mass_body * mass_species) / (d)**2).to(u.N)
 
     beta = F_ph / F_grav
     beta_err = F_ph_err/F_grav
