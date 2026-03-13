@@ -125,7 +125,7 @@ class PhotonPressure:
     ** Inputs **
     column_density:           Array of column densities                   [cm-2]
     Temp_atm:                 Planetary atmospheric temperature           [K]
-    distance                  Distance between object and its star        [length]
+    distance                  Distance between object and its gravitational source        [length]
 
     ** Returns **
     F_ph_tot:                 Total photon pressure                       [N]           [N_temp, N_col]
@@ -268,3 +268,29 @@ class PhotonPressure:
 
     # print(f"Beta values calculated successfully with the shape: {beta.shape}")
     return(beta, beta_err)
+  
+  def tau_one_height(self, z, Ncol, Temp_atm):
+    """
+    Find the height where tau ~ 1 using the strongest *populated* line-center cross section.
+    """
+
+    z = z.to(u.km) if isinstance(z, u.Quantity) else _not_quantity("z")
+    Ncol = Ncol.to(1 / u.cm**2) if isinstance(Ncol, u.Quantity) else _not_quantity("Ncol")
+    Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+
+    # population weights for each lower level
+    w_line = self.excitation_weights(Temp)[:, 0]   # assuming one temperature
+
+    # line-center cross section for each line
+    sigma_center = self.broad_prof.sigmaArray[:, 0]   # [N_lines]
+
+    # effective cross section = strongest populated line
+    sigma_eff = np.nanmax(sigma_center * w_line)
+
+    # optical depth profile
+    tau_z = (Ncol * sigma_eff).decompose()
+
+    # height where tau is closest to 1
+    idx = np.argmin(np.abs(tau_z.value - 1.0))
+
+    return z[idx], tau_z[idx], tau_z, sigma_eff

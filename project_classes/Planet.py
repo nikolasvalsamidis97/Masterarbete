@@ -4,29 +4,49 @@ from astropy import constants as const
 import numpy as np
 
 class Planet:
-  def __init__(self, radius, mass, distance, T, mu, n0):
+  def __init__(self, radius, mass, T, mu, n0):
     self.radius = radius.to(u.m) if isinstance(radius, u.Quantity) else _not_quantity("radius")
     self.mass = mass.to(u.kg) if isinstance(mass, u.Quantity) else _not_quantity("mass")
-    self.distance = distance.to(u.m) if isinstance(distance, u.Quantity) else _not_quantity("distance")
     self.T = T.to(u.K) if isinstance(T, u.Quantity) else _not_quantity("T")
     self.mu = mu.to(u.dimensionless_unscaled) if isinstance(mu, u.Quantity) else _not_quantity("mu")
     self.n0 = n0.to(1 / u.cm**3) if isinstance(n0, u.Quantity) else _not_quantity("n0")
 
-  def gravity(self):
-    """Surface gravity assuming constant g."""
-    return (const.G * self.mass / self.radius**2).to(u.cm / u.s**2)
+  def gravity(self, z=0 * u.cm):
+    """Gravitational acceleration at height z above the planetary surface."""
+    z = z.to(u.cm) if isinstance(z, u.Quantity) else _not_quantity("z")
+    r = self.radius + z
+    return (const.G * self.mass / r**2).to(u.cm / u.s**2)
 
-  def scale_height(self):
-    """Isothermal scale height."""
+  def scale_height(self, z=0 * u.cm):
+    """Local isothermal scale height at height z."""
+    z = z.to(u.cm) if isinstance(z, u.Quantity) else _not_quantity("z")
     m_particle = self.mu * const.u
-    H = (const.k_B * self.T / (m_particle * self.gravity())).to(u.cm)
+    H = (const.k_B * self.T / (m_particle * self.gravity(z))).to(u.cm)
     return H
 
   def number_density(self, z):
-    """Number density at height z."""
+    """
+    Number density at height z for an isothermal hydrostatic atmosphere
+    with distance-dependent gravity.
+
+    Hydrostatic equation:
+      dP/dr = -rho * G M / r^2
+
+    With constant T and P = n k_B T, this integrates to:
+      n(r) = n0 * exp[-A * (1/Rp - 1/r)]
+
+    where
+      A = mu * m_u * G M / (k_B T)
+      r = Rp + z
+    """
     z = z.to(u.cm) if isinstance(z, u.Quantity) else _not_quantity("z")
-    H = self.scale_height()
-    return (self.n0 * np.exp(-(z / H).decompose().value)).to(1 / u.cm**3)
+
+    r = self.radius + z
+    m_particle = self.mu * const.u
+    A = (m_particle * const.G * self.mass / (const.k_B * self.T)).to(u.cm)
+
+    exponent = (-A * ((1 / self.radius) - (1 / r))).decompose().value
+    return (self.n0 * np.exp(exponent)).to(1 / u.cm**3)
 
   def slant_column_density(self, z):
     """
@@ -57,8 +77,8 @@ class Planet:
     b = Rp + z
 
     # integrate out to several scale heights where density becomes negligible
-    H = self.scale_height()
-    s_max = 10 * H
+    H0 = self.scale_height(z)
+    s_max = 10 * H0
 
     s = np.linspace(-s_max.value, s_max.value, 2000) * s_max.unit
 
