@@ -22,12 +22,6 @@ class PlanetarySystem:
     """
     return (self.distance * (self.planet.mass / self.star.mass)**(1/2)).to(u.cm)
   
-  def max_height_gravity_equal(self):
-    """
-    Maximum atmospheric height before the planet's gravity equals the star's gravity.
-    """
-    return (self.gravity_equal_radius() - self.planet.radius).to(u.cm)
-  
   def hill_radius(self):
     """
     Hill radius of the planet.
@@ -49,6 +43,12 @@ class PlanetarySystem:
     factor = 0.49 * q23 / (0.6 * q23 + np.log(1 + q13))
     return (factor * self.distance).to(u.cm)
 
+  def max_height_gravity_equal(self):
+    """
+    Maximum atmospheric height before the planet's gravity equals the star's gravity.
+    """
+    return (self.gravity_equal_radius() - self.planet.radius).to(u.cm)
+  
   def max_height_hill(self):
     """
     Maximum atmospheric height before reaching the Hill radius.

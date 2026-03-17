@@ -34,56 +34,106 @@ broad = {species: BroadeningProfile(atom, b, Npts, 'Voigt') for species, atom in
 # -- PLANET / ATMOSPHERE CASES -- #
 planet_cases = {
 
-  "Earth_like": {
-    "radius": const.R_earth,
-    "mass": const.M_earth,
-    "distance": 1 * u.AU,
+  # Solar-system reference cases
+  "Earth": {
+    "radius": 1.0 * const.R_earth,
+    "mass": 1.0 * const.M_earth,
     "T": 288 * u.K,
     "mu": 28.97 * u.dimensionless_unscaled,
-    "n0": 2.5e19 / u.cm**3,
+    "P0": 1.0 * u.bar,
   },
 
-  # Hot jupiter HD 209458 b
-  "Hydrogen_atmosphere": {
-    "radius": 1.4 * const.R_jup,
-    "mass": 0.7 * const.M_jup,
-    "distance": 0.05 * u.AU,
+  "Mars": {
+    "radius": 3390 * u.km,
+    "mass": 6.417e23 * u.kg,
+    "T": 210 * u.K,
+    "mu": 43.0 * u.dimensionless_unscaled,
+    "P0": 6.0e-3 * u.bar,
+  },
+
+  "Mercury": {
+    "radius": 2440 * u.km,
+    "mass": 3.301e23 * u.kg,
+    "T": 440 * u.K,
+    "mu": 23.0 * u.dimensionless_unscaled,
+    "P0": 1.0e-9 * u.bar,
+  },
+
+  "Jupiter": {
+    "radius": 69911 * u.km,
+    "mass": 1.898e27 * u.kg,
+    "T": 165 * u.K,
+    "mu": 2.3 * u.dimensionless_unscaled,
+    "P0": 1.0 * u.bar,
+  },
+
+  "Pluto": {
+    "radius": 1188.3 * u.km,
+    "mass": 1.303e22 * u.kg,
+    "T": 44 * u.K,
+    "mu": 28.0 * u.dimensionless_unscaled,
+    "P0": 1.0e-5 * u.bar,
+  },
+
+  # Exoplanet benchmark cases
+  # If the planet radius in unknown we use the transit radius.
+  "HD_209458_b": {
+    "radius": 1.39 * const.R_jup,
+    "mass": 0.73 * const.M_jup,
     "T": 1400 * u.K,
     "mu": 2.3 * u.dimensionless_unscaled,
-    "n0": 1e15 / u.cm**3,
+    "P0": 1.0e-3 * u.bar,
   },
 
-  "Hot_superEarth": {
-    "radius": 1.5 * const.R_earth,
-    "mass": 5 * const.M_earth,
-    "distance": 0.1 * u.AU,
-    "T": 1500 * u.K,
-    "mu": 28.0 * u.dimensionless_unscaled,
-    "n0": 1e14 / u.cm**3,
-  },
-
-  "Mini_neptune": {
-    "radius": 3 * const.R_earth,
-    "mass": 10 * const.M_earth,
-    "distance": 0.05 * u.AU,
-    "T": 1200 * u.K,
+  "WASP_121_b": {
+    "radius": 1.742 * const.R_jup,
+    "mass": 1.17 * const.M_jup,
+    "T": 2350 * u.K,
     "mu": 2.3 * u.dimensionless_unscaled,
-    "n0": 5e14 / u.cm**3,
+    "P0": 1.0e-7 * u.bar,
+  },
+
+  "HAT_P_11_b": {
+    "radius": 4.84 * const.R_earth,
+    "mass": 25.0 * const.M_earth,
+    "T": 880 * u.K,
+    "mu": 2.3 * u.dimensionless_unscaled,
+    "P0": 1.0e-3 * u.bar,
+  },
+
+  "K2_18_b": {
+    "radius": 2.37 * const.R_earth,
+    "mass": 8.92 * const.M_earth,
+    "T": 300 * u.K,
+    "mu": 2.3 * u.dimensionless_unscaled,
+    "P0": 1.0e-5 * u.bar,
+  },
+
+  "55_Cnc_e": {
+    "radius": 1.875 * const.R_earth,
+    "mass": 7.99 * const.M_earth,
+    "T": 2000 * u.K,
+    "mu": 44.0 * u.dimensionless_unscaled,
+    "P0": 1.0e-9 * u.bar,
   },
 
 }
 
-# Create Planet instances for each case exluding "distance" and "z_max" which are not needed for the Planet class
-planets = {
-  case: Planet(
-    params["radius"],
-    params["mass"],
-    params["T"],
-    params["mu"],
-    params["n0"],
-  )
-  for case, params in planet_cases.items()
+planet_sources = {
+  "Earth": "NASA Earth facts / JPL planetary parameters",
+  "Mars": "NASA Mars facts",
+  "Mercury": "NASA Mercury facts",
+  "Jupiter": "NASA Jupiter facts",
+  "Pluto": "NASA Pluto facts",
+  "HD_209458_b": "NASA Exoplanet Catalog",
+  "WASP_121_b": "NASA Exoplanet Catalog",
+  "HAT_P_11_b": "NASA Exoplanet Catalog",
+  "K2_18_b": "NASA Exoplanet Catalog",
+  "55_Cnc_e": "NASA Exoplanet Catalog",
 }
+
+# Create Planet instances for each case
+planets = {planet: Planet(**params) for planet, params in planet_cases.items()}
 # print("Defined planets:", list(planets.keys()))
 # -------------------------------- #
 
@@ -157,47 +207,74 @@ stars = {stype: Star(**params) for stype, params in stellar_models.items()}
 # print("Defined stellar models:", list(stars.keys()))
 # -------------------- #
 
+# -- System cases -- #
+systems = {
+  "Earth-Sun": {"planet": planets["Earth"], "star": stars["G1"], "distance": 1.0 * u.AU},
+  "Mars-Sun": {"planet": planets["Mars"], "star": stars["G1"], "distance": 1.524 * u.AU},
+  "Mercury-Sun": {"planet": planets["Mercury"], "star": stars["G1"], "distance": 0.387 * u.AU},
+  "Jupiter-Sun": {"planet": planets["Jupiter"], "star": stars["G1"], "distance": 5.2 * u.AU},
+  "Pluto-Sun": {"planet": planets["Pluto"], "star": stars["G1"], "distance": 39.0 * u.AU},
+  "HD_209458_b": {"planet": planets["HD_209458_b"], "star": stars["G1"], "distance": 0.04707 * u.AU},
+  "WASP_121_b": {"planet": planets["WASP_121_b"], "star": stars["F0"], "distance": 0.02571 * u.AU},
+  "HAT_P_11_b": {"planet": planets["HAT_P_11_b"], "star": stars["K1"], "distance": 0.05258 * u.AU},
+  "K2_18_b": {"planet": planets["K2_18_b"], "star": stars["M1"], "distance": 0.1429 * u.AU},
+  "55_Cnc_e": {"planet": planets["55_Cnc_e"], "star": stars["G8"], "distance": 0.01544 * u.AU},
+}
 
-def tau_scan_one_star(star, star_name, planet_cases, atom_species, broad, n_z=1000):
-  """
-  For one chosen star:
-  loops over all planets and all atomic species,
-  and returns a list of tau=1 results.
-  """
+planetary_systems = {system: PlanetarySystem(**params) for system, params in systems.items()}
 
+def tau_scan_systems(planetary_systems, atom_species, broad, z_max_type="hill", n_z=10000):
   results = []
 
-  for planet_name, planet in planets.items():
+  for system_name, system in planetary_systems.items():
 
-    planetary_system = PlanetarySystem(
-      planet,
-      star,
-      planet_cases[planet_name]["distance"]
-    )
+    if z_max_type == "grav":
+      z_max = system.max_height_gravity_equal().to(u.km)
+      if z_max <= 0 * u.km:
+        print(f"{system_name}: no valid gravity-dominated atmosphere")
+        continue
+      z = system.z_grid_gravity_equal(n_z=n_z)
 
-    # Height grid set by planet gravity = stellar gravity
-    z = planetary_system.z_grid_gravity_equal(n_z=n_z)
+    elif z_max_type == "hill":
+      z_max = system.max_height_hill().to(u.km)
+      print("System:", system_name, "Hill limit (km):", z_max)
+      if z_max <= 0 * u.km:
+        print(f"{system_name}: no valid Hill-limited atmosphere")
+        continue
+      z = system.z_grid_hill(n_z=n_z)
 
-    # Calculate the slant column density at each height z
+    elif z_max_type == "roche":
+      z_max = system.max_height_roche().to(u.km)
+      if z_max <= 0 * u.km:
+        print(f"{system_name}: no valid Roche-limited atmosphere")
+        continue
+      z = system.z_grid_roche(n_z=n_z)
+
+    else:
+      raise ValueError("z_max_type must be 'grav', 'hill', or 'roche'")
+
+    z = system.z_grid_gravity_equal(n_z=n_z)
+
     Ncol_z = np.array([
-      planet.slant_column_density(zi).to_value(1 / u.cm**2) for zi in z
+      system.planet.slant_column_density(zi).to_value(1 / u.cm**2) for zi in z
     ]) / u.cm**2
 
-    # Create PhotonPressure instance for each species and calculate tau=1 height
     for species in atom_species:
 
-      pp = PhotonPressure(broad[species], star)
+      pp = PhotonPressure(broad[species], system.star)
 
       z_tau1, tau_val, tau_z, sigma_eff = pp.tau_one_height(
         z,
         Ncol_z,
-        planet_cases[planet_name]["T"]
+        system.planet.T
       )
 
+      if tau_z[-1] > 1:
+        print(f"{system_name}, {species}: tau=1 not reached before gravity-equal limit")
+        continue
+
       results.append({
-        "star": star_name,
-        "planet": planet_name,
-        "distance_AU": planet_cases[planet_name]["distance"].to_value(u.AU),
+        "system": system_name,
         "species": species,
         "z_tau1_km": z_tau1.to_value(u.km),
         "tau_val": tau_val.value,
@@ -206,23 +283,16 @@ def tau_scan_one_star(star, star_name, planet_cases, atom_species, broad, n_z=10
 
   return results
 
-results_g4 = tau_scan_one_star(
-  stars["G4"],
-  "G4",
-  planet_cases,
-  atom_species,
-  broad,
-  n_z=10000
-)
+results_tau = tau_scan_systems(planetary_systems, atom_species, broad, n_z=10000)
 
-print("\n--- Full tau=1 results: G4 for all planets and all species ---\n")
+print("\n--- Full tau=1 results for planetary systems ---\n")
 
-for row in results_g4:
+for row in results_tau:
   print(
-    f"{row['star']:>3s} | "
-    f"{row['planet']:>18s} | "
+    f"{row['system']:>18s} | "
     f"{row['species']:>6s} | "
-    f"z_tau1 = {row['z_tau1_km'].round(1)} km | "
-    f"tau = {row['tau_val'].round(1)} | "
+    f"z_tau1 = {row['z_tau1_km']:.1f} km | "
+    f"tau = {row['tau_val']:.1f} | "
     f"sigma_eff = {row['sigma_eff_cm2']:.6e} cm2"
   )
+

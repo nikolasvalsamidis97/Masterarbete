@@ -4,12 +4,13 @@ from astropy import constants as const
 import numpy as np
 
 class Planet:
-  def __init__(self, radius, mass, T, mu, n0):
+  def __init__(self, radius, mass, T, mu, P0):
     self.radius = radius.to(u.m) if isinstance(radius, u.Quantity) else _not_quantity("radius")
     self.mass = mass.to(u.kg) if isinstance(mass, u.Quantity) else _not_quantity("mass")
     self.T = T.to(u.K) if isinstance(T, u.Quantity) else _not_quantity("T")
     self.mu = mu.to(u.dimensionless_unscaled) if isinstance(mu, u.Quantity) else _not_quantity("mu")
-    self.n0 = n0.to(1 / u.cm**3) if isinstance(n0, u.Quantity) else _not_quantity("n0")
+    self.P0 = P0.to(u.Pa) if isinstance(P0, u.Quantity) else _not_quantity("P0")
+    self.n0 = (self.P0 / (const.k_B * self.T)).to(1 / u.m**3)
 
   def gravity(self, z=0 * u.cm):
     """Gravitational acceleration at height z above the planetary surface."""

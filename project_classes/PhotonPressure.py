@@ -279,16 +279,16 @@ class PhotonPressure:
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
 
     # population weights for each lower level
-    w_line = self.excitation_weights(Temp)[:, 0]   # assuming one temperature
+    w_line = self.excitation_weights(Temp)[:, 0]    # Important! Otherwise it may choose a strong line which is unpopulated
 
     # line-center cross section for each line
     sigma_center = self.broad_prof.sigmaArray[:, 0]   # [N_lines]
 
     # effective cross section = strongest populated line
-    sigma_eff = np.nanmax(sigma_center * w_line)
+    sigma_eff = np.nanmax(sigma_center * w_line)    # Which populated line is the strongest absorber? This is used to approximate τ = Ncol * σ_eff
 
     # optical depth profile
-    tau_z = (Ncol * sigma_eff).decompose()
+    tau_z = (Ncol * sigma_eff).decompose()          # optical depth at each height, using the effective cross section
 
     # height where tau is closest to 1
     idx = np.argmin(np.abs(tau_z.value - 1.0))
