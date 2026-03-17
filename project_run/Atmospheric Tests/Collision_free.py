@@ -11,6 +11,8 @@ from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Planet import Planet
 from project_classes.Star import Star
 from project_classes.PlanetarySystem import PlanetarySystem
+import os
+import pandas as pd
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
@@ -243,6 +245,184 @@ systems = {
   "K2_18_b": {"planet": planets["K2_18_b"], "star": stars["M1"], "distance": 0.1429 * u.AU},
   "55_Cnc_e": {"planet": planets["55_Cnc_e"], "star": stars["G8"], "distance": 0.01544 * u.AU},
 }
+
 planetary_systems = {name: PlanetarySystem(**params) for name, params in systems.items()}
 # print("Defined planetary systems:", list(planetary_systems.keys()))
-# -------------------- #  
+# -------------------- #
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+# Collision-free height for neutral atoms
+# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+
+# Approximate neutral atomic radii for hard-sphere collision estimates
+# Values are representative atomic radii in Angstrom.
+atomic_radii = {
+  "H I": 1.20 * u.AA,
+  "He I": 1.43 * u.AA,
+  "Li I": 2.12 * u.AA,
+  "Be I": 1.98 * u.AA,
+  "B I": 1.91 * u.AA,
+  "C I": 1.77 * u.AA,
+  "N I": 1.66 * u.AA,
+  "O I": 1.50 * u.AA,
+  "F I": 1.46 * u.AA,
+  "Ne I": 1.58 * u.AA,
+  "Na I": 2.50 * u.AA,
+  "Mg I": 2.51 * u.AA,
+  "Al I": 2.25 * u.AA,
+  "Si I": 2.19 * u.AA,
+  "P I": 1.90 * u.AA,
+  "S I": 1.89 * u.AA,
+  "Cl I": 1.82 * u.AA,
+  "Ar I": 1.83 * u.AA,
+  "K I": 2.73 * u.AA,
+  "Ca I": 2.62 * u.AA,
+  "Sc I": 2.58 * u.AA,
+  "Ti I": 2.46 * u.AA,
+  "V I": 2.42 * u.AA,
+  "Cr I": 2.45 * u.AA,
+  "Mn I": 2.45 * u.AA,
+  "Fe I": 2.44 * u.AA,
+}
+
+def neutral_species_only(composition):
+  """
+  Keep only neutral species
+  """
+  return {
+    species: frac
+    for species, frac in composition.items()
+    if species.endswith(" I")
+  }
+
+def collision_cross_section(species_1, species_2):
+  """
+  Hard-sphere collision cross section:
+    sigma_ij = pi (r_i + r_j)^2
+  """
+  r1 = atomic_radii[species_1].to(u.cm)
+  r2 = atomic_radii[species_2].to(u.cm)
+  return (np.pi * (r1 + r2)**2).to(u.cm**2)
+
+def calc_collision_free_height(system_name, n_z=10000, z_max_type="hill"):
+  """
+  For one system, calculate the height where each neutral species becomes collision free.
+
+  Collision-free condition is taken as mean free path ~ local scale height:
+    lambda_mfp(z) = H(z)
+
+  with
+    lambda_mfp = 1 / sum_j [ n_j(z) * sigma_ij ]
+  using only neutral atmospheric species.
+  """
+  system = planetary_systems[system_name]
+  planet_key = next(name for name, planet_obj in planets.items() if planet_obj is system.planet)
+
+  composition = neutral_species_only(planet_cases[planet_key]["composition"])
+
+  if z_max_type == "grav":
+    z_max = system.max_height_gravity_equal().to(u.km)
+    if z_max <= 0 * u.km:
+      print(f"{system_name}: no valid gravity-dominated atmosphere")
+      return []
+    z = system.z_grid_gravity_equal(n_z=n_z)
+
+  elif z_max_type == "hill":
+    z_max = system.max_height_hill().to(u.km)
+    if z_max <= 0 * u.km:
+      print(f"{system_name}: no valid Hill-limited atmosphere")
+      return []
+    z = system.z_grid_hill(n_z=n_z)
+
+  elif z_max_type == "roche":
+    z_max = system.max_height_roche().to(u.km)
+    if z_max <= 0 * u.km:
+      print(f"{system_name}: no valid Roche-limited atmosphere")
+      return []
+    z = system.z_grid_roche(n_z=n_z)
+
+  else:
+    raise ValueError("z_max_type must be 'grav', 'hill', or 'roche'")
+
+  n_total = np.array([
+    system.planet.number_density(zi).to_value(1 / u.cm**3) for zi in z
+  ]) / u.cm**3
+
+  H_local = np.array([
+    system.planet.scale_height(zi).to_value(u.cm) for zi in z
+  ]) * u.cm
+
+  results = []
+
+  for species_i, frac_i in composition.items():
+    collision_rate = np.zeros_like(n_total.value) / u.cm
+
+    for species_j, frac_j in composition.items():
+      sigma_ij = collision_cross_section(species_i, species_j)
+      n_j = frac_j * n_total
+      collision_rate += n_j * sigma_ij
+
+    lambda_mfp = (1 / collision_rate).to(u.cm)
+    knudsen = (lambda_mfp / H_local).decompose()
+
+    idx = np.argmin(np.abs(knudsen.value - 1.0))
+
+    results.append({
+      "system_name": system_name,
+      "species": species_i,
+      "z": z,
+      "lambda_mfp": lambda_mfp,
+      "H_local": H_local,
+      "knudsen": knudsen,
+      "z_collision_free": z[idx].to(u.km),
+      "knudsen_at_height": knudsen[idx],
+      "lambda_mfp_at_height": lambda_mfp[idx].to(u.cm),
+    })
+
+  return results
+
+def print_collision_free_results(results):
+  print("\n--- Collision-free heights for neutral atoms ---\n")
+  for row in results:
+    print(
+      f"{row['system_name']:>18s} | "
+      f"{row['species']:>4s} | "
+      f"z_cf = {row['z_collision_free'].to_value(u.km):.1f} km | "
+      f"Kn = {row['knudsen_at_height'].value:.3f}  | "
+      rf"$\lambda$ = {row['lambda_mfp'].value:.2e} cm | "
+    )
+
+collision_results = []
+
+for system_name in planetary_systems.keys():
+  results = calc_collision_free_height(system_name, n_z=10000, z_max_type="hill")
+  collision_results.extend(results)
+
+# Create table data
+rows = []
+for result in collision_results:
+  rows.append({
+    "system": result["system_name"],
+    "species": result["species"],
+    "z_collision_free_km": result["z_collision_free"].to_value(u.km),
+    "knudsen": result["knudsen_at_height"].value,
+    "lambda_mfp_km": result["lambda_mfp_at_height"].to_value(u.km),
+  })
+
+df = pd.DataFrame(rows)
+# Sort by system, then by collision-free height
+df = df.sort_values(["system", "z_collision_free_km"])
+
+# Round values
+df["z_collision_free_km"] = df["z_collision_free_km"].round(0).astype(int)
+df["knudsen"] = df["knudsen"].round(2)
+df["lambda_mfp_km"] = df["lambda_mfp_km"].round(0).astype(int)
+# Create directory if it doesn't exist
+output_dir = "Tables/Atmospheric test"
+os.makedirs(output_dir, exist_ok=True)
+
+# Save file
+output_path = os.path.join(output_dir, "collision_free_table_system.csv")
+df.to_csv(output_path, index=False)
+
+print(f"\nSaved table to: {output_path}")
