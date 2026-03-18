@@ -2,6 +2,7 @@ import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
+import os
 from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
@@ -101,7 +102,7 @@ planet_cases = {
     "T": 2350 * u.K,
     "mu": 2.3 * u.dimensionless_unscaled,
     "P0": 1.0e-7 * u.bar,
-    "composition": {"H I": 0.9, "He I": 0.1, "O I": 5e-4, "Na I": 5e-6, "K I": 5e-7},
+    "composition": {"H I": 0.88, "He I": 0.09, "He II": 0.01, "O I": 0.015, "O II": 0.003, "Na I": 1.5e-3, "Na II": 3.5e-4, "K I": 1.2e-4, "K II": 3.0e-5},
   },
 
   "HAT_P_11_b": {
@@ -128,7 +129,7 @@ planet_cases = {
     "T": 2000 * u.K,
     "mu": 44.0 * u.dimensionless_unscaled,
     "P0": 1.0e-3 * u.bar,
-    "composition": {"O I": 0.6, "N I": 0.2, "Na I": 0.1, "K I": 0.1},
+    "composition": {"O I": 0.50, "O II": 0.15, "N I": 0.18, "N II": 0.02, "Na I": 0.08, "Na II": 0.02, "K I": 0.04, "K II": 0.01},
   },
 
 }
@@ -292,7 +293,7 @@ def calc_beta_vs_height(system_name, n_z=10000, z_max_type="hill"):
 
   return beta_results
 
-def plot_beta_vs_height(beta_results):
+def plot_beta_vs_height(beta_results, save_path=None):
 
   fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -311,31 +312,50 @@ def plot_beta_vs_height(beta_results):
     beta_y = beta[0].to_value(u.dimensionless_unscaled)
     beta_yerr = beta_err[0].to_value(u.dimensionless_unscaled)
 
-    ax.plot(z_km, beta_y, linewidth=1.5, label=beta_result["species"])
+    ax.plot(z_km, beta_y, linewidth=0.8, label=beta_result["species"])
 
-    ax.fill_between(
-      z_km,
-      np.maximum(beta_y - beta_yerr, 1e-300),
-      beta_y + beta_yerr,
-      alpha=0.15,
-      linewidth=0
-    )
+    # ax.fill_between(
+    #   z_km,
+    #   np.maximum(beta_y - beta_yerr, 1e-300),
+    #   beta_y + beta_yerr,
+    #   alpha=0.12,
+    #   linewidth=0
+    # )
 
-  ax.axvline(z_max_grav, linestyle='--', linewidth=1.5, label="Planet = Star gravity")
-  ax.axvline(z_max_roche, linestyle='-.', linewidth=1.5, label="Roche-lobe limit")
-  ax.axvline(z_max_hill, linestyle=':', linewidth=1.5, label="Hill radius")
+  ax.axvline(z_max_grav, linestyle='--', linewidth=1, label="Planet = Star gravity")
+  ax.axvline(z_max_roche, linestyle='-.', linewidth=1, label="Roche-lobe limit")
+  # ax.axvline(z_max_hill, linestyle=':', linewidth=1.5, label="Hill radius")
+  ax.axhline(1.0, linestyle='-', color='gray', linewidth=1, label=r"$\beta = 1$")
 
+  ax.set_xlim(z_km[0], z_max_hill)
   ax.set_xscale("log")
   ax.set_yscale("log")
   ax.set_xlabel("Height [km]")
   ax.set_ylabel(r"$\beta$")
   ax.set_title(f"Beta vs height | {beta_results[0]['system_name']}")
 
-  ax.legend()
+  ax.legend(fontsize=8, ncol=2)
   fig.tight_layout()
-  plt.show()
 
-beta_results = calc_beta_vs_height("Earth-Sun", n_z=10000)
-plot_beta_vs_height(beta_results)
+  if save_path is not None:
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
+
+# New function to save plots for all systems
+def save_beta_plots_all_systems(system_names=None, n_z=10000, z_max_type="hill"):
+
+  output_dir = "Plots/Atmospheric test/Beta_vs_height_system"
+  os.makedirs(output_dir, exist_ok=True)
+
+  if system_names is None:
+    system_names = list(planetary_systems.keys())
+
+  for system_name in system_names:
+    beta_results = calc_beta_vs_height(system_name, n_z=n_z, z_max_type=z_max_type)
+    save_path = os.path.join(output_dir, f"{system_name}_beta_vs_height.pdf")
+    plot_beta_vs_height(beta_results, save_path=save_path)
+    print(f"Saved plot: {save_path}")
+
+save_beta_plots_all_systems(n_z=10000, z_max_type="hill")
 
 # ----------------------------------------# 
