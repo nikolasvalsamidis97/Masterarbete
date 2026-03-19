@@ -111,7 +111,7 @@
          offset="0.45217392"
          id="stop3" />
       <stop
-         style="stop-color:#e19911;stop-opacity:0;"
+         style="stop-color:#11e14b;stop-opacity:0;"
          offset="1"
          id="stop4" />
     </linearGradient>
@@ -142,7 +142,7 @@
        cy="148.5"
        r="80" />
     <circle
-       style="display:inline;fill:#67a800;fill-opacity:1;stroke:#000000;stroke-width:0.264999;stroke-dasharray:0.53, 0.264999;stroke-opacity:0.00362321"
+       style="display:inline;fill:#a17c07;fill-opacity:1;stroke:#000000;stroke-width:0.264999;stroke-dasharray:0.53, 0.264999;stroke-opacity:0.00362321"
        id="path4"
        cx="105"
        cy="148.5"

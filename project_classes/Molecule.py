@@ -7,27 +7,18 @@ from radis.api.exomolapi import MdbExomol, get_exomol_full_isotope_name
 import numpy as np
 
 class Molecule:
-  def __init__(self, species: "str", lam_min, lam_max, A_ul_min, path: str, database: str, localdatabase: str):
+  def __init__(self, species: "str", lam_min, lam_max, A_ul_min):
       self.species = species
       self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
       self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
       self.wavenum_min = (1 / self.lam_max).to(u.cm**-1)
       self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
       self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
-      self.path = path
-      self.database = database
-      self.localdatabase = localdatabase
-
-      self.data = self.fetch_exomol()
       self.mass = Formula(self.species).mass * u.u
-
-      self.i_upper, self.i_lower, self.A_ul, self.A_ul_err, self.lam0, self.g_u, self.g_l, self.j_l, self.j_u = self.pandas_to_numpy()
-      
-
-      self.A_ul_err = np.zeros_like(self.A_ul) * u.s**-1
+      self.data = None
 
 
-  def fetch_exomol(self):
+  def fetch_exomol(self, path, database, localdatabase):
       """
       Fetches data from ExoMol database using the radis package. The data is filtered according to the input parameters and stored in a pandas dataframe.
 
@@ -35,14 +26,13 @@ class Molecule:
       data:         
       """
 
-      path = self.path
       nurange = [self.wavenum_min.value, self.wavenum_max.value]
 
       mdb = MdbExomol(
           path=path,
           molecule=self.species,
-          database=self.database,
-          local_databases=self.localdatabase,  # folder where it will download/cache
+          database=database,
+          local_databases=localdatabase,  # folder where it will download/cache
           nurange=nurange,
           engine="pytables",              # easiest for pandas workflow
           skip_optional_data=True,
@@ -65,6 +55,8 @@ class Molecule:
       gmap = dict(zip(states["i"], states["g"]))
       df["glower"] = df["i_lower"].map(gmap)
 
+      self.data = df
+
       return df
 
   def pandas_to_numpy(self):
@@ -82,5 +74,16 @@ class Molecule:
       j_l = pd.to_numeric(self.data["jlower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
       j_u = pd.to_numeric(self.data["jupper"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
 
+      self.data_numpy = {
+          "i_upper": i_upper,
+          "i_lower": i_lower,
+          "A_ul": A_ul,
+          "A_ul_err": A_ul_err,
+          "lam0": lam0,
+          "g_u": g_u,
+          "g_l": g_l,
+          "j_l": j_l,
+          "j_u": j_u
+      }
+
       return i_upper, i_lower, A_ul, A_ul_err, lam0, g_u, g_l, j_l, j_u
-      
