@@ -5,6 +5,8 @@ import pandas as pd
 from radis.io.exomol import fetch_exomol
 from radis.api.exomolapi import MdbExomol, get_exomol_full_isotope_name
 import numpy as np
+from radis import SpectrumFactory
+from radis.io.hitran import fetch_hitran
 
 class Molecule:
   def __init__(self, species: "str", lam_min, lam_max, A_ul_min):
@@ -42,7 +44,7 @@ class Molecule:
       mgr = mdb.get_datafile_manager()
       local_files = [mgr.cache_file(f) for f in mdb.trans_file]
 
-      cols = ["i_upper","i_lower","A","nu_lines","elower","gup","jlower","jupper","Sij0"]
+      cols = ["A", "nu_lines", "elower", "gup", "i_lower"]  # A_ul, wavenumber, lower state energy, upper state degeneracy, lower state index
       df = mdb.load(
           local_files,
           columns=cols,
@@ -59,31 +61,59 @@ class Molecule:
 
       return df
 
+  
+  def fetch_hitran(self, molecule_name, isotope=1):
+    """
+    Fetch line-by-line data from HITRAN
+    """
+
+    df = fetch_hitran(
+      molecule=molecule_name,
+      isotope=str(isotope),
+      load_wavenum_min=float(self.wavenum_min.value),
+      load_wavenum_max=float(self.wavenum_max.value),
+      columns=None,
+      cache=True,
+      output="pandas",
+    )
+
+    print(df.columns)
+
+    df = df.rename(columns={
+      "A": "A",
+      "wav": "nu_lines",
+      "El": "elower",
+      "gp": "gup",
+      "gpp": "glower",
+    })
+    df = df[["A", "nu_lines", "elower", "gup", "glower"]].copy()
+
+    self.data = df
+    return df
+
   def pandas_to_numpy(self):
-      """
-      Numpy arrays with dimensions (N_lines, None) ex. (16,)
-      """
-      i_upper = pd.to_numeric(self.data['i_upper']).to_numpy().reshape(-1, 1)
-      i_lower = pd.to_numeric(self.data['i_lower']).to_numpy().reshape(-1, 1)
-      A_ul = pd.to_numeric(self.data['A']).to_numpy().reshape(-1, 1) / u.s
-      A_ul_err = np.zeros_like(A_ul) * u.s**-1
-      wav_cm1 = pd.to_numeric(self.data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
-      lam0 = (1 / wav_cm1).to(u.AA)
-      g_u = pd.to_numeric(self.data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-      g_l = pd.to_numeric(self.data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-      j_l = pd.to_numeric(self.data["jlower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-      j_u = pd.to_numeric(self.data["jupper"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    """
+    Minimal numpy arrays needed for the molecular opacity pipeline.
+    """
+    A_ul = pd.to_numeric(self.data["A"]).to_numpy().reshape(-1, 1) / u.s
+    A_ul_err = np.zeros_like(A_ul.value) / u.s
 
-      self.data_numpy = {
-          "i_upper": i_upper,
-          "i_lower": i_lower,
-          "A_ul": A_ul,
-          "A_ul_err": A_ul_err,
-          "lam0": lam0,
-          "g_u": g_u,
-          "g_l": g_l,
-          "j_l": j_l,
-          "j_u": j_u
-      }
+    wav_cm1 = pd.to_numeric(self.data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
+    lam0 = (1 / wav_cm1).to(u.AA)
 
-      return i_upper, i_lower, A_ul, A_ul_err, lam0, g_u, g_l, j_l, j_u
+    E_l = pd.to_numeric(self.data["elower"]).to_numpy().reshape(-1, 1) / u.cm
+    E_l = E_l.to(u.eV, equivalencies=u.spectral())
+
+    g_u = pd.to_numeric(self.data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    g_l = pd.to_numeric(self.data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+
+    self.data_numpy = {
+        "A_ul": A_ul,
+        "A_ul_err": A_ul_err,
+        "lam0": lam0,
+        "E_l": E_l,
+        "g_u": g_u,
+        "g_l": g_l,
+    }
+
+    return A_ul, A_ul_err, lam0, E_l, g_u, g_l

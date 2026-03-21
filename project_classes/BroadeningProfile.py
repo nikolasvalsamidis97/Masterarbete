@@ -1,5 +1,4 @@
 from project_classes.Atom import Atom
-from project_classes.Molecule import Molecule
 from project_func.errors import _not_quantity
 from astropy import constants as const
 from astropy import units as u
