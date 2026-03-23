@@ -9,8 +9,8 @@ from project_classes.Star import Star
 
 class PlanetarySystem:
   def __init__(self, planet: Planet, star: Star, distance, eccentricity=0 * u.dimensionless_unscaled):
-    self.planet = planet if isinstance(planet, Planet) else _not_quantity("planet")
-    self.star = star if isinstance(star, Star) else _not_quantity("star")
+    self.planet = planet
+    self.star = star
     self.distance = distance.to(u.cm) if isinstance(distance, u.Quantity) else _not_quantity("distance")
     self.eccentricity = eccentricity.to(u.dimensionless_unscaled) if isinstance(eccentricity, u.Quantity) else _not_quantity("eccentricity")
 

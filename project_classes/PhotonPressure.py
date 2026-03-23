@@ -1,5 +1,6 @@
-from project_classes import BroadeningProfile
-from project_classes import Star
+from project_classes.BroadeningProfile import BroadeningProfile
+from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
+from project_classes.Star import Star
 from project_func.errors import _not_quantity
 from astropy import units as u
 from astropy import constants as const
@@ -9,28 +10,53 @@ import numpy as np
 
 class PhotonPressure:
   
-  def __init__(self, broadeing_profile: BroadeningProfile, star: Star):
+  def __init__(self, broadeing_profile: BroadeningProfile | BroadeningProfileMolecule, star: Star):
     """
     Creates a photon pressure object for a Star object
+    Molecules run by full crossection spectrum
+    Atoms run for line by line
     """
 
     self.broad_prof = broadeing_profile
-    self.lam_sym = broadeing_profile.lam_sym
-    self.crossection_sym = broadeing_profile.sigmaArray_sym
-    self.crossection_err_sym = broadeing_profile.sigmaArray_sym_err
-    
     self.star = star
     self.flux_star = star.flux_star_rot
     self.lam_star = star.lam_star
-    self.flux_star_interp = self.get_interp_Spectra()
-    self.lam_star_interp  = self.lam_sym
+
+    if hasattr(broadeing_profile, "sigma_total"):
+      self.mode = "molecule"
+
+      self.lam_grid = broadeing_profile.lam_grid
+      self.sigma_total = broadeing_profile.sigmaArray
+      self.sigma_total_err = broadeing_profile.sigmaArray_err
+
+      self.lam_sym = None
+      self.crossection_sym = None
+      self.crossection_err_sym = None
+      self.flux_star_interp = None
+      self.lam_star_interp = None
+
+      self.E_l = broadeing_profile.E_l
+      self.g_l = broadeing_profile.g_l
+
+    else:
+      self.mode = "atom"
+
+      self.broad_prof = broadeing_profile
+      self.lam_sym = broadeing_profile.lam_sym
+      self.crossection_sym = broadeing_profile.sigmaArray_sym
+      self.crossection_err_sym = broadeing_profile.sigmaArray_sym_err
+      
+      self.star = star
+      self.flux_star = star.flux_star_rot
+      self.lam_star = star.lam_star
+      self.flux_star_interp = self.get_interp_Spectra()
+      self.lam_star_interp = self.lam_sym
+
+      self.E_l = broadeing_profile.molecule.E_l
+      self.g_l = broadeing_profile.molecule.g_l
 
     self.F_ph_tot, self.F_ph_tot_err, self.F_ph_perline, self.F_ph_perline_err = None, None, None, None
-
-    self.E_l = broadeing_profile.molecule.E_l
-    self.g_l = broadeing_profile.molecule.g_l
-    self.J_l = broadeing_profile.molecule.J_l
-    self.fik = broadeing_profile.molecule.fik
+  
 
   def get_interp_Spectra(self):
     """
@@ -52,7 +78,23 @@ class PhotonPressure:
 
     return F_star_interp
   
+  def get_interp_Spectra_molecule(self):
+    """
+    Interpolates the stellar spectrum onto the shared molecular wavelength grid.
+    """
+    lam_grid = self.lam_grid.to_value(u.AA)
+    lam_star = self.lam_star.to_value(u.AA)
+    flux_star = self.flux_star.to_value(self.flux_star.unit)
+
+    F_star_interp = np.interp(lam_grid, lam_star, flux_star)
+    F_star_interp *= self.flux_star.unit
+
+    return F_star_interp
+  
   def plot_interp_Spectra(self, line: int):
+    if self.mode != "atom":
+      raise ValueError("plot_interp_Spectra(line) is only available for atom mode")
+
     lam0 = self.broad_prof.molecule.lam0[line,0]
     lam = self.lam_sym
     flux = self.flux_star
@@ -92,6 +134,21 @@ class PhotonPressure:
     trans_err = None
     
     return trans, trans_err 
+
+  def transmission_molecule(self, column_density, sigma_total=None):
+    """
+    Transmission on the shared molecular wavelength grid.
+    """
+    N = np.atleast_1d(column_density.to(u.cm**-2))
+
+    sigma = self.sigma_total if sigma_total is None else sigma_total
+    sigma = sigma.to(u.cm**2)
+
+    tau = sigma[:, None] * N[None, :]
+    trans = np.exp(-tau)
+    trans_err = None
+
+    return trans, trans_err
   
   def excitation_weights(self, Temp_atm):
     kb_eV = const.k_B.to(u.eV/u.K)
@@ -134,6 +191,8 @@ class PhotonPressure:
     F_ph_perline_err          Error per line                              [N]           - || -
 
     """
+    if self.mode == "molecule":
+      return self.calc_PhotonPressure_molecule(column_density, Temp_atm, distance)
     
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
@@ -240,6 +299,57 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance):
+    """
+    Calculates total photon pressure for a molecule using a stitched molecular
+    spectrum built for the requested atmospheric temperature.
+    """
+    N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
+    N_col = np.atleast_1d(N_col)
+    Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+    Temp = np.atleast_1d(Temp)
+
+    d = distance
+    R_star = self.star.radius
+    omega = (R_star / d) ** 2
+
+    self.broad_prof.apply_boltzmann_weights(Temp[0])
+    self.sigma_total = self.broad_prof.sigmaArray
+    self.sigma_total_err = self.broad_prof.sigmaArray_err
+
+    lam = self.lam_grid
+    Flux = self.get_interp_Spectra_molecule() * omega
+    sigma = self.sigma_total
+    sigma_err = self.sigma_total_err
+
+    Trans, _ = self.transmission_molecule(N_col, sigma_total=sigma)
+    integrand = Flux[:, None] * sigma[:, None] * Trans
+    F_ph_tot = (np.trapz(integrand, lam[:, None], axis=0) / const.c).to(u.N)
+
+    N_val = N_col.to_value(1 / u.cm**2)
+    sigma_val = sigma.to_value(u.cm**2)
+    sigma_err_val = sigma_err.to_value(u.cm**2)
+    Trans_val = Trans.value
+    Flux_val = Flux.to_value(Flux.unit)
+    lam_val = lam.to_value(lam.unit)
+
+    factor = 1.0 - (sigma_val[:, None] * N_val[None, :])
+    dF_dsigma = np.trapz(
+      (Flux_val[:, None] * Trans_val * factor * sigma_err_val[:, None]) / const.c.to_value(u.m / u.s),
+      lam_val[:, None],
+      axis=0
+    )
+    dF_dsigma = (dF_dsigma * Flux.unit * sigma_err.unit * lam.unit / const.c.unit).to(u.N)
+    F_ph_tot_err = np.abs(dF_dsigma)
+
+    self.F_ph_tot = F_ph_tot[None, :]
+    self.F_ph_tot_err = F_ph_tot_err[None, :]
+    self.F_ph_perline = None
+    self.F_ph_perline_err = None
+
+    return self.F_ph_tot, self.F_ph_tot_err, None, None
+
+
   def beta_Values(self, F_ph_tot, F_ph_tot_err, mass_body, r):
     """
     Calculates the beta ratio for a given photon pressure
@@ -273,6 +383,8 @@ class PhotonPressure:
     """
     Find the height where tau ~ 1 using the strongest *populated* line-center cross section.
     """
+    if self.mode != "atom":
+      raise ValueError("tau_one_height() is only available for atom mode")
 
     z = z.to(u.km) if isinstance(z, u.Quantity) else _not_quantity("z")
     Ncol = Ncol.to(1 / u.cm**2) if isinstance(Ncol, u.Quantity) else _not_quantity("Ncol")

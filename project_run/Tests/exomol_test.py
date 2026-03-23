@@ -4,6 +4,12 @@ import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 from project_classes.Molecule import Molecule
 from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
+from project_classes.PhotonPressure import PhotonPressure
+from project_classes.Star import Star
+from project_classes.Planet import Planet
+from project_classes.PlanetarySystem import PlanetarySystem
+import numpy as np
+from matplotlib import pyplot as plt
 
 wavemax = 50000 * u.AA 
 wavemin = 150 * u.AA
@@ -38,19 +44,30 @@ print(CO.data_numpy["A_ul"].shape)
 # O2_df_numpy = O2.pandas_to_numpy()
 
 # print(O2.data_numpy["g_l"])
-
+T_atm = 300 * u.K
 CO_broad = BroadeningProfileMolecule(
     molecule=CO,
     b=1 * u.km / u.s,
     lam_min=wavemin,
     lam_max=wavemax,
+    dlam=0.01 * u.AA,
     profileType="Voigt",
+    Temp_atm=T_atm,
 )
 
-print(CO_broad.sigma_total.shape)
-print(CO_broad.lam_grid.shape)
+sun = Star("TS/Spectral_type/A/A0/lte100-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", 1 * u.R_sun, 1 * u.M_sun, vsini=10 * u.km / u.s, epsilon=0.2 * u.dimensionless_unscaled)
+earth = Planet(1 * u.R_earth, 1 * u.M_earth, T_atm, mu=28.97 * u.dimensionless_unscaled, P0=1 * u.bar)
+system = PlanetarySystem(sun, earth, 0.1 * u.au)
 
-CO_broad.plot_total_crossection(xlim=(5850, 5900))
+CO_pp = PhotonPressure(CO_broad, sun)
 
+N_cols = np.logspace(10, 25, 100) * u.cm**(-2)
 
+pp_CO, _,_,_ = CO_pp.calc_PhotonPressure(N_cols, T_atm, system.distance)
 
+plt.plot(N_cols, pp_CO[0])
+plt.xlabel("Column Density [cm^-2]")
+plt.ylabel("Photon Pressure [N]")
+plt.xscale("log")
+plt.yscale("log")
+plt.show()

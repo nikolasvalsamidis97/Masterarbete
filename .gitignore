@@ -2179,3 +2179,4 @@ exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.states.bz2
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.states.h5
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.trans.bz2
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.trans.h5
+project_run/Tests/gentest.py

@@ -1,5 +1,3 @@
-
-
 from project_classes.Molecule import Molecule
 from project_func.errors import _not_quantity
 from astropy import constants as const
@@ -17,6 +15,8 @@ class BroadeningProfileMolecule:
                lam_max=None,
                dlam=None,
                profileType: str = 'Voigt',
+               line_weights=None,
+               Temp_atm=None,
                ):
     """
     Build a TOTAL molecular cross-section spectrum on one shared wavelength grid.
@@ -34,10 +34,16 @@ class BroadeningProfileMolecule:
         based on the narrowest Doppler width is used.
     profileType : str
         'lorentz', 'gauss', or 'voigt'.
+    line_weights : array-like, optional
+        Optional per-line weights for later stitched-spectrum construction.
+    Temp_atm : Quantity, optional
+        Optional temperature for later Boltzmann-weighted stitched-spectrum construction.
     """
     self.molecule = molecule
     self.b = b.to(u.km / u.s) if isinstance(b, u.Quantity) else _not_quantity("b (broadening parameter)")
     self.profileType = profileType.lower()
+    self.line_weights_init = line_weights
+    self.Temp_atm_init = Temp_atm
 
     if getattr(self.molecule, "data", None) is None:
       raise ValueError("Molecule.data is empty. Load molecular line data before creating BroadeningProfileMolecule.")
@@ -55,7 +61,11 @@ class BroadeningProfileMolecule:
     self.dlam = self.set_dlam(dlam)
     self.lam_grid = self.wavelength_grid()
 
-    self.sigma_total, self.sigma_total_err = self.build_total_crossection()
+    self.line_weights = None
+    self.sigmaArray = None
+    self.sigmaArray_err = None
+    self.sigma_total = None
+    self.sigma_total_err = None
 
   def set_lam_min(self, lam_min):
     if lam_min is None:
@@ -151,42 +161,142 @@ class BroadeningProfileMolecule:
 
     return phi.to(u.s / u.km), phi_err.to(u.s / u.km)
 
-  def build_total_crossection(self):
+  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False):
+    """
+    Build the stitched molecular cross-section spectrum on the shared wavelength grid.
+
+    Parameters
+    ----------
+    weights : array-like, optional
+        Optional per-line weights. Must have one value per molecular line.
+    Temp_atm : Quantity, optional
+        If given, Boltzmann line weights are computed automatically from this
+        temperature and applied during the stitched-spectrum build.
+    store_weights : bool, optional
+        If True, store the active weights on self.line_weights.
+    """
+    if (weights is not None) and (Temp_atm is not None):
+      raise ValueError("Give either weights or Temp_atm, not both")
+
     lam_grid = self.lam_grid
     sigma_total = np.zeros(lam_grid.shape) * u.cm**2
     sigma_total_err2 = np.zeros(lam_grid.shape) * (u.cm**4)
 
     lam_grid_val = lam_grid.to_value(u.AA)
-    lam0_val = self.lam0[:, 0].to_value(u.AA)     # Strip units
+    lam0_val = self.lam0[:, 0].to_value(u.AA)
+
+    if Temp_atm is not None:
+      weights_arr = self.boltzmann_line_weights(Temp_atm)
+    elif weights is None:
+      weights_arr = np.ones(len(lam0_val), dtype=float)
+    else:
+      weights_arr = np.asarray(weights, dtype=float).reshape(-1)
+      if len(weights_arr) != len(lam0_val):
+        raise ValueError("weights must have one value per molecular line")
+
+    if store_weights:
+      if Temp_atm is None and weights is None:
+        self.line_weights = None
+      else:
+        self.line_weights = weights_arr.copy()
 
     for i in range(len(lam0_val)):
-      lam_center = self.lam0[i, 0]                        # Get center line wavelength
-      halfwidth = self.line_window_halfwidth_lam(i)       # Get cutoff window
-      lam_lo = (lam_center - halfwidth).to_value(u.AA)    # Lower cutoff
-      lam_hi = (lam_center + halfwidth).to_value(u.AA)    # Upper cutoff
-
-      i0 = np.searchsorted(lam_grid_val, lam_lo, side='left')   # Find where cutoff window sits in the global grid
-      i1 = np.searchsorted(lam_grid_val, lam_hi, side='right')
-
-      if i1 <= i0:        # Skip empty windows
+      weight_i = weights_arr[i]
+      if not np.isfinite(weight_i) or weight_i == 0.0:
         continue
 
-      lam_local = lam_grid[i0:i1]                                         # Small wavelength grid around lam0 (the cutoff window)  
-      v_local = self.lambda_offsets_to_velocity(lam_local, lam_center)    # convert to velocity offsets (might change later)
-      phi_local, phi_local_err = self.profile_from_velocity(v_local, i)   # Broaden that line
+      lam_center = self.lam0[i, 0]
+      halfwidth = self.line_window_halfwidth_lam(i)
+      lam_lo = (lam_center - halfwidth).to_value(u.AA)
+      lam_hi = (lam_center + halfwidth).to_value(u.AA)
 
-      sigma_line = (self.sig_0[i, 0] * phi_local).to(u.cm**2)             # Convert to line cross-section
-      sigma_line_err = (self.sig_0[i, 0] * phi_local_err + self.sig_0_err[i, 0] * phi_local).to(u.cm**2)  # Error in the line cross-section
+      i0 = np.searchsorted(lam_grid_val, lam_lo, side='left')
+      i1 = np.searchsorted(lam_grid_val, lam_hi, side='right')
 
-      sigma_total[i0:i1] += sigma_line            # Stitch to global grid
-      sigma_total_err2[i0:i1] += sigma_line_err**2  # Error stitch
+      if i1 <= i0:
+        continue
+
+      lam_local = lam_grid[i0:i1]
+      v_local = self.lambda_offsets_to_velocity(lam_local, lam_center)
+      phi_local, phi_local_err = self.profile_from_velocity(v_local, i)
+
+      sigma_line = (self.sig_0[i, 0] * phi_local).to(u.cm**2)
+      sigma_line_err = (self.sig_0[i, 0] * phi_local_err + self.sig_0_err[i, 0] * phi_local).to(u.cm**2)
+
+      sigma_total[i0:i1] += weight_i * sigma_line
+      sigma_total_err2[i0:i1] += (weight_i * sigma_line_err) ** 2
+
     sigma_total_err = np.sqrt(sigma_total_err2)
     return sigma_total, sigma_total_err
 
+  def set_line_weights(self, weights):
+    """
+    Store per-line weights and rebuild the stitched molecular spectrum.
+    """
+    weights_arr = np.asarray(weights, dtype=float).reshape(-1)
+    if len(weights_arr) != len(self.lam0):
+      raise ValueError("weights must have one value per molecular line")
+
+    self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
+      weights=weights_arr,
+      store_weights=True,
+    )
+    self.sigma_total = self.sigmaArray
+    self.sigma_total_err = self.sigmaArray_err
+    return self.sigmaArray, self.sigmaArray_err
+
+  def clear_line_weights(self):
+    """
+    Rebuild the stitched molecular spectrum without line weights.
+    """
+    self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
+      weights=None,
+      store_weights=True,
+    )
+    self.sigma_total = self.sigmaArray
+    self.sigma_total_err = self.sigmaArray_err
+    return self.sigmaArray, self.sigmaArray_err
+
+  def boltzmann_line_weights(self, Temp_atm):
+    """
+    Build normalized lower-state Boltzmann weights for each molecular line.
+    Lines sharing the same lower state get the same population factor.
+    """
+    T = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+    kb_eV = const.k_B.to(u.eV / u.K)
+
+    El = self.E_l.reshape(-1, 1)
+    gl = self.g_l.reshape(-1, 1)
+
+    Eg = np.column_stack([El.value.reshape(-1), gl.value.reshape(-1)])
+    Eg_unique, _, inv = np.unique(Eg, axis=0, return_index=True, return_inverse=True)
+    El_unique = Eg_unique[:, 0].reshape(-1, 1) * u.eV
+    gl_unique = Eg_unique[:, 1].reshape(-1, 1) * u.dimensionless_unscaled
+
+    boltz_unique = gl_unique * np.exp(-(El_unique / (kb_eV * T)).decompose().value)
+    Z = np.nansum(boltz_unique)
+    if not np.isfinite(Z) or Z == 0:
+      raise ValueError("Partition function is zero or non-finite for the requested temperature")
+
+    weights = (boltz_unique[inv] / Z).reshape(-1)
+    return weights
+
+  def apply_boltzmann_weights(self, Temp_atm):
+    """
+    Compute Boltzmann line weights and rebuild the stitched molecular spectrum.
+    """
+    self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
+      Temp_atm=Temp_atm,
+      store_weights=True,
+    )
+    self.sigma_total = self.sigmaArray
+    self.sigma_total_err = self.sigmaArray_err
+    return self.sigmaArray, self.sigmaArray_err
+
   def plot_total_crossection(self, xscale: str = 'linear', yscale: str = 'log', xlim: tuple = None):
     lam = self.lam_grid.to_value(u.AA)
-    sig = self.sigma_total.to_value(u.cm**2)
-    sig_err = self.sigma_total_err.to_value(u.cm**2)
+    sig = self.sigmaArray.to_value(u.cm**2)
+    sig_err = self.sigmaArray_err.to_value(u.cm**2)
 
     plt.figure(figsize=(10, 4))
     plt.plot(lam, sig)
@@ -209,7 +319,7 @@ class BroadeningProfileMolecule:
     lam_hi = (lam_center + halfwidth).to_value(u.AA)
 
     lam = self.lam_grid.to_value(u.AA)
-    sig = self.sigma_total.to_value(u.cm**2)
+    sig = self.sigmaArray.to_value(u.cm**2)
 
     mask = (lam >= lam_lo) & (lam <= lam_hi)
 
