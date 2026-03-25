@@ -9,7 +9,7 @@ from radis import SpectrumFactory
 from radis.io.hitran import fetch_hitran
 
 class Molecule:
-  def __init__(self, species: "str", lam_min, lam_max, A_ul_min):
+  def __init__(self, species: "str", lam_min, lam_max, A_ul_min = 0 * u.s**(-1)):
       self.species = species
       self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
       self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")

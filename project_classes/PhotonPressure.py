@@ -6,6 +6,7 @@ from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
 import numpy as np
+import time
 
 
 class PhotonPressure:
@@ -56,6 +57,7 @@ class PhotonPressure:
       self.g_l = broadeing_profile.molecule.g_l
 
     self.F_ph_tot, self.F_ph_tot_err, self.F_ph_perline, self.F_ph_perline_err = None, None, None, None
+    self.last_calc_time_molecule = None
   
 
   def get_interp_Spectra(self):
@@ -299,10 +301,13 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance):
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=200000, verbose=True):
     """
     Calculates total photon pressure for a molecule using a stitched molecular
     spectrum built for the requested atmospheric temperature.
+
+    The calculation is chunked over both column density and wavelength to reduce
+    memory usage for very large molecular wavelength grids.
     """
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     N_col = np.atleast_1d(N_col)
@@ -313,34 +318,100 @@ class PhotonPressure:
     R_star = self.star.radius
     omega = (R_star / d) ** 2
 
+    t_start_total = time.perf_counter()
+
+    if verbose:
+      print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
+    t_start_sigma = time.perf_counter()
     self.broad_prof.apply_boltzmann_weights(Temp[0])
     self.sigma_total = self.broad_prof.sigmaArray
     self.sigma_total_err = self.broad_prof.sigmaArray_err
+    t_end_sigma = time.perf_counter()
+    if verbose:
+      print(
+        f"Finished weighted molecular cross-section for {self.broad_prof.molecule.species}; "
+        f"wavelength points = {self.lam_grid.shape[0]}, "
+        f"build time = {t_end_sigma - t_start_sigma:.2f} s"
+      )
 
     lam = self.lam_grid
     Flux = self.get_interp_Spectra_molecule() * omega
     sigma = self.sigma_total
     sigma_err = self.sigma_total_err
 
-    Trans, _ = self.transmission_molecule(N_col, sigma_total=sigma)
-    integrand = Flux[:, None] * sigma[:, None] * Trans
-    F_ph_tot = (np.trapz(integrand, lam[:, None], axis=0) / const.c).to(u.N)
+    n_col = N_col.shape[0]
+    n_lam = lam.shape[0]
+    n_lam_chunks = int(np.ceil(n_lam / lam_chunk_size))
+    n_col_chunks = int(np.ceil(n_col / chunk_size))
+    n_total_chunks = n_lam_chunks * n_col_chunks
 
-    N_val = N_col.to_value(1 / u.cm**2)
-    sigma_val = sigma.to_value(u.cm**2)
-    sigma_err_val = sigma_err.to_value(u.cm**2)
-    Trans_val = Trans.value
-    Flux_val = Flux.to_value(Flux.unit)
-    lam_val = lam.to_value(lam.unit)
+    F_ph_tot = np.zeros(n_col) * u.N
+    F_ph_tot_err2 = np.zeros(n_col) * (u.N**2)
 
-    factor = 1.0 - (sigma_val[:, None] * N_val[None, :])
-    dF_dsigma = np.trapz(
-      (Flux_val[:, None] * Trans_val * factor * sigma_err_val[:, None]) / const.c.to_value(u.m / u.s),
-      lam_val[:, None],
-      axis=0
-    )
-    dF_dsigma = (dF_dsigma * Flux.unit * sigma_err.unit * lam.unit / const.c.unit).to(u.N)
-    F_ph_tot_err = np.abs(dF_dsigma)
+    Flux_unit = Flux.unit
+    sigma_unit = sigma.unit
+    sigma_err_unit = sigma_err.unit
+    lam_unit = lam.unit
+    force_unit = (Flux_unit * sigma_unit * lam_unit / const.c.unit)
+
+    Flux_val = np.asarray(Flux.value, dtype=np.float64)
+    sigma_val = np.asarray(sigma.value, dtype=np.float64)
+    sigma_err_val = np.asarray(sigma_err.value, dtype=np.float64)
+    lam_val = np.asarray(lam.value, dtype=np.float64)
+    N_col_val = np.asarray(N_col.to_value(1 / u.cm**2), dtype=np.float64)
+
+    chunk_counter = 0
+
+    for j0 in range(0, n_col, chunk_size):
+      j1 = min(j0 + chunk_size, n_col)
+      N_chunk_val = N_col_val[j0:j1]
+
+      F_chunk_sum = np.zeros(j1 - j0, dtype=np.float64)
+      F_chunk_err2_sum = np.zeros(j1 - j0, dtype=np.float64)
+
+      for i0 in range(0, n_lam, lam_chunk_size):
+        i1 = min(i0 + lam_chunk_size, n_lam)
+
+        lam_chunk = lam_val[i0:i1]
+        Flux_chunk = Flux_val[i0:i1]
+        sigma_chunk = sigma_val[i0:i1]
+        sigma_err_chunk = sigma_err_val[i0:i1]
+
+        tau_chunk = sigma_chunk[:, None] * N_chunk_val[None, :]
+        Trans_chunk = np.exp(-tau_chunk)
+
+        integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
+        F_chunk_sum += np.trapz(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
+
+        factor_chunk = 1.0 - (sigma_chunk[:, None] * N_chunk_val[None, :])
+        dF_dsigma_chunk = np.trapz(
+          (Flux_chunk[:, None] * Trans_chunk * factor_chunk * sigma_err_chunk[:, None]) / const.c.to_value(u.m / u.s),
+          lam_chunk[:, None],
+          axis=0
+        )
+        F_chunk_err2_sum += dF_dsigma_chunk**2
+
+        chunk_counter += 1
+
+      F_ph_tot[j0:j1] = (F_chunk_sum * force_unit).to(u.N)
+      F_ph_tot_err2[j0:j1] = (F_chunk_err2_sum * (Flux_unit * sigma_err_unit * lam_unit / const.c.unit)**2).to(u.N**2)
+
+      if verbose:
+        col_chunk_idx = j0 // chunk_size + 1
+        print(
+          f"Completed N_col chunk {col_chunk_idx}/{n_col_chunks} "
+          f"for {self.broad_prof.molecule.species}"
+        )
+
+    F_ph_tot_err = np.sqrt(F_ph_tot_err2)
+
+    t_end_total = time.perf_counter()
+    self.last_calc_time_molecule = t_end_total - t_start_total
+    if verbose:
+      print(
+        f"Finished molecule photon pressure for {self.broad_prof.molecule.species} "
+        f"in {self.last_calc_time_molecule:.2f} s"
+      )
 
     self.F_ph_tot = F_ph_tot[None, :]
     self.F_ph_tot_err = F_ph_tot_err[None, :]

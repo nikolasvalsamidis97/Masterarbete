@@ -7,7 +7,9 @@ from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
 from project_classes.Atom import Atom
+from project_classes.Molecule import Molecule
 from project_classes.BroadeningProfile import BroadeningProfile
+from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
 from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Planet import Planet
 from project_classes.Star import Star
@@ -27,14 +29,59 @@ atom_species = [
   "Na I", "Na II", "Na III",
   "K I", "K II", "K III",
 ]
+molecule_configs = {
+  "CO": {
+    "source": "exomol",
+    "fetch_kwargs": {
+      "path": "CO/12C-16O/Li2015",
+      "database": "Li2015",
+      "localdatabase": "exomol_data",
+    },
+  },
+  "NO": {
+    "source": "exomol",
+    "fetch_kwargs": {
+      "path": "NO/14N-16O/XABC",
+      "database": "XABC",
+      "localdatabase": "exomol_data",
+    },
+  },
+}
 
 b = 1 * u.km / u.s
 Npts = 150
 wav_min = 150 * u.AA
 wav_max = 50000 * u.AA
+
+
+def make_molecule(species, config, wav_min, wav_max):
+  molecule = Molecule(species, wav_min, wav_max)
+  source = config["source"].lower()
+  fetch_kwargs = config["fetch_kwargs"]
+
+  if source == "exomol":
+    molecule.fetch_exomol(**fetch_kwargs)
+  elif source == "hitran":
+    molecule.fetch_hitran(**fetch_kwargs)
+  else:
+    raise ValueError(f"Unknown molecule source: {config['source']}")
+
+  return molecule
+
+# Atom and molecule objects
 atoms = {species: Atom(species, wav_min, wav_max) for species in atom_species}
 broad = {species: BroadeningProfile(atom, b, Npts, 'Voigt') for species, atom in atoms.items()}
 # print("Defined atoms:", list(atoms.keys()))
+
+molecules = {
+  species: make_molecule(species, config, wav_min, wav_max)
+  for species, config in molecule_configs.items()
+}
+broad_mol = {
+  species: BroadeningProfileMolecule(molecule, b, profileType='Voigt')
+  for species, molecule in molecules.items()
+}
+# print("Defined molecules:", list(molecules.keys()))
 # ---------------------------------------- #
 
 # -- PLANET / ATMOSPHERE CASES -- #
@@ -93,7 +140,14 @@ planet_cases = {
     "T": 1400 * u.K,
     "mu": 2.3 * u.dimensionless_unscaled,
     "P0": 1.0e-3 * u.bar,
-    "composition": {"H I": 0.9, "He I": 0.1, "O I": 1e-4, "Na I": 1e-6, "K I": 1e-7},
+    "composition": {
+      "H I": 0.8997989,
+      "He I": 0.1,
+      "CO": 1e-4,
+      "O I": 1e-4,
+      "Na I": 1e-6,
+      "K I": 1e-7,
+    },
   },
 
   "WASP_121_b": {
@@ -102,7 +156,19 @@ planet_cases = {
     "T": 2350 * u.K,
     "mu": 2.3 * u.dimensionless_unscaled,
     "P0": 1.0e-7 * u.bar,
-    "composition": {"H I": 0.88, "He I": 0.09, "He II": 0.01, "O I": 0.015, "O II": 0.003, "Na I": 1.5e-3, "Na II": 3.5e-4, "K I": 1.2e-4, "K II": 3.0e-5},
+    "composition": {
+      "H I": 0.880899,
+      "He I": 0.09,
+      "He II": 0.01,
+      "O I": 0.015,
+      "O II": 0.003,
+      "Na I": 1.5e-3,
+      "Na II": 3.5e-4,
+      "K I": 1.2e-4,
+      "K II": 3.0e-5,
+      "CO": 1e-4,
+      "NO": 1e-6,
+    },
   },
 
   "HAT_P_11_b": {
@@ -147,7 +213,7 @@ planet_sources = {
   "55_Cnc_e": "NASA Exoplanet Catalog",
 }
 
-# Create Planet instances for each case exluding "distance" and "z_max" which are not needed for the Planet class
+# Create Planet instances for each case
 planets = {
   case: Planet(
     params["radius"],
@@ -244,12 +310,24 @@ systems = {
   "K2_18_b": {"planet": planets["K2_18_b"], "star": stars["M1"], "distance": 0.1429 * u.AU},
   "55_Cnc_e": {"planet": planets["55_Cnc_e"], "star": stars["G8"], "distance": 0.01544 * u.AU},
 }
-planetary_systems = {name: PlanetarySystem(**params) for name, params in systems.items()}
-# print("Defined planetary systems:", list(planetary_systems.keys()))
+systems_hot_jupiters = {
+  "HD_209458_b": {
+    "planet": planets["HD_209458_b"],
+    "star": stars["G1"],
+    "distance": 0.04707 * u.AU,
+  },
+  "WASP_121_b": {
+    "planet": planets["WASP_121_b"],
+    "star": stars["F0"],
+    "distance": 0.02571 * u.AU,
+  },
+}
+planetary_systems = {name: PlanetarySystem(**params) for name, params in systems_hot_jupiters.items()}
+print("Defined planetary systems:", list(planetary_systems.keys()))
 # -------------------- #  
 
 # -- CALCULATE AND PLOT BETA VS HEIGHT -- #
-def calc_beta_vs_height(system_name, n_z=10000, z_max_type="hill"):
+def calc_beta_vs_height(system_name, n_z=1000, z_max_type="hill"):
 
   system = planetary_systems[system_name]
   planet_key = next(name for name, planet_obj in planets.items() if planet_obj is system.planet)
@@ -273,8 +351,12 @@ def calc_beta_vs_height(system_name, n_z=10000, z_max_type="hill"):
   beta_results = []
 
   for species in allowed_species:
-    pp = PhotonPressure(broad[species], system.star)
-
+    if species in broad:
+      pp = PhotonPressure(broad[species], system.star)
+    elif species in molecules:
+      pp = PhotonPressure(broad_mol[species], system.star)
+    else:
+      continue
     Fph, Fph_err, _, _ = pp.calc_PhotonPressure(Ncol_z, Temp_atm, system.distance)
     beta, beta_err = pp.beta_Values(Fph, Fph_err, system.planet.mass, z + system.planet.radius)
 
@@ -342,7 +424,7 @@ def plot_beta_vs_height(beta_results, save_path=None):
 
 
 # New function to save plots for all systems
-def save_beta_plots_all_systems(system_names=None, n_z=10000, z_max_type="hill"):
+def save_beta_plots_all_systems(system_names=None, n_z=1000, z_max_type="hill"):
 
   output_dir = "Plots/Atmospheric test/Beta_vs_height_system"
   os.makedirs(output_dir, exist_ok=True)
@@ -356,6 +438,6 @@ def save_beta_plots_all_systems(system_names=None, n_z=10000, z_max_type="hill")
     plot_beta_vs_height(beta_results, save_path=save_path)
     print(f"Saved plot: {save_path}")
 
-save_beta_plots_all_systems(n_z=10000, z_max_type="hill")
+save_beta_plots_all_systems(n_z=1000, z_max_type="hill")
 
 # ----------------------------------------# 
