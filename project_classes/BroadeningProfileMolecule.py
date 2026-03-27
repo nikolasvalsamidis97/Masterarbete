@@ -101,15 +101,19 @@ class BroadeningProfileMolecule:
     self.sigmaArray_err = None
     self.sigma_total = None
     self.sigma_total_err = None
+    self.temperature_cache = {}
 
     # Temporary speed hack: skip lines whose weighted central strength is tiny
     # compared to the strongest weighted line in the current build.
-    self.temp_strength_rel_cutoff = 1e-10
+    self.temp_strength_rel_cutoff = 1e-8
 
     self.init_timers["total_init_profile_setup"] = np.sum(list(self.init_timers.values()))
     print(f"{self.molecule.species} BroadeningProfileMolecule init timing:")
     for key, value in self.init_timers.items():
       print(f"  {key}: {value:.2f} s")
+  def _temperature_cache_key(self, Temp_atm):
+    T_val = float(np.asarray(Temp_atm.to_value(u.K)).reshape(-1)[0])
+    return (T_val, float(self.temp_strength_rel_cutoff), self.profileType)
 
   def set_lam_min(self, lam_min):
     if lam_min is None:
@@ -262,7 +266,17 @@ class BroadeningProfileMolecule:
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
+    cache_key = None
     if Temp_atm is not None:
+      cache_key = self._temperature_cache_key(Temp_atm)
+      if cache_key in self.temperature_cache:
+        cached = self.temperature_cache[cache_key]
+        if verbose:
+          print(f"Using cached molecular cross-section for {self.molecule.species} at T = {Temp_atm:.3g}")
+        if store_weights:
+          self.line_weights = cached["weights"].copy()
+        return cached["sigma"].copy(), cached["sigma_err"].copy()
+
       if verbose:
         print(f"Computing Boltzmann weights for {self.molecule.species} at T = {Temp_atm:.3g}")
       weights_arr = self.boltzmann_line_weights(Temp_atm)
@@ -332,6 +346,13 @@ class BroadeningProfileMolecule:
 
     sigma_total = sigma_total_val * u.cm**2
     sigma_total_err = np.sqrt(sigma_total_err2_val) * u.cm**2
+
+    if cache_key is not None:
+      self.temperature_cache[cache_key] = {
+        "sigma": sigma_total.copy(),
+        "sigma_err": sigma_total_err.copy(),
+        "weights": weights_arr.copy(),
+      }
 
     if verbose:
       total_time = time.perf_counter() - t_start

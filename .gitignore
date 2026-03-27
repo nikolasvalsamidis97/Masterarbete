@@ -2180,3 +2180,57 @@ exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.states.h5
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.trans.bz2
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.trans.h5
 project_run/Tests/gentest.py
+exomol_data/SiO/.DS_Store
+exomol_data/SiO/28Si-16O/.DS_Store
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__air.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__Ar.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__CH4.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__CO.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__CO2.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__H2.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__H2O.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__He.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__N2.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__NH3.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__NO.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__O2.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__self.broad
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.def
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.pf
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.states.bz2
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.states.h5
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.trans.bz2
+exomol_data/SiO/28Si-16O/SiOUVenIR/28Si-16O__SiOUVenIR.trans.h5
+Plots/BroadeningProfiles_combined.pdf
+Plots/BroadeningProfiles.pdf
+Plots/Bt-NextGen_spectrum.pdf
+Plots/F_ph_vs_Ncol.pdf
+Plots/RotBroadPlot.pdf
+Plots/Spectra_comparison_betapic_fern.pdf
+Plots/Betacomp/Bt-NextGen_vs_Fernandez_zoom.pdf
+Plots/Betacomp/Bt-NextGen_vs_Fernandez.pdf
+Plots/Betacomp/Bt-NextGen_zoom.pdf
+Plots/Betacomp/Bt-NextGen.pdf
+Plots/Betacomp/Fernandez_zoom.pdf
+Plots/Betacomp/Fernandez.pdf
+Plots/Betacomp/Validation_pair_full.pdf
+Plots/Betacomp/Validation_pair_zoom.pdf
+Plots/Broadening plots/BroadeningProfiles_combined.pdf
+Plots/Broadening plots/BroadeningProfiles.pdf
+Plots/Broadening plots/RotBroadPlot.pdf
+Plots/Comparison/Spectra_comparison_betapic_fern.pdf
+Plots/Comparison/Betacomp/Bt-NextGen_vs_Fernandez_zoom.pdf
+Plots/Comparison/Betacomp/Bt-NextGen_vs_Fernandez.pdf
+Plots/Comparison/Betacomp/Bt-NextGen_zoom.pdf
+Plots/Comparison/Betacomp/Bt-NextGen.pdf
+Plots/Comparison/Betacomp/Fernandez_zoom.pdf
+Plots/Comparison/Betacomp/Fernandez.pdf
+Plots/Comparison/Betacomp/Validation_pair_full.pdf
+Plots/Comparison/Betacomp/Validation_pair_zoom.pdf
+Plots/Lehtmets/beta_vs_teff_atoms.pdf
+Plots/Lehtmets/beta_vs_teff_co.pdf
+Plots/Lehtmets/beta_vs_teff_molecules.pdf
+Plots/Photon pressure/F_ph_vs_Ncol.pdf
+Plots/Spectra/Bt-NextGen_spectrum.pdf
+Plots/Youngblood/BetaVsTemp_NO.png
+Plots/Youngblood/BetaVsTemp_SiO.png
