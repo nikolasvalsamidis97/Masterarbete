@@ -2,6 +2,7 @@ from project_func.errors import _not_quantity
 from astropy import units as u
 from astropy import constants as const
 import numpy as np
+from scipy.integrate import trapezoid
 
 class Planet:
   def __init__(self, radius, mass, T, mu, P0):
@@ -88,6 +89,6 @@ class Planet:
 
     n = self.number_density(z_local)
 
-    N = np.trapz(n, s)
+    N = trapezoid(n, s)
 
     return N.to(1 / u.cm**2)

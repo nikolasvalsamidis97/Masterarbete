@@ -6,6 +6,7 @@ from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
 import numpy as np
+from scipy.integrate import trapezoid
 import time
 
 
@@ -250,8 +251,8 @@ class PhotonPressure:
       I_chunk = Flux[:, :, None] * sig[:, :, None] * Trans
 
       # Per-line force for this chunk (lines, chunk)
-      # F_line_chunk = (np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c).to(u.N) # Comment this for new calculations without units
-      F_line_chunk = ((np.trapz(I_chunk, lam[:, :, None], axis=1) / const.c.to_value(u.m / u.s)) * force_unit).to(u.N)  # Comment this for old calculations with units
+      # F_line_chunk = (trapezoid(I_chunk, lam[:, :, None], axis=1) / const.c).to(u.N) # Comment this for new calculations without units
+      F_line_chunk = ((trapezoid(I_chunk, lam[:, :, None], axis=1) / const.c.to_value(u.m / u.s)) * force_unit).to(u.N)  # Comment this for old calculations with units
 
       # Apply excitation weights -> (lines, Temp, chunk)
       F_line_T_chunk =F_line_chunk[:, None, :] * weights[:, :, None]
@@ -263,7 +264,7 @@ class PhotonPressure:
       # --- Error propagation (chunked) ---
       # factor = (1 - (N_chunk[None, None, :] * sig[:, :, None]))  # (lines, lam, chunk)
 
-      # dF_dA = np.trapz(
+      # dF_dA = trapezoid(
       #   (Flux[:, :, None] * Trans * factor * sig_err[:, :, None]) / const.c,
       #   lam[:, :, None],
       #   axis=1
@@ -275,7 +276,7 @@ class PhotonPressure:
       N_chunk_val = N_col_val[j0:j1] 
       factor = (1.0 - (N_chunk_val[None, None, :] * sig[:, :, None]))
 
-      dF_dA = np.trapz(
+      dF_dA = trapezoid(
         (Flux[:, :, None] * Trans * factor * sig_err[:, :, None]) / const.c.to_value(u.m/u.s),
         lam[:, :, None],
         axis=1
@@ -381,10 +382,10 @@ class PhotonPressure:
         Trans_chunk = np.exp(-tau_chunk)
 
         integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
-        F_chunk_sum += np.trapz(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
+        F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
 
         factor_chunk = 1.0 - (sigma_chunk[:, None] * N_chunk_val[None, :])
-        dF_dsigma_chunk = np.trapz(
+        dF_dsigma_chunk = trapezoid(
           (Flux_chunk[:, None] * Trans_chunk * factor_chunk * sigma_err_chunk[:, None]) / const.c.to_value(u.m / u.s),
           lam_chunk[:, None],
           axis=0
