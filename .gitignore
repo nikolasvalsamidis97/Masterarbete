@@ -2201,3 +2201,6 @@ exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.states.hdf5
 exomol_data/SO/32S-16O/SOLIS/32S-16O__SOLIS.trans.hdf5
 TS/Spectral_type/
 TS/.DS_Store
+.venv/
+__pycache__/
+*.pyc
