@@ -2204,3 +2204,5 @@ TS/.DS_Store
 .venv/
 __pycache__/
 *.pyc
+exomol_data/
+
