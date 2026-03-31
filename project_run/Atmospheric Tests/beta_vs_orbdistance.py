@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import astropy.constants as const
 import astropy.units as u
+from scipy.integrate import trapezoid
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
@@ -212,7 +213,7 @@ def mean_exospheric_beta(beta_star_species, system_obj):
     weights = system_obj.planet.number_density(z).to_value(1 / u.cm**3)
 
     beta_z = beta_star_species * (system_obj.star.mass / system_obj.planet.mass).decompose().value * (r / system_obj.distance.to(u.cm)) ** 2
-    return float(np.trapz(beta_z.value * weights, z.value) / np.trapz(weights, z.value))
+    return float(trapezoid(beta_z.value * weights, z.value) / trapezoid(weights, z.value))
 
 def main():
     output_dir = pathlib.Path(__file__).resolve().parents[2] / "Plots" / "Atmospheric test"
