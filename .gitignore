@@ -2205,4 +2205,4 @@ TS/.DS_Store
 __pycache__/
 *.pyc
 exomol_data/
-
+Plots/
