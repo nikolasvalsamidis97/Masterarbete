@@ -432,7 +432,6 @@ exomol_data/exomol_data/CO/12C-16O/Li2015/12C-16O__Li2015.states.bz2
 exomol_data/exomol_data/CO/12C-16O/Li2015/12C-16O__Li2015.states.hdf5
 exomol_data/exomol_data/CO/12C-16O/Li2015/12C-16O__Li2015.trans.bz2
 exomol_data/exomol_data/CO/12C-16O/Li2015/12C-16O__Li2015.trans.hdf5
-.gitignore
 exomol_cache/.DS_Store
 exomol_cache/exomol_cache/CO/12C-16O/Li2015/12C-16O__air.broad
 exomol_cache/exomol_cache/CO/12C-16O/Li2015/12C-16O__H2.broad
