@@ -17,6 +17,7 @@ from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
+from project_func.plotdata_to_txt import save_plotdata_txt
 
 def get_star_teff(star_key):
     star = get_star(star_key)
@@ -71,37 +72,6 @@ def scalar_value(x):
 def safe_name(value):
     return str(value).replace(" ", "").replace("/", "_")
 
-
-# Helper to save r_beta1_over_R data as a structured text table
-def save_rbeta_table_txt(output_path, selected_planet, selected_species, teff_values, distance_values_au, rbeta_matrix):
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    header_lines = [
-        "# r_beta1_over_R data table",
-        f"# planet: {selected_planet}",
-        f"# species: {selected_species}",
-        "# x_label: Stellar Teff [K]",
-        "# y_label: r_beta1 / R_p",
-        "# description: Each distance column contains r_beta1_over_R evaluated as a function of stellar Teff.",
-        "# distance_unit: AU",
-        f"# distances_au: {', '.join(f'{d:g}' for d in distance_values_au)}",
-        f"# star_stride: {STAR_STRIDE}",
-        "#",
-    ]
-
-    column_names = ["Teff_K"] + [f"r_beta1_over_R__{d:g}_AU" for d in distance_values_au]
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        for line in header_lines:
-            f.write(line + "\n")
-        f.write("\t".join(column_names) + "\n")
-
-        for i, teff in enumerate(teff_values):
-            row = [f"{float(teff):.6g}"]
-            for j in range(len(distance_values_au)):
-                value = rbeta_matrix[i, j]
-                row.append("nan" if not np.isfinite(value) else f"{float(value):.10g}")
-            f.write("\t".join(row) + "\n")
 
 
 def get_star(star_key):
@@ -313,13 +283,22 @@ def main():
 
             rbeta_matrix = np.column_stack(rbeta_columns)
             table_path = output_dir / f"{species_save_name}_r_beta1.txt"
-            save_rbeta_table_txt(
+            save_plotdata_txt(
                 table_path,
-                selected_planet,
-                selected_species,
-                teff_reference,
-                distance_values_au,
-                rbeta_matrix,
+                dataset_name=f"{species_save_name}_r_beta1",
+                x_label="Stellar Teff",
+                x_unit="K",
+                y_label="r_beta1 / R_p",
+                y_unit="dimensionless",
+                x_values=teff_reference,
+                y_matrix=rbeta_matrix,
+                series_values=distance_values_au,
+                series_label="distance",
+                series_unit="AU",
+                extra_metadata={
+                    "planet": selected_planet,
+                    "species": selected_species,
+                },
             )
             print(f"Used species: {used_species_summary}")
             print(f"Saved table to {table_path}")
