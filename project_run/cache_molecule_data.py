@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import time
 
 import astropy.units as u
 import numpy as np
@@ -44,6 +45,8 @@ def get_test_star():
 
 
 def cache_one_species(species: str):
+    t0 = time.perf_counter()
+
     test_star = get_test_star()
 
     if species not in MOLECULE_TEMPLATES:
@@ -105,10 +108,12 @@ def cache_one_species(species: str):
         print(f"F_ph_tot_err = {F_ph_tot_err}")
         _ = profile
         _ = pp
-        return {"species": species, "ok": True, "error": None}
+        elapsed = time.perf_counter() - t0
+        return {"species": species, "ok": True, "error": None, "elapsed_s": elapsed}
     except Exception as exc:
         print(f"Failed to fetch {species}: {exc}")
-        return {"species": species, "ok": False, "error": str(exc)}
+        elapsed = time.perf_counter() - t0
+        return {"species": species, "ok": False, "error": str(exc), "elapsed_s": elapsed}
 
 
 def main():
@@ -128,16 +133,24 @@ def main():
             try:
                 result = future.result()
             except Exception as exc:
-                result = {"species": species, "ok": False, "error": str(exc)}
+                result = {"species": species, "ok": False, "error": str(exc), "elapsed_s": None}
             results.append(result)
 
     print("-" * 70)
     print("Summary")
+    total_elapsed = 0.0
     for result in results:
+        elapsed_s = result.get("elapsed_s", None)
+        elapsed_text = "unknown" if elapsed_s is None else f"{elapsed_s:.3f} s"
+        if elapsed_s is not None:
+            total_elapsed += elapsed_s
+
         if result["ok"]:
-            print(f"  {result['species']}: OK")
+            print(f"  {result['species']}: OK | compute time = {elapsed_text}")
         else:
-            print(f"  {result['species']}: FAILED -> {result['error']}")
+            print(f"  {result['species']}: FAILED -> {result['error']} | compute time = {elapsed_text}")
+
+    print(f"Total summed compute time across molecules: {total_elapsed:.3f} s")
 
 
 if __name__ == "__main__":
