@@ -2,8 +2,6 @@ import sys
 import pathlib
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator, FixedFormatter
 import astropy.constants as const
 import astropy.units as u
 
@@ -19,6 +17,7 @@ from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
+
 def get_star_teff(star_key):
     star = get_star(star_key)
     teff_value = star.header.get("teff", {}).get("value", None)
@@ -71,6 +70,38 @@ def scalar_value(x):
 # Helper to sanitize names for saving
 def safe_name(value):
     return str(value).replace(" ", "").replace("/", "_")
+
+
+# Helper to save r_beta1_over_R data as a structured text table
+def save_rbeta_table_txt(output_path, selected_planet, selected_species, teff_values, distance_values_au, rbeta_matrix):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    header_lines = [
+        "# r_beta1_over_R data table",
+        f"# planet: {selected_planet}",
+        f"# species: {selected_species}",
+        "# x_label: Stellar Teff [K]",
+        "# y_label: r_beta1 / R_p",
+        "# description: Each distance column contains r_beta1_over_R evaluated as a function of stellar Teff.",
+        "# distance_unit: AU",
+        f"# distances_au: {', '.join(f'{d:g}' for d in distance_values_au)}",
+        f"# star_stride: {STAR_STRIDE}",
+        "#",
+    ]
+
+    column_names = ["Teff_K"] + [f"r_beta1_over_R__{d:g}_AU" for d in distance_values_au]
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        for line in header_lines:
+            f.write(line + "\n")
+        f.write("\t".join(column_names) + "\n")
+
+        for i, teff in enumerate(teff_values):
+            row = [f"{float(teff):.6g}"]
+            for j in range(len(distance_values_au)):
+                value = rbeta_matrix[i, j]
+                row.append("nan" if not np.isfinite(value) else f"{float(value):.10g}")
+            f.write("\t".join(row) + "\n")
 
 
 def get_star(star_key):
@@ -249,23 +280,13 @@ def main():
             )
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            plt.figure(figsize=(8.5, 5.5))
-            plt.rcParams.update({
-                "font.size": 13,
-                "axes.labelsize": 14,
-                "axes.titlesize": 15,
-                "legend.fontsize": 12,
-                "xtick.labelsize": 12,
-                "ytick.labelsize": 12,
-            })
             used_species_summary = [selected_species]
+            distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
+            teff_reference = None
+            rbeta_columns = []
 
-            cmap = plt.cm.viridis
-            color_values = np.linspace(0.15, 0.9, len(DISTANCE_LIST))
-
-            for dist, color_value in zip(DISTANCE_LIST, color_values):
+            for dist in DISTANCE_LIST:
                 print(f"Processing planet={selected_planet}, species={selected_species}, distance={dist}")
-                curve_color = cmap(color_value)
                 teff_values = []
                 rbeta_values = []
 
@@ -277,37 +298,31 @@ def main():
                     teff_values.append(teff)
                     rbeta_values.append(value)
 
-                teff_values = np.asarray(teff_values)
+                teff_values = np.asarray(teff_values, dtype=float)
                 rbeta_values = np.asarray(rbeta_values, dtype=float)
-                plt.plot(
-                    teff_values / 1e4,
-                    rbeta_values,
-                    marker="o",
-                    markersize=3.5,
-                    linewidth=1.6,
-                    color=curve_color,
-                    alpha=0.9,
-                    label=f"{dist.to_value(u.AU):g} AU",
-                )
 
-            ax = plt.gca()
-            plt.yscale("log")
-            plt.xscale("log")
-            ax.xaxis.set_major_locator(FixedLocator([0.26, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 3, 4, 5]))
-            ax.xaxis.set_major_formatter(FixedFormatter(["0.26", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1", "2", "3", "4", "5"]))
-            plt.xlim(0.26, 5.0)
-            plt.xlabel(r"Stellar $T_{\rm eff}$ [$10^4$ K]")
-            plt.ylabel(r"$r_{\beta=1} / R_{\rm p}$")
-            plt.title(f"{selected_planet}: {selected_species} at multiple orbital distances")
-            plt.grid(True, alpha=0.3)
-            plt.legend(title="Distance")
-            plt.tight_layout()
+                if teff_reference is None:
+                    teff_reference = teff_values.copy()
+                elif not np.array_equal(teff_reference, teff_values):
+                    raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
 
-            pdf_path = output_dir / f"{species_save_name}_r_beta1.pdf"
-            plt.savefig(pdf_path)
-            plt.close()
+                rbeta_columns.append(rbeta_values)
+
+            if teff_reference is None or not rbeta_columns:
+                raise ValueError(f"No data were computed for planet={selected_planet}, species={selected_species}")
+
+            rbeta_matrix = np.column_stack(rbeta_columns)
+            table_path = output_dir / f"{species_save_name}_r_beta1.txt"
+            save_rbeta_table_txt(
+                table_path,
+                selected_planet,
+                selected_species,
+                teff_reference,
+                distance_values_au,
+                rbeta_matrix,
+            )
             print(f"Used species: {used_species_summary}")
-            print(f"Saved plot to {pdf_path}")
+            print(f"Saved table to {table_path}")
 
 
 main()
