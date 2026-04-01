@@ -40,7 +40,7 @@ MOLECULE_TEMPLATES = {
     "SiO": {
         "source": "exomol",
         "fetch_kwargs": {
-            "path": "28Si-16O/SiOUVenIR",
+            "path": "SiO/28Si-16O/SiOUVenIR",
             "database": "SiOUVenIRJT",
             "localdatabase": "exomol_data",
         },

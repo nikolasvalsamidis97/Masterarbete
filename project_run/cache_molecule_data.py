@@ -6,11 +6,14 @@ import astropy.units as u
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from project_classes.Molecule import Molecule
+from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 DEFAULT_LOCAL_DATABASE = "exomol_data"
 
 WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
+B_MOLECULE = 1 * u.km / u.s
+PROFILE_TYPE = "Voigt"
 SELECTED_MOLECULES = ["CO", "O2", "SiO"]
 
 def main():
@@ -54,6 +57,14 @@ def main():
                 raise ValueError(f"Unknown molecule source: {source}")
 
             print(f"Finished fetching {species}")
+            print(f"Building BroadeningProfileMolecule for {species}")
+            profile = BroadeningProfileMolecule(
+                mol,
+                B_MOLECULE,
+                profileType=PROFILE_TYPE,
+            )
+            print(f"Finished BroadeningProfileMolecule setup for {species}")
+            _ = profile
         except Exception as exc:
             print(f"Failed to fetch {species}: {exc}")
 
