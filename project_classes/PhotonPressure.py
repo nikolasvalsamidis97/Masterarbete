@@ -195,7 +195,7 @@ class PhotonPressure:
 
     """
     if self.mode == "molecule":
-      return self.calc_PhotonPressure_molecule(column_density, Temp_atm, distance)
+      return self.calc_PhotonPressure_molecule(column_density, Temp_atm, distance, chunk_size=chunk_size)
     
     N_col = column_density.to(u.cm**(-2)) if isinstance(column_density, u.Quantity) else _not_quantity("column_density")
     Temp = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
@@ -302,7 +302,7 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=200000, verbose=True):
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=100000, verbose=True):
     """
     Calculates total photon pressure for a molecule using a stitched molecular
     spectrum built for the requested atmospheric temperature.

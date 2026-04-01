@@ -93,11 +93,12 @@ def main():
             print(f"Building PhotonPressure object for {species}")
             pp = PhotonPressure(profile, test_star)
             print(f"Calculating photon pressure for {species}")
-            F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(
+            F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure_molecule(
                 TEST_NCOLS,
                 TEST_T_ATM,
                 TEST_DISTANCE,
-                chunk_size=16,
+                chunk_size=1,
+                lam_chunk_size=20000,
             )
             print(f"Finished photon pressure calculation for {species}")
             print(f"F_ph_tot = {F_ph_tot}")
