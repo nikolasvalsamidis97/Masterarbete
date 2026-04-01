@@ -18,7 +18,7 @@ WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
 B_MOLECULE = 1 * u.km / u.s
 PROFILE_TYPE = "Voigt"
-SELECTED_MOLECULES = ["CO"]
+SELECTED_MOLECULES = ["CO", "NO"]
 TEST_STAR_KEY = "A0"
 TEST_T_ATM = 1000 * u.K
 TEST_DISTANCE = 1.0 * u.AU
@@ -98,7 +98,7 @@ def main():
                 TEST_T_ATM,
                 TEST_DISTANCE,
                 chunk_size=1,
-                lam_chunk_size=20000,
+                lam_chunk_size=10000,
             )
             print(f"Finished photon pressure calculation for {species}")
             print(f"F_ph_tot = {F_ph_tot}")

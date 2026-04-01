@@ -176,7 +176,7 @@ class PhotonPressure:
 
     return w_line
 
-  def calc_PhotonPressure(self, column_density, Temp_atm, distance, chunk_size=8):
+  def calc_PhotonPressure(self, column_density, Temp_atm, distance, chunk_size=1):
     """
     Chunked over N_col to reduce memory.
     Does NOT store/return per-line arrays (returns None for them).
