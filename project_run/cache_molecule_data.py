@@ -11,7 +11,7 @@ DEFAULT_LOCAL_DATABASE = "exomol_data"
 
 WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
-SELECTED_MOLECULES = ["CO", "O2"]
+SELECTED_MOLECULES = ["CO", "O2", "SiO"]
 
 def main():
     print("Starting molecule fetch-only cache script")

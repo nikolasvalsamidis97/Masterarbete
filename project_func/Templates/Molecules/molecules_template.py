@@ -13,6 +13,38 @@ MOLECULE_TEMPLATES = {
             "localdatabase": "exomol_data",
         },
     },
+    "CH4": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "CH4/12C-1H4/MM",
+            "database": "MM",
+            "localdatabase": "exomol_data",
+        },
+    },
+    "NH3": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "NH3/14N-1H3/CoYuTe",
+            "database": "CoYuTe",
+            "localdatabase": "exomol_data",
+        },
+    },
+    "TiO": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "TiO/48Ti-16O/ToTo",
+            "database": "ToTo",
+            "localdatabase": "exomol_data",
+        },
+    },
+    "SiO": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "28Si-16O/SiOUVenIR",
+            "database": "SiOUVenIRJT",
+            "localdatabase": "exomol_data",
+        },
+    },
     "NO": {
         "source": "exomol",
         "fetch_kwargs": {
