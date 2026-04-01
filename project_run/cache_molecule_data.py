@@ -11,7 +11,7 @@ DEFAULT_LOCAL_DATABASE = "exomol_data"
 
 WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
-SELECTED_MOLECULES = ["CO"]
+SELECTED_MOLECULES = ["CO", "O2"]
 
 def main():
     print("Starting molecule fetch-only cache script")
@@ -38,6 +38,9 @@ def main():
 
             if source == "exomol":
                 mol.fetch_exomol(**fetch_kwargs)
+            elif source == "hitran":
+                isotope = fetch_kwargs.get("isotope", 1)
+                mol.fetch_hitran(species, isotope=isotope)
             else:
                 raise ValueError(f"Unknown molecule source: {source}")
 
