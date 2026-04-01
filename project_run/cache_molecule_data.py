@@ -97,6 +97,7 @@ def main():
                 TEST_NCOLS,
                 TEST_T_ATM,
                 TEST_DISTANCE,
+                chunk_size=16,
             )
             print(f"Finished photon pressure calculation for {species}")
             print(f"F_ph_tot = {F_ph_tot}")
