@@ -50,7 +50,8 @@ MOLECULE_TEMPLATES = {
         "fetch_kwargs": {
             "path": "O2/16O2/HITRAN",
             "database": "HITRAN",
-            "localdatabase": "hitran_data",
+            "localdatabase": "exomol_data",
+            "databank_name": "HITRAN-O2-loc",
         },
     },        
     "H2S": {

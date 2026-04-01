@@ -5,6 +5,7 @@ import pandas as pd
 from radis.io.exomol import fetch_exomol
 from radis.api.exomolapi import MdbExomol, get_exomol_full_isotope_name
 import numpy as np
+import pathlib
 from radis import SpectrumFactory
 from radis.io.hitran import fetch_hitran
 
@@ -62,20 +63,65 @@ class Molecule:
       return df
 
   
-  def fetch_hitran(self, molecule_name, isotope=1):
+  def fetch_hitran(
+      self,
+      molecule_name=None,
+      isotope=1,
+      localdatabase=None,
+      path=None,
+      databank_name=None,
+      cache=True,
+      engine="default",
+      output="pandas",
+  ):
     """
-    Fetch line-by-line data from HITRAN
+    Fetch line-by-line data from HITRAN.
+
+    Parameters
+    ----------
+    molecule_name : str or None
+        HITRAN molecule name. If None, use self.species.
+    isotope : int or str
+        HITRAN isotope selector.
+    localdatabase : str or None
+        Root local folder where RADIS should create/cache the HITRAN HDF5 files.
+        If None, RADIS uses its own default configuration.
+    path : str or None
+        Optional relative subfolder inside ``localdatabase``. If both are given,
+        the actual cache folder becomes ``localdatabase/path``.
+    databank_name : str or None
+        Optional RADIS databank registration name.
+    cache : bool or str
+        Passed to radis.io.hitran.fetch_hitran.
+    engine : str
+        HDF engine passed to radis.io.hitran.fetch_hitran.
+    output : str
+        Output format passed to radis.io.hitran.fetch_hitran.
     """
 
-    df = fetch_hitran(
+    molecule_name = self.species if molecule_name is None else molecule_name
+
+    fetch_kwargs = dict(
       molecule=molecule_name,
       isotope=str(isotope),
       load_wavenum_min=float(self.wavenum_min.value),
       load_wavenum_max=float(self.wavenum_max.value),
       columns=None,
-      cache=True,
-      output="pandas",
+      cache=cache,
+      engine=engine,
+      output=output,
     )
+
+    if localdatabase is not None:
+      local_path = pathlib.Path(localdatabase)
+      if path is not None:
+        local_path = local_path / path
+      local_path.mkdir(parents=True, exist_ok=True)
+      fetch_kwargs["local_databases"] = str(local_path)
+    if databank_name is not None:
+      fetch_kwargs["databank_name"] = databank_name
+
+    df = fetch_hitran(**fetch_kwargs)
 
     print(df.columns)
 

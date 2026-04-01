@@ -40,7 +40,16 @@ def main():
                 mol.fetch_exomol(**fetch_kwargs)
             elif source == "hitran":
                 isotope = fetch_kwargs.get("isotope", 1)
-                mol.fetch_hitran(species, isotope=isotope)
+                localdatabase = fetch_kwargs.get("localdatabase", DEFAULT_LOCAL_DATABASE)
+                local_path = fetch_kwargs.get("path", None)
+                databank_name = fetch_kwargs.get("databank_name", f"HITRAN-{species}")
+                mol.fetch_hitran(
+                    molecule_name=species,
+                    isotope=isotope,
+                    localdatabase=localdatabase,
+                    path=local_path,
+                    databank_name=databank_name,
+                )
             else:
                 raise ValueError(f"Unknown molecule source: {source}")
 
