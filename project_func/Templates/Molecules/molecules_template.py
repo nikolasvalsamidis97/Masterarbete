@@ -13,6 +13,14 @@ MOLECULE_TEMPLATES = {
             "localdatabase": "exomol_data",
         },
     },
+    "SO": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "SO/32S-16O/SOLIS",
+            "database": "SOLIS",
+            "localdatabase": "exomol_data",
+        },
+    },
     "CH4": {
         "source": "exomol",
         "fetch_kwargs": {
