@@ -11,18 +11,20 @@ from radis.io.hitran import fetch_hitran
 
 class Molecule:
   def __init__(self, species: "str", lam_min, lam_max, A_ul_min = 0 * u.s**(-1)):
-      self.species = species
-      self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
-      self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
-      self.wavenum_min = (1 / self.lam_max).to(u.cm**-1)
-      self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
-      self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
-      self.mass = Formula(self.species).mass * u.u
-      self.data = None
-      self.data_numpy = None
-      self.cache_info = None
-      self.cache_ready = False
-      self.source = None
+    self.species = species
+    self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
+    self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
+    self.wavenum_min = (1 / self.lam_max).to(u.cm**-1)
+    self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
+    self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
+    self.mass = Formula(self.species).mass * u.u
+    self.data = None
+    self.data_numpy = None
+    self.cache_info = None
+    self.cache_ready = False
+    self.source = None
+    self._exomol_mdb = None
+    self._exomol_mgr = None
 
   def _build_exomol_mdb(self, path, database, localdatabase):
       nurange = [self.wavenum_min.value, self.wavenum_max.value]
@@ -77,6 +79,8 @@ class Molecule:
       self.source = "exomol"
       self.data = None
       self.data_numpy = None
+      self._exomol_mdb = mdb
+      self._exomol_mgr = mgr
       self.cache_ready = True
       self.cache_info = {
           "source": "exomol",
@@ -96,14 +100,12 @@ class Molecule:
   def load_exomol_transition_dataframe(self, local_file):
       if self.cache_info is None or self.cache_info.get("source") != "exomol":
           raise ValueError("ExoMol cache is not prepared for this molecule.")
+      if self._exomol_mdb is None:
+          raise ValueError("ExoMol MdbExomol handle is missing on this Molecule object.")
 
-      mdb = self._build_exomol_mdb(
-          self.cache_info["path"],
-          self.cache_info["database"],
-          self.cache_info["localdatabase"],
-      )
+      
       cols = list(self.cache_info["transition_columns"])
-      return mdb.load(
+      return self._exomol_mdb.load(
           [local_file],
           columns=cols,
           lower_bound=[("nu_lines", self.wavenum_min.value)],
@@ -114,14 +116,9 @@ class Molecule:
   def load_exomol_states_dataframe(self):
       if self.cache_info is None or self.cache_info.get("source") != "exomol":
           raise ValueError("ExoMol cache is not prepared for this molecule.")
-
-      mdb = self._build_exomol_mdb(
-          self.cache_info["path"],
-          self.cache_info["database"],
-          self.cache_info["localdatabase"],
-      )
-      mgr = mdb.get_datafile_manager()
-      return mgr.read(self.cache_info["local_states_file"])
+      if self._exomol_mgr is None:
+          raise ValueError("ExoMol datafile manager is missing on this Molecule object.")
+      return self._exomol_mgr.read(self.cache_info["local_states_file"])
 
   def fetch_hitran(
       self,

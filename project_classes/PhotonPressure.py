@@ -24,7 +24,7 @@ class PhotonPressure:
     self.flux_star = star.flux_star_rot
     self.lam_star = star.lam_star
 
-    if hasattr(broadeing_profile, "sigma_total"):
+    if isinstance(broadeing_profile, BroadeningProfileMolecule):
       self.mode = "molecule"
 
       self.lam_grid = broadeing_profile.lam_grid
@@ -37,8 +37,8 @@ class PhotonPressure:
       self.flux_star_interp = None
       self.lam_star_interp = None
 
-      self.E_l = broadeing_profile.E_l
-      self.g_l = broadeing_profile.g_l
+      self.E_l = None
+      self.g_l = None
 
     else:
       self.mode = "atom"
