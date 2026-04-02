@@ -30,6 +30,11 @@ class Molecule:
       """
 
       nurange = [self.wavenum_min.value, self.wavenum_max.value]
+      print(f"[{self.species}] fetch_exomol: building MdbExomol")
+      print(f"[{self.species}] fetch_exomol: nurange = {nurange}")
+      print(f"[{self.species}] fetch_exomol: localdatabase = {localdatabase}")
+      print(f"[{self.species}] fetch_exomol: path = {path}")
+      print(f"[{self.species}] fetch_exomol: database = {database}")
 
       mdb = MdbExomol(
           path=path,
@@ -40,12 +45,21 @@ class Molecule:
           engine="pytables",              # easiest for pandas workflow
           skip_optional_data=True,
       )
+      print(f"[{self.species}] fetch_exomol: MdbExomol created")
 
       # get local cached trans files, then load them
+      print(f"[{self.species}] fetch_exomol: getting datafile manager")
       mgr = mdb.get_datafile_manager()
-      local_files = [mgr.cache_file(f) for f in mdb.trans_file]
+      print(f"[{self.species}] fetch_exomol: datafile manager ready")
+      print(f"[{self.species}] fetch_exomol: number of transition files listed = {len(mdb.trans_file)}")
+      local_files = []
+      for i, f in enumerate(mdb.trans_file, start=1):
+          print(f"[{self.species}] fetch_exomol: caching trans file {i}/{len(mdb.trans_file)} -> {f}")
+          local_files.append(mgr.cache_file(f))
+      print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
 
       cols = ["A", "nu_lines", "elower", "gup", "i_lower"]  # A_ul, wavenumber, lower state energy, upper state degeneracy, lower state index
+      print(f"[{self.species}] fetch_exomol: loading transition data into pandas")
       df = mdb.load(
           local_files,
           columns=cols,
@@ -53,11 +67,16 @@ class Molecule:
           upper_bound=[("nu_lines", self.wavenum_max.value)],
           output="pandas",              # returns pandas
       )
+      print(f"[{self.species}] fetch_exomol: transition data loaded, rows = {len(df)}")
 
+      print(f"[{self.species}] fetch_exomol: reading states file")
       states = mgr.read(mgr.cache_file(mdb.states_file))   # pandas df, has columns i, g, J, E
+      print(f"[{self.species}] fetch_exomol: states file loaded, rows = {len(states)}")
       gmap = dict(zip(states["i"], states["g"]))
       df["glower"] = df["i_lower"].map(gmap)
+      print(f"[{self.species}] fetch_exomol: lower-state degeneracies mapped")
 
+      print(f"[{self.species}] fetch_exomol: storing dataframe in self.data")
       self.data = df
 
       return df
@@ -100,7 +119,13 @@ class Molecule:
     """
 
     molecule_name = self.species if molecule_name is None else molecule_name
+    print(f"[{self.species}] fetch_hitran: molecule_name = {molecule_name}")
+    print(f"[{self.species}] fetch_hitran: isotope = {isotope}")
+    print(f"[{self.species}] fetch_hitran: localdatabase = {localdatabase}")
+    print(f"[{self.species}] fetch_hitran: path = {path}")
+    print(f"[{self.species}] fetch_hitran: databank_name = {databank_name}")
 
+    print(f"[{self.species}] fetch_hitran: building fetch kwargs")
     fetch_kwargs = dict(
       molecule=molecule_name,
       isotope=str(isotope),
@@ -120,10 +145,15 @@ class Molecule:
       fetch_kwargs["local_databases"] = str(local_path)
     if databank_name is not None:
       fetch_kwargs["databank_name"] = databank_name
+    print(f"[{self.species}] fetch_hitran: final fetch kwargs keys = {list(fetch_kwargs.keys())}")
+    if "local_databases" in fetch_kwargs:
+      print(f"[{self.species}] fetch_hitran: effective local_databases = {fetch_kwargs['local_databases']}")
 
+    print(f"[{self.species}] fetch_hitran: calling RADIS fetch_hitran")
     df = fetch_hitran(**fetch_kwargs)
+    print(f"[{self.species}] fetch_hitran: RADIS fetch_hitran returned, rows = {len(df)}")
 
-    print(df.columns)
+    print(f"[{self.species}] fetch_hitran: original dataframe columns = {list(df.columns)}")
 
     df = df.rename(columns={
       "A": "A",
@@ -133,7 +163,9 @@ class Molecule:
       "gpp": "glower",
     })
     df = df[["A", "nu_lines", "elower", "gup", "glower"]].copy()
+    print(f"[{self.species}] fetch_hitran: dataframe renamed/filtered")
 
+    print(f"[{self.species}] fetch_hitran: storing dataframe in self.data")
     self.data = df
     return df
 
