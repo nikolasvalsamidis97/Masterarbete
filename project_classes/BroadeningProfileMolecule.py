@@ -18,8 +18,6 @@ class BroadeningProfileMolecule:
                lam_max=None,
                dlam=None,
                profileType: str = 'Voigt',
-               line_weights=None,
-               Temp_atm=None,
                verbose=False,
                ):
     """
@@ -33,8 +31,6 @@ class BroadeningProfileMolecule:
     self.b = b.to(u.km / u.s) if isinstance(b, u.Quantity) else _not_quantity("b (broadening parameter)")
     self.profileType = profileType.lower()
     self.init_timers = {}
-    self.line_weights_init = line_weights
-    self.Temp_atm_init = Temp_atm
 
     if not getattr(self.molecule, "cache_ready", False):
       raise ValueError(
@@ -66,13 +62,13 @@ class BroadeningProfileMolecule:
 
     self.lam_grid_val = self.lam_grid.to_value(u.AA)
 
-    self.line_weights = None
     self.sigmaArray = None
     self.sigmaArray_err = None
     self.sigma_total = None
     self.sigma_total_err = None
     self.temperature_cache = {}
-    self._states_gmap = None
+    self._states_i_sorted = None
+    self._states_g_sorted = None
 
 
     # Temporary speed hack: skip lines whose weighted central strength is tiny
@@ -153,41 +149,6 @@ class BroadeningProfileMolecule:
     """
     return np.maximum(6.0 * gauss_val, 25.0 * lorentz_val)
 
-  def profile_from_velocity(self, v_val, lorentz_val, lorentz_err_val, voigt_sigma_val, voigt_gamma_val, voigt_gamma_err_val):
-    if self.profileType == 'lorentz':
-      L = lorentz_val
-      dL = lorentz_err_val
-      phi_val = (1.0 / np.pi) * (0.5 * L) / (v_val**2 + (0.5 * L)**2)
-      phi_err_val = np.abs((1.0 / np.pi) * 0.5 * (v_val**2 - L**2 / 4.0) / (v_val**2 + L**2 / 4.0)**2) * dL
-      return phi_val, phi_err_val
-
-    if self.profileType == 'gauss':
-      b_val = self.b.to_value(u.km / u.s)
-      phi_val = (1.0 / (b_val * np.sqrt(np.pi))) * np.exp(-(v_val / b_val)**2)
-      phi_err_val = np.zeros_like(phi_val)
-      return phi_val, phi_err_val
-
-    sigma = voigt_sigma_val
-    gamma = voigt_gamma_val
-    dgamma = voigt_gamma_err_val
-
-    z = (v_val + 1j * gamma) / (sigma * np.sqrt(2.0))
-    phi_val = np.real(wofz(z)) / (sigma * np.sqrt(2.0 * np.pi))
-
-    if np.isclose(dgamma, 0.0, equal_nan=True):
-      phi_err_val = np.zeros_like(phi_val)
-    else:
-      gamma_m = max(gamma - dgamma, 1e-30)
-      gamma_p = gamma + dgamma
-      z_m = (v_val + 1j * gamma_m) / (sigma * np.sqrt(2.0))
-      z_p = (v_val + 1j * gamma_p) / (sigma * np.sqrt(2.0))
-      phi_m = np.real(wofz(z_m)) / (sigma * np.sqrt(2.0 * np.pi))
-      phi_p = np.real(wofz(z_p)) / (sigma * np.sqrt(2.0 * np.pi))
-      dphi_dL = (phi_p - phi_m) / ((gamma_p - gamma_m) * 2.0)
-      phi_err_val = np.abs(dphi_dL) * (2.0 * dgamma)
-
-    return phi_val, phi_err_val
-
   def profile_from_velocity_batch(self, v_val, lorentz_val, lorentz_err_val, voigt_sigma_val, voigt_gamma_val, voigt_gamma_err_val):
     """
     Vectorized profile evaluation for a batch of lines.
@@ -234,11 +195,15 @@ class BroadeningProfileMolecule:
 
     return phi_val, phi_err_val
 
-  def _get_exomol_state_gmap(self):
-    if self._states_gmap is None:
+  def _get_exomol_state_lookup(self):
+    if self._states_i_sorted is None or self._states_g_sorted is None:
       states = self.molecule.load_exomol_states_dataframe()
-      self._states_gmap = dict(zip(states["i"], states["g"]))
-    return self._states_gmap
+      state_i = np.asarray(states["i"]).reshape(-1).astype(np.int64, copy=False)
+      state_g = np.asarray(states["g"], dtype=np.float64).reshape(-1)
+      order = np.argsort(state_i)
+      self._states_i_sorted = state_i[order]
+      self._states_g_sorted = state_g[order]
+    return self._states_i_sorted, self._states_g_sorted
   
   def _prepare_chunk_dict(self, df_chunk):
     """
@@ -299,7 +264,7 @@ class BroadeningProfileMolecule:
   def iter_line_dataframes(self, verbose=False):
     source = getattr(self.molecule, "source", None)
     if source == "exomol":
-      gmap = self._get_exomol_state_gmap()
+      states_i_sorted, states_g_sorted = self._get_exomol_state_lookup()
       local_files = self.molecule.cache_info["local_trans_files"]
       for i, local_file in enumerate(local_files, start=1):
         if verbose:
@@ -308,11 +273,11 @@ class BroadeningProfileMolecule:
         if len(chunk["A_vals"]) == 0:
           continue
         i_lower_vals = chunk.pop("i_lower_vals")
-        chunk["glower_vals"] = np.fromiter(
-          (gmap.get(int(idx), np.nan) for idx in i_lower_vals),
-          dtype=np.float64,
-          count=len(i_lower_vals),
-        )
+        pos = np.searchsorted(states_i_sorted, i_lower_vals)
+        valid = (pos < len(states_i_sorted)) & (states_i_sorted[pos] == i_lower_vals)
+        glower_vals = np.full(len(i_lower_vals), np.nan, dtype=np.float64)
+        glower_vals[valid] = states_g_sorted[pos[valid]]
+        chunk["glower_vals"] = glower_vals
         yield i, len(local_files), chunk
     elif source == "hitran":
       if verbose:
@@ -387,7 +352,7 @@ class BroadeningProfileMolecule:
 
     raise ValueError(f"Unsupported molecule source for partition function: {source}")
 
-  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False, verbose=False, progress_every=1000000, line_batch_size=1024):
+  def build_total_crossection(self, weights=None, Temp_atm=None, verbose=False, progress_every=1000000, line_batch_size=1024):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
@@ -398,8 +363,6 @@ class BroadeningProfileMolecule:
         cached = self.temperature_cache[cache_key]
         if verbose:
           print(f"Using cached molecular cross-section for {self.molecule.species} at T = {Temp_atm:.3g}")
-        if store_weights:
-          self.line_weights = cached["weights"].copy()
         return cached["sigma"].copy(), cached["sigma_err"].copy()
 
     t_start = time.perf_counter()
@@ -414,8 +377,6 @@ class BroadeningProfileMolecule:
       if verbose:
         print(f"Partition function ready for {self.molecule.species}: Z = {partition_Z:.6e}")
 
-    if store_weights:
-      self.line_weights = None
 
     line_offset = 0
     processed_lines = 0
@@ -542,7 +503,6 @@ class BroadeningProfileMolecule:
       self.temperature_cache[cache_key] = {
         "sigma": sigma_total.copy(),
         "sigma_err": sigma_total_err.copy(),
-        "weights": np.array([], dtype=np.float64),
       }
 
     if verbose:
@@ -551,28 +511,10 @@ class BroadeningProfileMolecule:
 
     return sigma_total, sigma_total_err
 
-  def set_line_weights(self, weights):
-    self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
-      weights=weights,
-      store_weights=True,
-    )
-    self.sigma_total = self.sigmaArray
-    self.sigma_total_err = self.sigmaArray_err
-    return self.sigmaArray, self.sigmaArray_err
-
-  def clear_line_weights(self):
-    self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
-      weights=None,
-      store_weights=True,
-    )
-    self.sigma_total = self.sigmaArray
-    self.sigma_total_err = self.sigmaArray_err
-    return self.sigmaArray, self.sigmaArray_err
 
   def apply_boltzmann_weights(self, Temp_atm, verbose=False):
     self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
         Temp_atm=Temp_atm,
-        store_weights=True,
         verbose=verbose,
     )
     self.sigma_total = self.sigmaArray

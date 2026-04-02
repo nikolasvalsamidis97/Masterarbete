@@ -3,18 +3,18 @@ from project_func.errors import _not_quantity
 from molmass import Formula
 from radis.api.exomolapi import MdbExomol
 import numpy as np
+import pandas as pd
 import pathlib
 import tables
 from radis.io.hitran import fetch_hitran
 
 class Molecule:
-  def __init__(self, species: "str", lam_min, lam_max, A_ul_min = 0 * u.s**(-1)):
+  def __init__(self, species: "str", lam_min, lam_max):
     self.species = species
     self.lam_min = lam_min.to(u.AA) if isinstance(lam_min, u.Quantity) else _not_quantity("lam_min")
     self.lam_max = lam_max.to(u.AA) if isinstance(lam_max, u.Quantity) else _not_quantity("lam_max")
     self.wavenum_min = (1 / self.lam_max).to(u.cm**-1)
     self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
-    self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
     self.mass = Formula(self.species).mass * u.u
     self.cache_info = None
     self.cache_ready = False
@@ -123,18 +123,58 @@ class Molecule:
       with tables.open_file(local_file, mode="r") as h5:
           table_node = None
           for node in h5.walk_nodes("/", classname="Table"):
-              if required_cols.issubset(set(node.colnames)):
-                  table_node = node
+              table_node = node
+              colnames = set(getattr(node, "colnames", []))
+              if required_cols.issubset(colnames):
                   break
 
           if table_node is None:
               raise ValueError(
-                  f"Could not find an HDF5 table with columns {sorted(required_cols)} in {local_file}"
+                  f"Could not find any HDF5 table in {local_file}"
               )
 
-          nu_vals = np.asarray(table_node.col("nu_lines"), dtype=np.float64).reshape(-1)
-          mask = (nu_vals >= nu_min) & (nu_vals <= nu_max)
-          if not np.any(mask):
+          colnames = list(getattr(table_node, "colnames", []))
+
+          # Layout 1: direct named columns
+          if required_cols.issubset(set(colnames)):
+              nu_vals = np.asarray(table_node.col("nu_lines"), dtype=np.float64).reshape(-1)
+              mask = (nu_vals >= nu_min) & (nu_vals <= nu_max)
+              if not np.any(mask):
+                  return {
+                      "A_vals": np.empty(0, dtype=np.float64),
+                      "nu_vals": np.empty(0, dtype=np.float64),
+                      "elower_vals": np.empty(0, dtype=np.float64),
+                      "gup_vals": np.empty(0, dtype=np.float64),
+                      "i_lower_vals": np.empty(0, dtype=np.int64),
+                      "lam0_vals": np.empty(0, dtype=np.float64),
+                  }
+
+              A_vals = np.asarray(table_node.col("A"), dtype=np.float64).reshape(-1)[mask]
+              nu_vals = nu_vals[mask]
+              elower_vals = np.asarray(table_node.col("elower"), dtype=np.float64).reshape(-1)[mask]
+              gup_vals = np.asarray(table_node.col("gup"), dtype=np.float64).reshape(-1)[mask]
+              i_lower_vals = np.asarray(table_node.col("i_lower")).reshape(-1)[mask].astype(np.int64, copy=False)
+              return {
+                  "A_vals": A_vals,
+                  "nu_vals": nu_vals,
+                  "elower_vals": elower_vals,
+                  "gup_vals": gup_vals,
+                  "i_lower_vals": i_lower_vals,
+                  "lam0_vals": 1.0e8 / nu_vals,
+              }
+
+          # Layout 2: pandas block table, e.g. /df/table with values_block_* columns.
+          # Use pandas directly on the local HDF5 file instead of trying to manually
+          # decode the block packing, which can vary between files.
+          key = table_node._v_parent._v_pathname
+          where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
+          df = pd.read_hdf(
+              local_file,
+              key=key,
+              where=where,
+              columns=["A", "nu_lines", "elower", "gup", "i_lower"],
+          )
+          if len(df) == 0:
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
                   "nu_vals": np.empty(0, dtype=np.float64),
@@ -144,20 +184,15 @@ class Molecule:
                   "lam0_vals": np.empty(0, dtype=np.float64),
               }
 
-          A_vals = np.asarray(table_node.col("A"), dtype=np.float64).reshape(-1)[mask]
-          nu_vals = nu_vals[mask]
-          elower_vals = np.asarray(table_node.col("elower"), dtype=np.float64).reshape(-1)[mask]
-          gup_vals = np.asarray(table_node.col("gup"), dtype=np.float64).reshape(-1)[mask]
-          i_lower_vals = np.asarray(table_node.col("i_lower")).reshape(-1)[mask].astype(np.int64, copy=False)
-
-      return {
-          "A_vals": A_vals,
-          "nu_vals": nu_vals,
-          "elower_vals": elower_vals,
-          "gup_vals": gup_vals,
-          "i_lower_vals": i_lower_vals,
-          "lam0_vals": 1.0e8 / nu_vals,
-      }
+          nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
+          return {
+              "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
+              "nu_vals": nu_vals,
+              "elower_vals": np.asarray(df["elower"], dtype=np.float64).reshape(-1),
+              "gup_vals": np.asarray(df["gup"], dtype=np.float64).reshape(-1),
+              "i_lower_vals": np.asarray(df["i_lower"]).reshape(-1).astype(np.int64, copy=False),
+              "lam0_vals": 1.0e8 / nu_vals,
+          }
 
   def load_exomol_transition_chunk(self, local_file):
         if self.cache_info is None or self.cache_info.get("source") != "exomol":
@@ -165,7 +200,8 @@ class Molecule:
 
         try:
             return self._load_exomol_transition_chunk_h5(local_file)
-        except Exception:
+        except (tables.exceptions.HDF5ExtError, tables.NoSuchNodeError, ValueError, OSError) as exc:
+            print(f"[{self.species}] fallback to pandas for {local_file}: {type(exc).__name__}: {exc}")
             df = self.load_exomol_transition_dataframe(local_file)
             if len(df) == 0:
                 return {
@@ -291,37 +327,3 @@ class Molecule:
         print(f"[{self.species}] fetch_hitran: cache metadata stored on Molecule")
     del df
     return self.cache_info
-
-  def pandas_to_numpy(self, data=None):
-    """
-    Convert one pandas dataframe of molecular line data into the minimal numpy
-    arrays needed by the opacity pipeline.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame or None
-        Dataframe containing columns A, nu_lines, elower, gup, glower.
-    """
-    if data is None:
-        raise ValueError(
-            "Pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
-        )
-
-    A_vals = np.asarray(data["A"], dtype=np.float64).reshape(-1, 1)
-    wav_vals = np.asarray(data["nu_lines"], dtype=np.float64).reshape(-1, 1)
-    elower_vals = np.asarray(data["elower"], dtype=np.float64).reshape(-1, 1)
-    gup_vals = np.asarray(data["gup"], dtype=np.float64).reshape(-1, 1)
-    glower_vals = np.asarray(data["glower"], dtype=np.float64).reshape(-1, 1)
-
-    A_ul = A_vals / u.s
-    A_ul_err = np.zeros_like(A_vals) / u.s
-
-    wav_cm1 = wav_vals / u.cm
-    lam0 = (1 / wav_cm1).to(u.AA)
-
-    E_l = (elower_vals / u.cm).to(u.eV, equivalencies=u.spectral())
-
-    g_u = gup_vals * u.dimensionless_unscaled
-    g_l = glower_vals * u.dimensionless_unscaled
-
-    return A_ul, A_ul_err, lam0, E_l, g_u, g_l

@@ -28,18 +28,7 @@ class PhotonPressure:
       self.mode = "molecule"
 
       self.lam_grid = broadening_profile.lam_grid
-      self.sigma_total = broadening_profile.sigmaArray
-      self.sigma_total_err = broadening_profile.sigmaArray_err
-
-      self.lam_sym = None
-      self.crossection_sym = None
-      self.crossection_err_sym = None
-      self.flux_star_interp = None
-      self.lam_star_interp = None
       self._flux_star_interp_molecule = None
-
-      self.E_l = None
-      self.g_l = None
 
     else:
       self.mode = "atom"
