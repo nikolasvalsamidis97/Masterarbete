@@ -103,8 +103,7 @@ class Molecule:
       if self._exomol_mdb is None:
           raise ValueError("ExoMol MdbExomol handle is missing on this Molecule object.")
 
-      
-      cols = list(self.cache_info["transition_columns"])
+      cols = self.cache_info["transition_columns"]
       return self._exomol_mdb.load(
           [local_file],
           columns=cols,
@@ -224,24 +223,27 @@ class Molecule:
         If None, this falls back to self.data only when self.data exists.
     """
     if data is None:
-        if self.data is None:
-            raise ValueError(
-                "Molecule.data is empty. This class now caches files only; "
-                "pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
-            )
-        data = self.data
+        raise ValueError(
+            "Molecule.data is no longer used in the streamed molecule pipeline; "
+            "pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
+        )
 
-    A_ul = pd.to_numeric(data["A"]).to_numpy().reshape(-1, 1) / u.s
-    A_ul_err = np.zeros_like(A_ul.value) / u.s
+    A_vals = np.asarray(data["A"], dtype=np.float64).reshape(-1, 1)
+    wav_vals = np.asarray(data["nu_lines"], dtype=np.float64).reshape(-1, 1)
+    elower_vals = np.asarray(data["elower"], dtype=np.float64).reshape(-1, 1)
+    gup_vals = np.asarray(data["gup"], dtype=np.float64).reshape(-1, 1)
+    glower_vals = np.asarray(data["glower"], dtype=np.float64).reshape(-1, 1)
 
-    wav_cm1 = pd.to_numeric(data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
+    A_ul = A_vals / u.s
+    A_ul_err = np.zeros_like(A_vals) / u.s
+
+    wav_cm1 = wav_vals / u.cm
     lam0 = (1 / wav_cm1).to(u.AA)
 
-    E_l = pd.to_numeric(data["elower"]).to_numpy().reshape(-1, 1) / u.cm
-    E_l = E_l.to(u.eV, equivalencies=u.spectral())
+    E_l = (elower_vals / u.cm).to(u.eV, equivalencies=u.spectral())
 
-    g_u = pd.to_numeric(data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-    g_l = pd.to_numeric(data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    g_u = gup_vals * u.dimensionless_unscaled
+    g_l = glower_vals * u.dimensionless_unscaled
 
     self.data_numpy = {
         "A_ul": A_ul,

@@ -259,7 +259,6 @@ class BroadeningProfileMolecule:
       "gp": "gup",
       "gpp": "glower",
     })
-    df = df[["A", "nu_lines", "elower", "gup", "glower"]].copy()
     return df
 
   def iter_line_dataframes(self, verbose=False):
@@ -274,7 +273,6 @@ class BroadeningProfileMolecule:
         if len(df_chunk) == 0:
           continue
         df_chunk["glower"] = df_chunk["i_lower"].map(gmap)
-        df_chunk = df_chunk[["A", "nu_lines", "elower", "gup", "glower"]].copy()
         yield i, len(local_files), df_chunk
     elif source == "hitran":
       if verbose:
