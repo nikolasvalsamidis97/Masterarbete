@@ -12,24 +12,24 @@ import time
 
 class PhotonPressure:
   
-  def __init__(self, broadeing_profile: BroadeningProfile | BroadeningProfileMolecule, star: Star):
+  def __init__(self, broadening_profile: BroadeningProfile | BroadeningProfileMolecule, star: Star):
     """
     Creates a photon pressure object for a Star object
     Molecules run by full crossection spectrum
     Atoms run for line by line
     """
 
-    self.broad_prof = broadeing_profile
+    self.broad_prof = broadening_profile
     self.star = star
     self.flux_star = star.flux_star_rot
     self.lam_star = star.lam_star
 
-    if isinstance(broadeing_profile, BroadeningProfileMolecule):
+    if isinstance(broadening_profile, BroadeningProfileMolecule):
       self.mode = "molecule"
 
-      self.lam_grid = broadeing_profile.lam_grid
-      self.sigma_total = broadeing_profile.sigmaArray
-      self.sigma_total_err = broadeing_profile.sigmaArray_err
+      self.lam_grid = broadening_profile.lam_grid
+      self.sigma_total = broadening_profile.sigmaArray
+      self.sigma_total_err = broadening_profile.sigmaArray_err
 
       self.lam_sym = None
       self.crossection_sym = None
@@ -44,10 +44,10 @@ class PhotonPressure:
     else:
       self.mode = "atom"
 
-      self.broad_prof = broadeing_profile
-      self.lam_sym = broadeing_profile.lam_sym
-      self.crossection_sym = broadeing_profile.sigmaArray_sym
-      self.crossection_err_sym = broadeing_profile.sigmaArray_sym_err
+      self.broad_prof = broadening_profile
+      self.lam_sym = broadening_profile.lam_sym
+      self.crossection_sym = broadening_profile.sigmaArray_sym
+      self.crossection_err_sym = broadening_profile.sigmaArray_sym_err
       
       self.star = star
       self.flux_star = star.flux_star_rot
@@ -56,8 +56,8 @@ class PhotonPressure:
       self._flux_star_interp_molecule = None
       self.lam_star_interp = self.lam_sym
 
-      self.E_l = broadeing_profile.molecule.E_l
-      self.g_l = broadeing_profile.molecule.g_l
+      self.E_l = broadening_profile.molecule.E_l
+      self.g_l = broadening_profile.molecule.g_l
 
     self.F_ph_tot, self.F_ph_tot_err, self.F_ph_perline, self.F_ph_perline_err = None, None, None, None
     self.last_calc_time_molecule = None
@@ -67,7 +67,7 @@ class PhotonPressure:
     """
     Interpolates the stars spectra over a profile with different amount of datapoints.
     The interpolation is done over a asymmetric spectra so the symmetrical lambdagrid has to be used
-    profile: Class= Broadeing_profile
+    profile: Class= broadening_profile
     """
     lam_sym = self.lam_sym.to_value(u.AA)          # (Nlines, Npts)
     lam_star = self.lam_star.to_value(u.AA)
@@ -310,7 +310,7 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=100000, verbose=True):
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=100000, verbose=False):
     """
     Calculates total photon pressure for a molecule using a stitched molecular
     spectrum built for the requested atmospheric temperature.
@@ -332,7 +332,7 @@ class PhotonPressure:
     if verbose:
       print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
     t_start_sigma = time.perf_counter()
-    self.broad_prof.apply_boltzmann_weights(Temp[0])
+    self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
     self.sigma_total = self.broad_prof.sigmaArray
     self.sigma_total_err = self.broad_prof.sigmaArray_err
     t_end_sigma = time.perf_counter()
@@ -350,9 +350,7 @@ class PhotonPressure:
 
     n_col = N_col.shape[0]
     n_lam = lam.shape[0]
-    n_lam_chunks = int(np.ceil(n_lam / lam_chunk_size))
     n_col_chunks = int(np.ceil(n_col / chunk_size))
-    n_total_chunks = n_lam_chunks * n_col_chunks
 
     F_ph_tot = np.zeros(n_col) * u.N
     F_ph_tot_err2 = np.zeros(n_col) * (u.N**2)
@@ -369,7 +367,6 @@ class PhotonPressure:
     lam_val = np.asarray(lam.value, dtype=np.float64)
     N_col_val = np.asarray(N_col.to_value(1 / u.cm**2), dtype=np.float64)
 
-    chunk_counter = 0
 
     for j0 in range(0, n_col, chunk_size):
       j1 = min(j0 + chunk_size, n_col)
@@ -386,26 +383,41 @@ class PhotonPressure:
         sigma_chunk = sigma_val[i0:i1]
         sigma_err_chunk = sigma_err_val[i0:i1]
 
-        tau_chunk = sigma_chunk[:, None] * N_chunk_val[None, :]
-        Trans_chunk = np.exp(-tau_chunk)
+        if len(N_chunk_val) == 1:
+          N_val = N_chunk_val[0]
+          tau_chunk = sigma_chunk * N_val
+          Trans_chunk = np.exp(-tau_chunk)
 
-        integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
-        F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
+          integrand_chunk = Flux_chunk * sigma_chunk * Trans_chunk
+          F_chunk_sum[0] += trapezoid(integrand_chunk, lam_chunk, axis=0) / const.c.to_value(u.m / u.s)
 
-        factor_chunk = 1.0 - (sigma_chunk[:, None] * N_chunk_val[None, :])
-        dF_dsigma_chunk = trapezoid(
-          (Flux_chunk[:, None] * Trans_chunk * factor_chunk * sigma_err_chunk[:, None]) / const.c.to_value(u.m / u.s),
-          lam_chunk[:, None],
-          axis=0
-        )
-        F_chunk_err2_sum += dF_dsigma_chunk**2
+          factor_chunk = 1.0 - (sigma_chunk * N_val)
+          dF_dsigma_chunk = trapezoid(
+            (Flux_chunk * Trans_chunk * factor_chunk * sigma_err_chunk) / const.c.to_value(u.m / u.s),
+            lam_chunk,
+            axis=0
+          )
+          F_chunk_err2_sum[0] += dF_dsigma_chunk**2
+        else:
+          tau_chunk = sigma_chunk[:, None] * N_chunk_val[None, :]
+          Trans_chunk = np.exp(-tau_chunk)
 
-        chunk_counter += 1
+          integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
+          F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
+
+          factor_chunk = 1.0 - (sigma_chunk[:, None] * N_chunk_val[None, :])
+          dF_dsigma_chunk = trapezoid(
+            (Flux_chunk[:, None] * Trans_chunk * factor_chunk * sigma_err_chunk[:, None]) / const.c.to_value(u.m / u.s),
+            lam_chunk[:, None],
+            axis=0
+          )
+          F_chunk_err2_sum += dF_dsigma_chunk**2
+
 
       F_ph_tot[j0:j1] = (F_chunk_sum * force_unit).to(u.N)
       F_ph_tot_err2[j0:j1] = (F_chunk_err2_sum * (Flux_unit * sigma_err_unit * lam_unit / const.c.unit)**2).to(u.N**2)
 
-      if verbose:
+      if verbose and n_col_chunks > 1:
         col_chunk_idx = j0 // chunk_size + 1
         print(
           f"Completed N_col chunk {col_chunk_idx}/{n_col_chunks} "

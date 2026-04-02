@@ -1,12 +1,10 @@
 import astropy.units as u
 from project_func.errors import _not_quantity
 from molmass import Formula
-import pandas as pd
-from radis.io.exomol import fetch_exomol
-from radis.api.exomolapi import MdbExomol, get_exomol_full_isotope_name
+from radis.api.exomolapi import MdbExomol
 import numpy as np
 import pathlib
-from radis import SpectrumFactory
+import tables
 from radis.io.hitran import fetch_hitran
 
 class Molecule:
@@ -18,8 +16,6 @@ class Molecule:
     self.wavenum_max = (1 / self.lam_min).to(u.cm**-1)
     self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
     self.mass = Formula(self.species).mass * u.u
-    self.data = None
-    self.data_numpy = None
     self.cache_info = None
     self.cache_ready = False
     self.source = None
@@ -39,7 +35,7 @@ class Molecule:
       )
       return mdb
 
-  def fetch_exomol(self, path, database, localdatabase):
+  def fetch_exomol(self, path, database, localdatabase, verbose=False):
       """
       Cache/setup ExoMol files only.
 
@@ -52,33 +48,39 @@ class Molecule:
       """
 
       nurange = [self.wavenum_min.value, self.wavenum_max.value]
-      print(f"[{self.species}] fetch_exomol: building MdbExomol")
-      print(f"[{self.species}] fetch_exomol: nurange = {nurange}")
-      print(f"[{self.species}] fetch_exomol: localdatabase = {localdatabase}")
-      print(f"[{self.species}] fetch_exomol: path = {path}")
-      print(f"[{self.species}] fetch_exomol: database = {database}")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: building MdbExomol")
+          print(f"[{self.species}] fetch_exomol: nurange = {nurange}")
+          print(f"[{self.species}] fetch_exomol: localdatabase = {localdatabase}")
+          print(f"[{self.species}] fetch_exomol: path = {path}")
+          print(f"[{self.species}] fetch_exomol: database = {database}")
 
       mdb = self._build_exomol_mdb(path, database, localdatabase)
-      print(f"[{self.species}] fetch_exomol: MdbExomol created")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: MdbExomol created")
 
-      print(f"[{self.species}] fetch_exomol: getting datafile manager")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: getting datafile manager")
       mgr = mdb.get_datafile_manager()
-      print(f"[{self.species}] fetch_exomol: datafile manager ready")
-      print(f"[{self.species}] fetch_exomol: number of transition files listed = {len(mdb.trans_file)}")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: datafile manager ready")
+          print(f"[{self.species}] fetch_exomol: number of transition files listed = {len(mdb.trans_file)}")
 
       local_trans_files = []
       for i, f in enumerate(mdb.trans_file, start=1):
-          print(f"[{self.species}] fetch_exomol: caching trans file {i}/{len(mdb.trans_file)} -> {f}")
+          if verbose:
+              print(f"[{self.species}] fetch_exomol: caching trans file {i}/{len(mdb.trans_file)} -> {f}")
           local_trans_files.append(mgr.cache_file(f))
-      print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
 
-      print(f"[{self.species}] fetch_exomol: caching states file")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: caching states file")
       local_states_file = mgr.cache_file(mdb.states_file)
-      print(f"[{self.species}] fetch_exomol: states file cached/resolved")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: states file cached/resolved")
 
       self.source = "exomol"
-      self.data = None
-      self.data_numpy = None
       self._exomol_mdb = mdb
       self._exomol_mgr = mgr
       self.cache_ready = True
@@ -93,7 +95,8 @@ class Molecule:
           "states_file": mdb.states_file,
           "transition_columns": ["A", "nu_lines", "elower", "gup", "i_lower"],
       }
-      print(f"[{self.species}] fetch_exomol: cache metadata stored on Molecule")
+      if verbose:
+          print(f"[{self.species}] fetch_exomol: cache metadata stored on Molecule")
 
       return self.cache_info
 
@@ -111,6 +114,78 @@ class Molecule:
           upper_bound=[("nu_lines", self.wavenum_max.value)],
           output="pandas",
       )
+  
+  def _load_exomol_transition_chunk_h5(self, local_file):
+      required_cols = {"A", "nu_lines", "elower", "gup", "i_lower"}
+      nu_min = float(self.wavenum_min.value)
+      nu_max = float(self.wavenum_max.value)
+
+      with tables.open_file(local_file, mode="r") as h5:
+          table_node = None
+          for node in h5.walk_nodes("/", classname="Table"):
+              if required_cols.issubset(set(node.colnames)):
+                  table_node = node
+                  break
+
+          if table_node is None:
+              raise ValueError(
+                  f"Could not find an HDF5 table with columns {sorted(required_cols)} in {local_file}"
+              )
+
+          nu_vals = np.asarray(table_node.col("nu_lines"), dtype=np.float64).reshape(-1)
+          mask = (nu_vals >= nu_min) & (nu_vals <= nu_max)
+          if not np.any(mask):
+              return {
+                  "A_vals": np.empty(0, dtype=np.float64),
+                  "nu_vals": np.empty(0, dtype=np.float64),
+                  "elower_vals": np.empty(0, dtype=np.float64),
+                  "gup_vals": np.empty(0, dtype=np.float64),
+                  "i_lower_vals": np.empty(0, dtype=np.int64),
+                  "lam0_vals": np.empty(0, dtype=np.float64),
+              }
+
+          A_vals = np.asarray(table_node.col("A"), dtype=np.float64).reshape(-1)[mask]
+          nu_vals = nu_vals[mask]
+          elower_vals = np.asarray(table_node.col("elower"), dtype=np.float64).reshape(-1)[mask]
+          gup_vals = np.asarray(table_node.col("gup"), dtype=np.float64).reshape(-1)[mask]
+          i_lower_vals = np.asarray(table_node.col("i_lower")).reshape(-1)[mask].astype(np.int64, copy=False)
+
+      return {
+          "A_vals": A_vals,
+          "nu_vals": nu_vals,
+          "elower_vals": elower_vals,
+          "gup_vals": gup_vals,
+          "i_lower_vals": i_lower_vals,
+          "lam0_vals": 1.0e8 / nu_vals,
+      }
+
+  def load_exomol_transition_chunk(self, local_file):
+        if self.cache_info is None or self.cache_info.get("source") != "exomol":
+            raise ValueError("ExoMol cache is not prepared for this molecule.")
+
+        try:
+            return self._load_exomol_transition_chunk_h5(local_file)
+        except Exception:
+            df = self.load_exomol_transition_dataframe(local_file)
+            if len(df) == 0:
+                return {
+                    "A_vals": np.empty(0, dtype=np.float64),
+                    "nu_vals": np.empty(0, dtype=np.float64),
+                    "elower_vals": np.empty(0, dtype=np.float64),
+                    "gup_vals": np.empty(0, dtype=np.float64),
+                    "i_lower_vals": np.empty(0, dtype=np.int64),
+                    "lam0_vals": np.empty(0, dtype=np.float64),
+                }
+
+            nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
+            return {
+                "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
+                "nu_vals": nu_vals,
+                "elower_vals": np.asarray(df["elower"], dtype=np.float64).reshape(-1),
+                "gup_vals": np.asarray(df["gup"], dtype=np.float64).reshape(-1),
+                "i_lower_vals": np.asarray(df["i_lower"]).reshape(-1).astype(np.int64, copy=False),
+                "lam0_vals": 1.0e8 / nu_vals,
+            }
 
   def load_exomol_states_dataframe(self):
       if self.cache_info is None or self.cache_info.get("source") != "exomol":
@@ -129,6 +204,7 @@ class Molecule:
       cache=True,
       engine="default",
       output="pandas",
+      verbose=False,
   ):
     """
     Fetch line-by-line data from HITRAN.
@@ -156,13 +232,15 @@ class Molecule:
     """
 
     molecule_name = self.species if molecule_name is None else molecule_name
-    print(f"[{self.species}] fetch_hitran: molecule_name = {molecule_name}")
-    print(f"[{self.species}] fetch_hitran: isotope = {isotope}")
-    print(f"[{self.species}] fetch_hitran: localdatabase = {localdatabase}")
-    print(f"[{self.species}] fetch_hitran: path = {path}")
-    print(f"[{self.species}] fetch_hitran: databank_name = {databank_name}")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: molecule_name = {molecule_name}")
+        print(f"[{self.species}] fetch_hitran: isotope = {isotope}")
+        print(f"[{self.species}] fetch_hitran: localdatabase = {localdatabase}")
+        print(f"[{self.species}] fetch_hitran: path = {path}")
+        print(f"[{self.species}] fetch_hitran: databank_name = {databank_name}")
 
-    print(f"[{self.species}] fetch_hitran: building fetch kwargs")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: building fetch kwargs")
     fetch_kwargs = dict(
       molecule=molecule_name,
       isotope=str(isotope),
@@ -182,19 +260,21 @@ class Molecule:
       fetch_kwargs["local_databases"] = str(local_path)
     if databank_name is not None:
       fetch_kwargs["databank_name"] = databank_name
-    print(f"[{self.species}] fetch_hitran: final fetch kwargs keys = {list(fetch_kwargs.keys())}")
-    if "local_databases" in fetch_kwargs:
-      print(f"[{self.species}] fetch_hitran: effective local_databases = {fetch_kwargs['local_databases']}")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: final fetch kwargs keys = {list(fetch_kwargs.keys())}")
+        if "local_databases" in fetch_kwargs:
+            print(f"[{self.species}] fetch_hitran: effective local_databases = {fetch_kwargs['local_databases']}")
 
-    print(f"[{self.species}] fetch_hitran: calling RADIS fetch_hitran")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: calling RADIS fetch_hitran")
     df = fetch_hitran(**fetch_kwargs)
-    print(f"[{self.species}] fetch_hitran: RADIS fetch_hitran returned, rows = {len(df)}")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: RADIS fetch_hitran returned, rows = {len(df)}")
 
-    print(f"[{self.species}] fetch_hitran: original dataframe columns = {list(df.columns)}")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: original dataframe columns = {list(df.columns)}")
 
     self.source = "hitran"
-    self.data = None
-    self.data_numpy = None
     self.cache_ready = True
     self.cache_info = {
       "source": "hitran",
@@ -207,7 +287,8 @@ class Molecule:
       "engine": engine,
       "output": output,
     }
-    print(f"[{self.species}] fetch_hitran: cache metadata stored on Molecule")
+    if verbose:
+        print(f"[{self.species}] fetch_hitran: cache metadata stored on Molecule")
     del df
     return self.cache_info
 
@@ -220,12 +301,10 @@ class Molecule:
     ----------
     data : pandas.DataFrame or None
         Dataframe containing columns A, nu_lines, elower, gup, glower.
-        If None, this falls back to self.data only when self.data exists.
     """
     if data is None:
         raise ValueError(
-            "Molecule.data is no longer used in the streamed molecule pipeline; "
-            "pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
+            "Pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
         )
 
     A_vals = np.asarray(data["A"], dtype=np.float64).reshape(-1, 1)
@@ -244,14 +323,5 @@ class Molecule:
 
     g_u = gup_vals * u.dimensionless_unscaled
     g_l = glower_vals * u.dimensionless_unscaled
-
-    self.data_numpy = {
-        "A_ul": A_ul,
-        "A_ul_err": A_ul_err,
-        "lam0": lam0,
-        "E_l": E_l,
-        "g_u": g_u,
-        "g_l": g_l,
-    }
 
     return A_ul, A_ul_err, lam0, E_l, g_u, g_l

@@ -21,10 +21,10 @@ WAVEMAX = 50000 * u.AA
 B_MOLECULE = 1 * u.km / u.s
 PROFILE_TYPE = "Voigt"
 # SELECTED_MOLECULES = ["CO", "NO", "SO", "SiO", "CO2", "H2O"]
-SELECTED_MOLECULES = ["CO2"]
+SELECTED_MOLECULES = ["CO", "NO"]
 TEST_STAR_KEY = "A0"
 TEST_T_ATM = 1000 * u.K
-TEST_DISTANCE = 1.0 * u.AU
+TEST_DISTANCE = 2.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 
 from concurrent.futures import ProcessPoolExecutor, as_completed

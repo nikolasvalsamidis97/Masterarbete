@@ -20,6 +20,7 @@ class BroadeningProfileMolecule:
                profileType: str = 'Voigt',
                line_weights=None,
                Temp_atm=None,
+               verbose=False,
                ):
     """
     Build a TOTAL molecular cross-section spectrum on one shared wavelength grid.
@@ -43,6 +44,8 @@ class BroadeningProfileMolecule:
 
     t0 = time.perf_counter()
     self.c_kms = const.c.to_value(u.km / u.s)
+    self.kb_eV_per_K = const.k_B.to_value(u.eV / u.K)
+    self.invcm_to_eV = (1.0 * (1 / u.cm)).to_value(u.eV, equivalencies=u.spectral())
     self.init_timers["set_constants"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
@@ -77,9 +80,10 @@ class BroadeningProfileMolecule:
     self.temp_strength_rel_cutoff = 1e-8
 
     self.init_timers["total_init_profile_setup"] = np.sum(list(self.init_timers.values()))
-    print(f"{self.molecule.species} BroadeningProfileMolecule init timing:")
-    for key, value in self.init_timers.items():
-      print(f"  {key}: {value:.2f} s")
+    if verbose:
+        print(f"{self.molecule.species} BroadeningProfileMolecule init timing:")
+        for key, value in self.init_timers.items():
+            print(f"  {key}: {value:.2f} s")
 
   def _temperature_cache_key(self, Temp_atm):
     T_val = float(np.asarray(Temp_atm.to_value(u.K)).reshape(-1)[0])
@@ -110,28 +114,44 @@ class BroadeningProfileMolecule:
     grid = self.lam_min + np.arange(npts) * self.dlam
     return grid.to(u.AA)
 
-  def calc_central_crossection(self, A_ul, A_ul_err, lam0, g_u, g_l):
-    sig0 = (A_ul * (lam0**3 / (8 * np.pi)) * (g_u / g_l))
-    sig0 = sig0.to(u.cm**2 * u.km / u.s)
+  def calc_central_crossection(self, A_vals, lam0_val, gup_vals, glower_vals):
+    """
+    Numeric line-center cross section in [cm^2 km / s].
+    Inputs are plain NumPy arrays:
+    - A_vals      : Einstein A [1/s]
+    - lam0_val    : wavelength [Angstrom]
+    - gup_vals    : upper degeneracy
+    - glower_vals : lower degeneracy
+    """
+    sig0_val = A_vals * ((lam0_val ** 3) / (8.0 * np.pi)) * (gup_vals / glower_vals)
+    sig0_val *= 1.0e-29
+    sig0_err_val = np.zeros_like(sig0_val)
+    return sig0_val, sig0_err_val
 
-    with np.errstate(divide='ignore', invalid='ignore'):
-      frac = np.where(A_ul.value != 0, (A_ul_err / A_ul).to_value(u.dimensionless_unscaled), 0.0)
-    sig0_err = sig0 * frac
-    return sig0, sig0_err
+  def FWHM_lorentz(self, A_vals, lam0_val):
+    """
+    Numeric Lorentz FWHM in [km/s].
+    Inputs are plain NumPy arrays:
+    - A_vals   : Einstein A [1/s]
+    - lam0_val : wavelength [Angstrom]
+    """
+    lorentz_val = lam0_val * (A_vals / (2.0 * np.pi)) * 1.0e-13
+    lorentz_err_val = np.zeros_like(lorentz_val)
+    return lorentz_val, lorentz_err_val
 
-  def FWHM_lorentz(self, A_ul, A_ul_err, lam0):
-    lorentz_FWHM_v = lam0 * (A_ul / (2 * np.pi))
-    lorentz_FWHM_v_err = lam0 * (A_ul_err / (2 * np.pi))
-    return lorentz_FWHM_v.to(u.km / u.s), lorentz_FWHM_v_err.to(u.km / u.s)
+  def FWHM_gauss(self, lam0_val):
+    """
+    Numeric Gaussian FWHM in [km/s].
+    The result is constant across lines for fixed b, but shaped like lam0_val.
+    """
+    gauss_scalar = self.b.to_value(u.km / u.s) * (2.0 * np.sqrt(np.log(2.0)))
+    return np.full_like(lam0_val, gauss_scalar)
 
-  def FWHM_gauss(self, lam0):
-    gauss_scalar = (2 * np.sqrt(np.log(2)) * self.b).to(u.km / u.s)
-    gauss = np.full_like(lam0.value, gauss_scalar.value) * gauss_scalar.unit
-    return gauss
-
-  def set_vlim(self, gauss_FWHM_v, lorentz_FWHM_v):
-    vlim = np.maximum(6 * gauss_FWHM_v, 25 * lorentz_FWHM_v)
-    return vlim.to(u.km / u.s)
+  def set_vlim(self, gauss_val, lorentz_val):
+    """
+    Numeric profile half-window in [km/s].
+    """
+    return np.maximum(6.0 * gauss_val, 25.0 * lorentz_val)
 
   def profile_from_velocity(self, v_val, lorentz_val, lorentz_err_val, voigt_sigma_val, voigt_gamma_val, voigt_gamma_err_val):
     if self.profileType == 'lorentz':
@@ -219,6 +239,21 @@ class BroadeningProfileMolecule:
       states = self.molecule.load_exomol_states_dataframe()
       self._states_gmap = dict(zip(states["i"], states["g"]))
     return self._states_gmap
+  
+  def _prepare_chunk_dict(self, df_chunk):
+    """
+    Convert one molecular chunk dataframe into the minimal plain-NumPy arrays
+    needed by the broadening pipeline.
+    """
+    chunk = {
+      "A_vals": np.asarray(df_chunk["A"], dtype=np.float64).reshape(-1),
+      "nu_vals": np.asarray(df_chunk["nu_lines"], dtype=np.float64).reshape(-1),
+      "elower_vals": np.asarray(df_chunk["elower"], dtype=np.float64).reshape(-1),
+      "gup_vals": np.asarray(df_chunk["gup"], dtype=np.float64).reshape(-1),
+      "glower_vals": np.asarray(df_chunk["glower"], dtype=np.float64).reshape(-1),
+    }
+    chunk["lam0_vals"] = 1.0e8 / chunk["nu_vals"]
+    return chunk
 
   def _load_hitran_dataframe(self):
     info = self.molecule.cache_info
@@ -269,90 +304,90 @@ class BroadeningProfileMolecule:
       for i, local_file in enumerate(local_files, start=1):
         if verbose:
           print(f"[{self.molecule.species}] iter_line_dataframes: loading file {i}/{len(local_files)}")
-        df_chunk = self.molecule.load_exomol_transition_dataframe(local_file)
-        if len(df_chunk) == 0:
+        chunk = self.molecule.load_exomol_transition_chunk(local_file)
+        if len(chunk["A_vals"]) == 0:
           continue
-        df_chunk["glower"] = df_chunk["i_lower"].map(gmap)
-        yield i, len(local_files), df_chunk
+        i_lower_vals = chunk.pop("i_lower_vals")
+        chunk["glower_vals"] = np.fromiter(
+          (gmap.get(int(idx), np.nan) for idx in i_lower_vals),
+          dtype=np.float64,
+          count=len(i_lower_vals),
+        )
+        yield i, len(local_files), chunk
     elif source == "hitran":
       if verbose:
         print(f"[{self.molecule.species}] iter_line_dataframes: loading HITRAN dataframe")
       df = self._load_hitran_dataframe()
-      yield 1, 1, df
+      chunk = self._prepare_chunk_dict(df)
+      del df
+      yield 1, 1, chunk
     else:
       raise ValueError(f"Unsupported molecule source for BroadeningProfileMolecule: {source}")
 
-  def _compute_chunk_weights(self, df_chunk, weights, Temp_atm, partition_Z=None):
+  def _compute_chunk_weights(self, chunk, weights, Temp_atm, partition_Z=None):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
     if Temp_atm is not None:
-      T = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
-      kb_eV = const.k_B.to(u.eV / u.K)
-      E_l = pd_to_numeric(df_chunk["elower"]).reshape(-1, 1) * (1 / u.cm)
-      E_l = E_l.to(u.eV, equivalencies=u.spectral())
-      g_l = pd_to_numeric(df_chunk["glower"]).reshape(-1, 1) * u.dimensionless_unscaled
-      boltz = (g_l * np.exp(-(E_l / (kb_eV * T)).decompose().value)).reshape(-1)
+      T = Temp_atm.to_value(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+      E_l_eV = chunk["elower_vals"] * self.invcm_to_eV
+      boltz = chunk["glower_vals"] * np.exp(-E_l_eV / (self.kb_eV_per_K * T))
       return boltz / partition_Z
 
     if weights is None:
-      return np.ones(len(df_chunk), dtype=np.float64)
+      return np.ones(len(chunk["A_vals"]), dtype=np.float64)
 
     return np.asarray(weights, dtype=np.float64).reshape(-1)
 
   def _compute_partition_function(self, Temp_atm, verbose=False):
-    T = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
-    kb_eV = const.k_B.to(u.eV / u.K)
-
+    T = Temp_atm.to_value(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
     source = getattr(self.molecule, "source", None)
 
     if source == "exomol":
-      if verbose:
-        print(f"[{self.molecule.species}] partition function: using ExoMol states file directly")
+        if verbose:
+            print(f"[{self.molecule.species}] partition function: using ExoMol states file directly")
 
-      states = self.molecule.load_exomol_states_dataframe()
-      if len(states) == 0:
-        raise ValueError("ExoMol states file is empty; cannot build partition function")
+        states = self.molecule.load_exomol_states_dataframe()
+        if len(states) == 0:
+            raise ValueError("ExoMol states file is empty; cannot build partition function")
 
-      El_states = pd_to_numeric(states["E"]).reshape(-1, 1) * (1 / u.cm)
-      El_states = El_states.to(u.eV, equivalencies=u.spectral())
-      g_states = pd_to_numeric(states["g"]).reshape(-1, 1) * u.dimensionless_unscaled
+        El_states_eV = np.asarray(states["E"], dtype=np.float64).reshape(-1) * self.invcm_to_eV
+        g_states = np.asarray(states["g"], dtype=np.float64).reshape(-1)
 
-      boltz_states = g_states * np.exp(-(El_states / (kb_eV * T)).decompose().value)
-      Z = np.nansum(boltz_states)
-      if not np.isfinite(Z) or Z == 0:
-        raise ValueError("Partition function is zero or non-finite for the requested temperature")
-      return float(Z)
+        boltz_states = g_states * np.exp(-El_states_eV / (self.kb_eV_per_K * T))
+        Z = np.nansum(boltz_states)
+        if not np.isfinite(Z) or Z == 0:
+            raise ValueError("Partition function is zero or non-finite for the requested temperature")
+        return float(Z)
 
     if source == "hitran":
-      if verbose:
-        print(f"[{self.molecule.species}] partition function: using HITRAN chunk scan")
+        if verbose:
+            print(f"[{self.molecule.species}] partition function: using HITRAN chunk scan")
 
-      unique_states = set()
-      for _, _, df_chunk in self.iter_line_dataframes(verbose=verbose):
-        el_vals = pd_to_numeric(df_chunk["elower"])
-        gl_vals = pd_to_numeric(df_chunk["glower"])
-        pairs = np.unique(np.column_stack((el_vals, gl_vals)), axis=0)
-        for pair in pairs:
-          unique_states.add((float(pair[0]), float(pair[1])))
+        unique_states = set()
+        for _, _, chunk in self.iter_line_dataframes(verbose=verbose):
+            el_vals = chunk["elower_vals"]
+            gl_vals = chunk["glower_vals"]
+            pairs = np.unique(np.column_stack((el_vals, gl_vals)), axis=0)
+            for pair in pairs:
+                unique_states.add((float(pair[0]), float(pair[1])))
 
-      if len(unique_states) == 0:
-        raise ValueError("No lower-state information found while building partition function")
+        if len(unique_states) == 0:
+            raise ValueError("No lower-state information found while building partition function")
 
-      states_arr = np.array(list(unique_states), dtype=float)
-      El_unique = states_arr[:, 0].reshape(-1, 1) * (1 / u.cm)
-      El_unique = El_unique.to(u.eV, equivalencies=u.spectral())
-      gl_unique = states_arr[:, 1].reshape(-1, 1) * u.dimensionless_unscaled
+        states_arr = np.array(list(unique_states), dtype=np.float64)
+        El_unique_eV = states_arr[:, 0] * self.invcm_to_eV
+        gl_unique = states_arr[:, 1]
 
-      boltz_unique = gl_unique * np.exp(-(El_unique / (kb_eV * T)).decompose().value)
-      Z = np.nansum(boltz_unique)
-      if not np.isfinite(Z) or Z == 0:
-        raise ValueError("Partition function is zero or non-finite for the requested temperature")
-      return float(Z)
+        boltz_unique = gl_unique * np.exp(-El_unique_eV / (self.kb_eV_per_K * T))
+        Z = np.nansum(boltz_unique)
+        if not np.isfinite(Z) or Z == 0:
+            raise ValueError("Partition function is zero or non-finite for the requested temperature")
+        return float(Z)
 
     raise ValueError(f"Unsupported molecule source for partition function: {source}")
 
-  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False, verbose=False, progress_every=100000, line_batch_size=1024):
+  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False, verbose=False, progress_every=1000000, line_batch_size=1024):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
@@ -384,9 +419,10 @@ class BroadeningProfileMolecule:
 
     line_offset = 0
     processed_lines = 0
+    last_progress_bucket = 0
 
-    for chunk_index, n_chunks, df_chunk in self.iter_line_dataframes(verbose=verbose):
-      n_chunk = len(df_chunk)
+    for chunk_index, n_chunks, chunk in self.iter_line_dataframes(verbose=verbose):
+      n_chunk = len(chunk["A_vals"])
       if n_chunk == 0:
         continue
 
@@ -394,7 +430,7 @@ class BroadeningProfileMolecule:
         print(f"[{self.molecule.species}] build_total_crossection: processing chunk {chunk_index}/{n_chunks}, rows = {n_chunk}")
 
       if Temp_atm is not None:
-        weights_chunk = self._compute_chunk_weights(df_chunk, None, Temp_atm, partition_Z=partition_Z)
+        weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
       elif weights is None:
         weights_chunk = np.ones(n_chunk, dtype=np.float64)
       else:
@@ -403,19 +439,21 @@ class BroadeningProfileMolecule:
         if len(weights_chunk) != n_chunk:
           raise ValueError("weights must have one value per molecular line across all chunks")
 
-      A_ul, A_ul_err, lam0, _E_l, g_u, g_l = self.molecule.pandas_to_numpy(data=df_chunk)
-      sig0, sig0_err = self.calc_central_crossection(A_ul, A_ul_err, lam0, g_u, g_l)
-      lorentz_FWHM_v, lorentz_FWHM_v_err = self.FWHM_lorentz(A_ul, A_ul_err, lam0)
-      gauss_FWHM_v = self.FWHM_gauss(lam0)
-      vlim = self.set_vlim(gauss_FWHM_v, lorentz_FWHM_v)
+      A_vals = chunk["A_vals"]
+      lam0_val = chunk["lam0_vals"]
+      gup_vals = chunk["gup_vals"]
+      glower_vals = chunk["glower_vals"]
 
-      lam0_val = lam0[:, 0].to_value(u.AA)
-      sig0_val = sig0[:, 0].to_value(u.cm**2 * u.km / u.s)
-      sig0_err_val = sig0_err[:, 0].to_value(u.cm**2 * u.km / u.s)
-      lorentz_val = lorentz_FWHM_v[:, 0].to_value(u.km / u.s)
-      lorentz_err_val = lorentz_FWHM_v_err[:, 0].to_value(u.km / u.s)
-      gauss_val = gauss_FWHM_v[:, 0].to_value(u.km / u.s)
-      vlim_val = vlim[:, 0].to_value(u.km / u.s)
+      sig0_val, sig0_err_val = self.calc_central_crossection(
+        A_vals,
+        lam0_val,
+        gup_vals,
+        glower_vals,
+      )
+
+      lorentz_val, lorentz_err_val = self.FWHM_lorentz(A_vals, lam0_val)
+      gauss_val = self.FWHM_gauss(lam0_val)
+      vlim_val = self.set_vlim(gauss_val, lorentz_val)
       voigt_sigma_val = gauss_val / (2.0 * np.sqrt(2.0 * np.log(2.0)))
       voigt_gamma_val = 0.5 * lorentz_val
       voigt_gamma_err_val = 0.5 * lorentz_err_val
@@ -484,13 +522,16 @@ class BroadeningProfileMolecule:
         flat_sigma = weighted_sigma_val[valid_mask]
         flat_sigma_err2 = weighted_sigma_err2_val[valid_mask]
 
-        np.add.at(sigma_total_val, flat_idx, flat_sigma)
-        np.add.at(sigma_total_err2_val, flat_idx, flat_sigma_err2)
+        sigma_total_val += np.bincount(flat_idx, weights=flat_sigma, minlength=sigma_total_val.size)
+        sigma_total_err2_val += np.bincount(flat_idx, weights=flat_sigma_err2, minlength=sigma_total_err2_val.size)
 
         processed_lines += batch_size
-        if verbose and (processed_lines == batch_size or processed_lines % progress_every < batch_size):
-          elapsed = time.perf_counter() - t_start
-          print(f"Cross-section build progress for {self.molecule.species}: processed line {processed_lines}, elapsed = {elapsed:.2f} s")
+        if verbose:
+          current_bucket = processed_lines // progress_every
+          if current_bucket > last_progress_bucket:
+            last_progress_bucket = current_bucket
+            elapsed = time.perf_counter() - t_start
+            print(f"Cross-section build progress for {self.molecule.species}: processed line {processed_lines}, elapsed = {elapsed:.2f} s")
 
       line_offset += n_chunk
 
@@ -528,11 +569,11 @@ class BroadeningProfileMolecule:
     self.sigma_total_err = self.sigmaArray_err
     return self.sigmaArray, self.sigmaArray_err
 
-  def apply_boltzmann_weights(self, Temp_atm):
+  def apply_boltzmann_weights(self, Temp_atm, verbose=False):
     self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
-      Temp_atm=Temp_atm,
-      store_weights=True,
-      verbose=True,
+        Temp_atm=Temp_atm,
+        store_weights=True,
+        verbose=verbose,
     )
     self.sigma_total = self.sigmaArray
     self.sigma_total_err = self.sigmaArray_err
@@ -556,7 +597,3 @@ class BroadeningProfileMolecule:
     plt.legend()
     plt.tight_layout()
     plt.show()
-
-
-def pd_to_numeric(series):
-  return np.asarray(series, dtype=np.float64).reshape(-1)
