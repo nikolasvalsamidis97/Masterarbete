@@ -71,6 +71,21 @@ class BroadeningProfileMolecule:
     self.temperature_cache = {}
     self._states_gmap = None
 
+    # Compatibility placeholders for older code paths that still expect the
+    # previous monolithic-line-array attributes to exist on this class.
+    self.A_ul = None
+    self.A_ul_err = None
+    self.lam0 = None
+    self.E_l = None
+    self.g_u = None
+    self.g_l = None
+    self.sig_0 = None
+    self.sig_0_err = None
+    self.lorentz_FWHM_v = None
+    self.lorentz_FWHM_v_err = None
+    self.gauss_FWHM_v = None
+    self.vlim = None
+
     # Temporary speed hack: skip lines whose weighted central strength is tiny
     # compared to the strongest weighted line in the current build.
     self.temp_strength_rel_cutoff = 1e-8
