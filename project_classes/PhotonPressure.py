@@ -36,6 +36,7 @@ class PhotonPressure:
       self.crossection_err_sym = None
       self.flux_star_interp = None
       self.lam_star_interp = None
+      self._flux_star_interp_molecule = None
 
       self.E_l = None
       self.g_l = None
@@ -52,6 +53,7 @@ class PhotonPressure:
       self.flux_star = star.flux_star_rot
       self.lam_star = star.lam_star
       self.flux_star_interp = self.get_interp_Spectra()
+      self._flux_star_interp_molecule = None
       self.lam_star_interp = self.lam_sym
 
       self.E_l = broadeing_profile.molecule.E_l
@@ -84,7 +86,12 @@ class PhotonPressure:
   def get_interp_Spectra_molecule(self):
     """
     Interpolates the stellar spectrum onto the shared molecular wavelength grid.
+    Cached after the first build because the star and molecular wavelength grid
+    do not change within a PhotonPressure object.
     """
+    if self._flux_star_interp_molecule is not None:
+      return self._flux_star_interp_molecule
+
     lam_grid = self.lam_grid.to_value(u.AA)
     lam_star = self.lam_star.to_value(u.AA)
     flux_star = self.flux_star.to_value(self.flux_star.unit)
@@ -92,7 +99,8 @@ class PhotonPressure:
     F_star_interp = np.interp(lam_grid, lam_star, flux_star)
     F_star_interp *= self.flux_star.unit
 
-    return F_star_interp
+    self._flux_star_interp_molecule = F_star_interp
+    return self._flux_star_interp_molecule
   
   def plot_interp_Spectra(self, line: int):
     if self.mode != "atom":

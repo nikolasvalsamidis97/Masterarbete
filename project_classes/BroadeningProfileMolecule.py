@@ -71,20 +71,6 @@ class BroadeningProfileMolecule:
     self.temperature_cache = {}
     self._states_gmap = None
 
-    # Compatibility placeholders for older code paths that still expect the
-    # previous monolithic-line-array attributes to exist on this class.
-    self.A_ul = None
-    self.A_ul_err = None
-    self.lam0 = None
-    self.E_l = None
-    self.g_u = None
-    self.g_l = None
-    self.sig_0 = None
-    self.sig_0_err = None
-    self.lorentz_FWHM_v = None
-    self.lorentz_FWHM_v_err = None
-    self.gauss_FWHM_v = None
-    self.vlim = None
 
     # Temporary speed hack: skip lines whose weighted central strength is tiny
     # compared to the strongest weighted line in the current build.
@@ -172,6 +158,52 @@ class BroadeningProfileMolecule:
       phi_err_val = np.zeros_like(phi_val)
     else:
       gamma_m = max(gamma - dgamma, 1e-30)
+      gamma_p = gamma + dgamma
+      z_m = (v_val + 1j * gamma_m) / (sigma * np.sqrt(2.0))
+      z_p = (v_val + 1j * gamma_p) / (sigma * np.sqrt(2.0))
+      phi_m = np.real(wofz(z_m)) / (sigma * np.sqrt(2.0 * np.pi))
+      phi_p = np.real(wofz(z_p)) / (sigma * np.sqrt(2.0 * np.pi))
+      dphi_dL = (phi_p - phi_m) / ((gamma_p - gamma_m) * 2.0)
+      phi_err_val = np.abs(dphi_dL) * (2.0 * dgamma)
+
+    return phi_val, phi_err_val
+
+  def profile_from_velocity_batch(self, v_val, lorentz_val, lorentz_err_val, voigt_sigma_val, voigt_gamma_val, voigt_gamma_err_val):
+    """
+    Vectorized profile evaluation for a batch of lines.
+
+    Parameters are expected to broadcast as:
+    - v_val:                (n_lines, n_points)
+    - lorentz_val:          (n_lines, 1)
+    - lorentz_err_val:      (n_lines, 1)
+    - voigt_sigma_val:      (n_lines, 1)
+    - voigt_gamma_val:      (n_lines, 1)
+    - voigt_gamma_err_val:  (n_lines, 1)
+    """
+    if self.profileType == 'lorentz':
+      L = lorentz_val
+      dL = lorentz_err_val
+      phi_val = (1.0 / np.pi) * (0.5 * L) / (v_val**2 + (0.5 * L)**2)
+      phi_err_val = np.abs((1.0 / np.pi) * 0.5 * (v_val**2 - L**2 / 4.0) / (v_val**2 + L**2 / 4.0)**2) * dL
+      return phi_val, phi_err_val
+
+    if self.profileType == 'gauss':
+      b_val = self.b.to_value(u.km / u.s)
+      phi_val = (1.0 / (b_val * np.sqrt(np.pi))) * np.exp(-(v_val / b_val)**2)
+      phi_err_val = np.zeros_like(phi_val)
+      return phi_val, phi_err_val
+
+    sigma = voigt_sigma_val
+    gamma = voigt_gamma_val
+    dgamma = voigt_gamma_err_val
+
+    z = (v_val + 1j * gamma) / (sigma * np.sqrt(2.0))
+    phi_val = np.real(wofz(z)) / (sigma * np.sqrt(2.0 * np.pi))
+
+    if np.all(np.isclose(dgamma, 0.0, equal_nan=True)):
+      phi_err_val = np.zeros_like(phi_val)
+    else:
+      gamma_m = np.maximum(gamma - dgamma, 1e-30)
       gamma_p = gamma + dgamma
       z_m = (v_val + 1j * gamma_m) / (sigma * np.sqrt(2.0))
       z_p = (v_val + 1j * gamma_p) / (sigma * np.sqrt(2.0))
@@ -274,29 +306,55 @@ class BroadeningProfileMolecule:
     T = Temp_atm.to(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
     kb_eV = const.k_B.to(u.eV / u.K)
 
-    unique_states = set()
-    for _, _, df_chunk in self.iter_line_dataframes(verbose=verbose):
-      el_vals = pd_to_numeric(df_chunk["elower"])
-      gl_vals = pd_to_numeric(df_chunk["glower"])
-      pairs = np.unique(np.column_stack((el_vals, gl_vals)), axis=0)
-      for pair in pairs:
-        unique_states.add((float(pair[0]), float(pair[1])))
+    source = getattr(self.molecule, "source", None)
 
-    if len(unique_states) == 0:
-      raise ValueError("No lower-state information found while building partition function")
+    if source == "exomol":
+      if verbose:
+        print(f"[{self.molecule.species}] partition function: using ExoMol states file directly")
 
-    states_arr = np.array(list(unique_states), dtype=float)
-    El_unique = states_arr[:, 0].reshape(-1, 1) * (1 / u.cm)
-    El_unique = El_unique.to(u.eV, equivalencies=u.spectral())
-    gl_unique = states_arr[:, 1].reshape(-1, 1) * u.dimensionless_unscaled
+      states = self.molecule.load_exomol_states_dataframe()
+      if len(states) == 0:
+        raise ValueError("ExoMol states file is empty; cannot build partition function")
 
-    boltz_unique = gl_unique * np.exp(-(El_unique / (kb_eV * T)).decompose().value)
-    Z = np.nansum(boltz_unique)
-    if not np.isfinite(Z) or Z == 0:
-      raise ValueError("Partition function is zero or non-finite for the requested temperature")
-    return float(Z)
+      El_states = pd_to_numeric(states["E"]).reshape(-1, 1) * (1 / u.cm)
+      El_states = El_states.to(u.eV, equivalencies=u.spectral())
+      g_states = pd_to_numeric(states["g"]).reshape(-1, 1) * u.dimensionless_unscaled
 
-  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False, verbose=False, progress_every=100000):
+      boltz_states = g_states * np.exp(-(El_states / (kb_eV * T)).decompose().value)
+      Z = np.nansum(boltz_states)
+      if not np.isfinite(Z) or Z == 0:
+        raise ValueError("Partition function is zero or non-finite for the requested temperature")
+      return float(Z)
+
+    if source == "hitran":
+      if verbose:
+        print(f"[{self.molecule.species}] partition function: using HITRAN chunk scan")
+
+      unique_states = set()
+      for _, _, df_chunk in self.iter_line_dataframes(verbose=verbose):
+        el_vals = pd_to_numeric(df_chunk["elower"])
+        gl_vals = pd_to_numeric(df_chunk["glower"])
+        pairs = np.unique(np.column_stack((el_vals, gl_vals)), axis=0)
+        for pair in pairs:
+          unique_states.add((float(pair[0]), float(pair[1])))
+
+      if len(unique_states) == 0:
+        raise ValueError("No lower-state information found while building partition function")
+
+      states_arr = np.array(list(unique_states), dtype=float)
+      El_unique = states_arr[:, 0].reshape(-1, 1) * (1 / u.cm)
+      El_unique = El_unique.to(u.eV, equivalencies=u.spectral())
+      gl_unique = states_arr[:, 1].reshape(-1, 1) * u.dimensionless_unscaled
+
+      boltz_unique = gl_unique * np.exp(-(El_unique / (kb_eV * T)).decompose().value)
+      Z = np.nansum(boltz_unique)
+      if not np.isfinite(Z) or Z == 0:
+        raise ValueError("Partition function is zero or non-finite for the requested temperature")
+      return float(Z)
+
+    raise ValueError(f"Unsupported molecule source for partition function: {source}")
+
+  def build_total_crossection(self, weights=None, Temp_atm=None, store_weights=False, verbose=False, progress_every=100000, line_batch_size=1024):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
@@ -347,7 +405,7 @@ class BroadeningProfileMolecule:
         if len(weights_chunk) != n_chunk:
           raise ValueError("weights must have one value per molecular line across all chunks")
 
-      A_ul, A_ul_err, lam0, E_l, g_u, g_l = self.molecule.pandas_to_numpy(data=df_chunk)
+      A_ul, A_ul_err, lam0, _E_l, g_u, g_l = self.molecule.pandas_to_numpy(data=df_chunk)
       sig0, sig0_err = self.calc_central_crossection(A_ul, A_ul_err, lam0, g_u, g_l)
       lorentz_FWHM_v, lorentz_FWHM_v_err = self.FWHM_lorentz(A_ul, A_ul_err, lam0)
       gauss_FWHM_v = self.FWHM_gauss(lam0)
@@ -374,37 +432,65 @@ class BroadeningProfileMolecule:
       i0_arr = np.searchsorted(self.lam_grid_val, lam_lo_val, side='left')
       i1_arr = np.searchsorted(self.lam_grid_val, lam_hi_val, side='right')
 
-      for i in range(n_chunk):
-        weight_i = weights_chunk[i]
-        if not np.isfinite(weight_i) or weight_i == 0.0:
-          continue
-        if weighted_strength[i] < strength_cutoff:
+      active_mask = np.isfinite(weights_chunk)
+      active_mask &= (weights_chunk != 0.0)
+      active_mask &= (i1_arr > i0_arr)
+      if strength_cutoff > 0.0:
+        active_mask &= (weighted_strength >= strength_cutoff)
+
+      active_idx = np.where(active_mask)[0]
+      n_active = len(active_idx)
+      if verbose:
+        print(f"[{self.molecule.species}] build_total_crossection: active lines in chunk = {n_active}/{n_chunk}")
+
+      for b0 in range(0, n_active, line_batch_size):
+        b1 = min(b0 + line_batch_size, n_active)
+        batch_idx = active_idx[b0:b1]
+        batch_size = len(batch_idx)
+        if batch_size == 0:
           continue
 
-        i0 = i0_arr[i]
-        i1 = i1_arr[i]
-        if i1 <= i0:
-          continue
+        i0_batch = i0_arr[batch_idx]
+        i1_batch = i1_arr[batch_idx]
+        widths = i1_batch - i0_batch
+        max_width = int(np.max(widths))
+        offsets = np.arange(max_width, dtype=np.int64)[None, :]
+        grid_idx = i0_batch[:, None] + offsets
+        valid_mask = offsets < widths[:, None]
 
-        lam_local_val = self.lam_grid_val[i0:i1]
-        v_local_val = self.c_kms * ((lam_local_val - lam0_val[i]) / lam0_val[i])
-        phi_val, phi_err_val = self.profile_from_velocity(
+        safe_grid_idx = np.where(valid_mask, grid_idx, 0)
+        lam_local_val = self.lam_grid_val[safe_grid_idx]
+
+        lam0_batch = lam0_val[batch_idx][:, None]
+        v_local_val = self.c_kms * ((lam_local_val - lam0_batch) / lam0_batch)
+
+        phi_val, phi_err_val = self.profile_from_velocity_batch(
           v_local_val,
-          lorentz_val[i],
-          lorentz_err_val[i],
-          voigt_sigma_val[i],
-          voigt_gamma_val[i],
-          voigt_gamma_err_val[i],
+          lorentz_val[batch_idx][:, None],
+          lorentz_err_val[batch_idx][:, None],
+          voigt_sigma_val[batch_idx][:, None],
+          voigt_gamma_val[batch_idx][:, None],
+          voigt_gamma_err_val[batch_idx][:, None],
         )
 
-        sigma_line_val = sig0_val[i] * phi_val
-        sigma_line_err_val = sig0_val[i] * phi_err_val + sig0_err_val[i] * phi_val
+        sigma_line_val = sig0_val[batch_idx][:, None] * phi_val
+        sigma_line_err_val = (
+          sig0_val[batch_idx][:, None] * phi_err_val
+          + sig0_err_val[batch_idx][:, None] * phi_val
+        )
 
-        sigma_total_val[i0:i1] += weight_i * sigma_line_val
-        sigma_total_err2_val[i0:i1] += (weight_i * sigma_line_err_val) ** 2
+        weighted_sigma_val = weights_chunk[batch_idx][:, None] * sigma_line_val
+        weighted_sigma_err2_val = (weights_chunk[batch_idx][:, None] * sigma_line_err_val) ** 2
 
-        processed_lines += 1
-        if verbose and (processed_lines == 1 or processed_lines % progress_every == 0):
+        flat_idx = safe_grid_idx[valid_mask]
+        flat_sigma = weighted_sigma_val[valid_mask]
+        flat_sigma_err2 = weighted_sigma_err2_val[valid_mask]
+
+        np.add.at(sigma_total_val, flat_idx, flat_sigma)
+        np.add.at(sigma_total_err2_val, flat_idx, flat_sigma_err2)
+
+        processed_lines += batch_size
+        if verbose and (processed_lines == batch_size or processed_lines % progress_every < batch_size):
           elapsed = time.perf_counter() - t_start
           print(f"Cross-section build progress for {self.molecule.species}: processed line {processed_lines}, elapsed = {elapsed:.2f} s")
 
