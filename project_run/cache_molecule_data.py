@@ -66,8 +66,11 @@ def cache_one_species(species: str):
     print(f"Local database folder: {localdatabase}")
 
     try:
+        print(f"[{species}] Stage 1/5: creating Molecule object")
         mol = Molecule(species, WAVEMIN, WAVEMAX)
+        print(f"[{species}] Stage 1/5 done: Molecule object created")
 
+        print(f"[{species}] Stage 2/5: starting fetch from {source}")
         if source == "exomol":
             mol.fetch_exomol(**fetch_kwargs)
         elif source == "hitran":
@@ -84,19 +87,20 @@ def cache_one_species(species: str):
             )
         else:
             raise ValueError(f"Unknown molecule source: {source}")
+        print(f"[{species}] Stage 2/5 done: fetch complete")
 
-        print(f"Finished fetching {species}")
-        print(f"Building BroadeningProfileMolecule for {species}")
+        print(f"[{species}] Stage 3/5: building BroadeningProfileMolecule")
         profile = BroadeningProfileMolecule(
             mol,
             B_MOLECULE,
             profileType=PROFILE_TYPE,
         )
-        print(f"Finished BroadeningProfileMolecule setup for {species}")
+        print(f"[{species}] Stage 3/5 done: BroadeningProfileMolecule ready")
 
-        print(f"Building PhotonPressure object for {species}")
+        print(f"[{species}] Stage 4/5: building PhotonPressure object")
         pp = PhotonPressure(profile, test_star)
-        print(f"Calculating photon pressure for {species}")
+        print(f"[{species}] Stage 4/5 done: PhotonPressure object ready")
+        print(f"[{species}] Stage 5/5: calculating photon pressure")
         F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure_molecule(
             TEST_NCOLS,
             TEST_T_ATM,
@@ -104,15 +108,15 @@ def cache_one_species(species: str):
             chunk_size=1,
             lam_chunk_size=10000,
         )
-        print(f"Finished photon pressure calculation for {species}")
-        print(f"F_ph_tot = {F_ph_tot}")
-        print(f"F_ph_tot_err = {F_ph_tot_err}")
+        print(f"[{species}] Stage 5/5 done: photon pressure calculation finished")
+        print(f"[{species}] F_ph_tot = {F_ph_tot}")
+        print(f"[{species}] F_ph_tot_err = {F_ph_tot_err}")
         _ = profile
         _ = pp
         elapsed = time.perf_counter() - t0
         return {"species": species, "ok": True, "error": None, "elapsed_s": elapsed}
     except Exception as exc:
-        print(f"Failed to fetch {species}: {exc}")
+        print(f"[{species}] FAILED during pipeline: {exc}")
         elapsed = time.perf_counter() - t0
         return {"species": species, "ok": False, "error": str(exc), "elapsed_s": elapsed}
 
