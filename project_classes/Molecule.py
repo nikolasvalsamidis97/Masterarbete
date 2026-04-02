@@ -19,14 +19,34 @@ class Molecule:
       self.A_ul_min = A_ul_min.to(1/u.s) if isinstance(A_ul_min, u.Quantity) else _not_quantity("A_ul_min")
       self.mass = Formula(self.species).mass * u.u
       self.data = None
+      self.data_numpy = None
+      self.cache_info = None
+      self.cache_ready = False
+      self.source = None
 
+  def _build_exomol_mdb(self, path, database, localdatabase):
+      nurange = [self.wavenum_min.value, self.wavenum_max.value]
+      mdb = MdbExomol(
+          path=path,
+          molecule=self.species,
+          database=database,
+          local_databases=localdatabase,
+          nurange=nurange,
+          engine="pytables",
+          skip_optional_data=True,
+      )
+      return mdb
 
   def fetch_exomol(self, path, database, localdatabase):
       """
-      Fetches data from ExoMol database using the radis package. The data is filtered according to the input parameters and stored in a pandas dataframe.
+      Cache/setup ExoMol files only.
 
-      ** Returns **
-      data:         
+      This method no longer assembles one giant pandas dataframe. Instead, it:
+      - builds the ExoMol database handle,
+      - resolves/caches the needed transition files,
+      - resolves/caches the states file,
+      - stores enough metadata for later file-by-file loading in the
+        broadening/cross-section stage.
       """
 
       nurange = [self.wavenum_min.value, self.wavenum_max.value]
@@ -36,67 +56,73 @@ class Molecule:
       print(f"[{self.species}] fetch_exomol: path = {path}")
       print(f"[{self.species}] fetch_exomol: database = {database}")
 
-      mdb = MdbExomol(
-          path=path,
-          molecule=self.species,
-          database=database,
-          local_databases=localdatabase,  # folder where it will download/cache
-          nurange=nurange,
-          engine="pytables",              # easiest for pandas workflow
-          skip_optional_data=True,
-      )
+      mdb = self._build_exomol_mdb(path, database, localdatabase)
       print(f"[{self.species}] fetch_exomol: MdbExomol created")
 
-      # get local cached trans files, then load them
       print(f"[{self.species}] fetch_exomol: getting datafile manager")
       mgr = mdb.get_datafile_manager()
       print(f"[{self.species}] fetch_exomol: datafile manager ready")
       print(f"[{self.species}] fetch_exomol: number of transition files listed = {len(mdb.trans_file)}")
-      local_files = []
+
+      local_trans_files = []
       for i, f in enumerate(mdb.trans_file, start=1):
           print(f"[{self.species}] fetch_exomol: caching trans file {i}/{len(mdb.trans_file)} -> {f}")
-          local_files.append(mgr.cache_file(f))
+          local_trans_files.append(mgr.cache_file(f))
       print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
 
-      cols = ["A", "nu_lines", "elower", "gup", "i_lower"]  # A_ul, wavenumber, lower state energy, upper state degeneracy, lower state index
-      print(f"[{self.species}] fetch_exomol: loading transition data into pandas file-by-file")
-      df_parts = []
-      total_rows = 0
-      for i, local_file in enumerate(local_files, start=1):
-          print(f"[{self.species}] fetch_exomol: loading transition dataframe {i}/{len(local_files)}")
-          df_part = mdb.load(
-              [local_file],
-              columns=cols,
-              lower_bound=[("nu_lines", self.wavenum_min.value)],
-              upper_bound=[("nu_lines", self.wavenum_max.value)],
-              output="pandas",              # returns pandas
-          )
-          print(f"[{self.species}] fetch_exomol: loaded dataframe {i}/{len(local_files)}, rows = {len(df_part)}")
-          total_rows += len(df_part)
-          df_parts.append(df_part)
+      print(f"[{self.species}] fetch_exomol: caching states file")
+      local_states_file = mgr.cache_file(mdb.states_file)
+      print(f"[{self.species}] fetch_exomol: states file cached/resolved")
 
-      print(f"[{self.species}] fetch_exomol: concatenating {len(df_parts)} partial dataframes")
-      if len(df_parts) == 0:
-          df = pd.DataFrame(columns=cols)
-      elif len(df_parts) == 1:
-          df = df_parts[0]
-      else:
-          df = pd.concat(df_parts, ignore_index=True)
-      print(f"[{self.species}] fetch_exomol: transition data loaded, total rows = {len(df)} (sum of parts = {total_rows})")
+      self.source = "exomol"
+      self.data = None
+      self.data_numpy = None
+      self.cache_ready = True
+      self.cache_info = {
+          "source": "exomol",
+          "path": path,
+          "database": database,
+          "localdatabase": localdatabase,
+          "nurange": nurange,
+          "local_trans_files": local_trans_files,
+          "local_states_file": local_states_file,
+          "states_file": mdb.states_file,
+          "transition_columns": ["A", "nu_lines", "elower", "gup", "i_lower"],
+      }
+      print(f"[{self.species}] fetch_exomol: cache metadata stored on Molecule")
 
-      print(f"[{self.species}] fetch_exomol: reading states file")
-      states = mgr.read(mgr.cache_file(mdb.states_file))   # pandas df, has columns i, g, J, E
-      print(f"[{self.species}] fetch_exomol: states file loaded, rows = {len(states)}")
-      gmap = dict(zip(states["i"], states["g"]))
-      df["glower"] = df["i_lower"].map(gmap)
-      print(f"[{self.species}] fetch_exomol: lower-state degeneracies mapped")
+      return self.cache_info
 
-      print(f"[{self.species}] fetch_exomol: storing dataframe in self.data")
-      self.data = df
+  def load_exomol_transition_dataframe(self, local_file):
+      if self.cache_info is None or self.cache_info.get("source") != "exomol":
+          raise ValueError("ExoMol cache is not prepared for this molecule.")
 
-      return df
+      mdb = self._build_exomol_mdb(
+          self.cache_info["path"],
+          self.cache_info["database"],
+          self.cache_info["localdatabase"],
+      )
+      cols = list(self.cache_info["transition_columns"])
+      return mdb.load(
+          [local_file],
+          columns=cols,
+          lower_bound=[("nu_lines", self.wavenum_min.value)],
+          upper_bound=[("nu_lines", self.wavenum_max.value)],
+          output="pandas",
+      )
 
-  
+  def load_exomol_states_dataframe(self):
+      if self.cache_info is None or self.cache_info.get("source") != "exomol":
+          raise ValueError("ExoMol cache is not prepared for this molecule.")
+
+      mdb = self._build_exomol_mdb(
+          self.cache_info["path"],
+          self.cache_info["database"],
+          self.cache_info["localdatabase"],
+      )
+      mgr = mdb.get_datafile_manager()
+      return mgr.read(self.cache_info["local_states_file"])
+
   def fetch_hitran(
       self,
       molecule_name=None,
@@ -170,35 +196,55 @@ class Molecule:
 
     print(f"[{self.species}] fetch_hitran: original dataframe columns = {list(df.columns)}")
 
-    df = df.rename(columns={
-      "A": "A",
-      "wav": "nu_lines",
-      "El": "elower",
-      "gp": "gup",
-      "gpp": "glower",
-    })
-    df = df[["A", "nu_lines", "elower", "gup", "glower"]].copy()
-    print(f"[{self.species}] fetch_hitran: dataframe renamed/filtered")
+    self.source = "hitran"
+    self.data = None
+    self.data_numpy = None
+    self.cache_ready = True
+    self.cache_info = {
+      "source": "hitran",
+      "molecule_name": molecule_name,
+      "isotope": isotope,
+      "localdatabase": localdatabase,
+      "path": path,
+      "databank_name": databank_name,
+      "cache": cache,
+      "engine": engine,
+      "output": output,
+    }
+    print(f"[{self.species}] fetch_hitran: cache metadata stored on Molecule")
+    del df
+    return self.cache_info
 
-    print(f"[{self.species}] fetch_hitran: storing dataframe in self.data")
-    self.data = df
-    return df
+  def pandas_to_numpy(self, data=None):
+    """
+    Convert one pandas dataframe of molecular line data into the minimal numpy
+    arrays needed by the opacity pipeline.
 
-  def pandas_to_numpy(self):
+    Parameters
+    ----------
+    data : pandas.DataFrame or None
+        Dataframe containing columns A, nu_lines, elower, gup, glower.
+        If None, this falls back to self.data only when self.data exists.
     """
-    Minimal numpy arrays needed for the molecular opacity pipeline.
-    """
-    A_ul = pd.to_numeric(self.data["A"]).to_numpy().reshape(-1, 1) / u.s
+    if data is None:
+        if self.data is None:
+            raise ValueError(
+                "Molecule.data is empty. This class now caches files only; "
+                "pass a chunk dataframe explicitly to pandas_to_numpy(data=...)."
+            )
+        data = self.data
+
+    A_ul = pd.to_numeric(data["A"]).to_numpy().reshape(-1, 1) / u.s
     A_ul_err = np.zeros_like(A_ul.value) / u.s
 
-    wav_cm1 = pd.to_numeric(self.data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
+    wav_cm1 = pd.to_numeric(data["nu_lines"]).to_numpy().reshape(-1, 1) / u.cm
     lam0 = (1 / wav_cm1).to(u.AA)
 
-    E_l = pd.to_numeric(self.data["elower"]).to_numpy().reshape(-1, 1) / u.cm
+    E_l = pd.to_numeric(data["elower"]).to_numpy().reshape(-1, 1) / u.cm
     E_l = E_l.to(u.eV, equivalencies=u.spectral())
 
-    g_u = pd.to_numeric(self.data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
-    g_l = pd.to_numeric(self.data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    g_u = pd.to_numeric(data["gup"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
+    g_l = pd.to_numeric(data["glower"]).to_numpy().reshape(-1, 1) * u.dimensionless_unscaled
 
     self.data_numpy = {
         "A_ul": A_ul,
