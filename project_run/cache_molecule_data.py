@@ -24,7 +24,7 @@ PROFILE_TYPE = "Voigt"
 SELECTED_MOLECULES = ["CO", "NO"]
 TEST_STAR_KEY = "A0"
 TEST_T_ATM = 1000 * u.K
-TEST_DISTANCE = 2.0 * u.AU
+TEST_DISTANCE = 3.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
