@@ -59,15 +59,30 @@ class Molecule:
       print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
 
       cols = ["A", "nu_lines", "elower", "gup", "i_lower"]  # A_ul, wavenumber, lower state energy, upper state degeneracy, lower state index
-      print(f"[{self.species}] fetch_exomol: loading transition data into pandas")
-      df = mdb.load(
-          local_files,
-          columns=cols,
-          lower_bound=[("nu_lines", self.wavenum_min.value)],
-          upper_bound=[("nu_lines", self.wavenum_max.value)],
-          output="pandas",              # returns pandas
-      )
-      print(f"[{self.species}] fetch_exomol: transition data loaded, rows = {len(df)}")
+      print(f"[{self.species}] fetch_exomol: loading transition data into pandas file-by-file")
+      df_parts = []
+      total_rows = 0
+      for i, local_file in enumerate(local_files, start=1):
+          print(f"[{self.species}] fetch_exomol: loading transition dataframe {i}/{len(local_files)}")
+          df_part = mdb.load(
+              [local_file],
+              columns=cols,
+              lower_bound=[("nu_lines", self.wavenum_min.value)],
+              upper_bound=[("nu_lines", self.wavenum_max.value)],
+              output="pandas",              # returns pandas
+          )
+          print(f"[{self.species}] fetch_exomol: loaded dataframe {i}/{len(local_files)}, rows = {len(df_part)}")
+          total_rows += len(df_part)
+          df_parts.append(df_part)
+
+      print(f"[{self.species}] fetch_exomol: concatenating {len(df_parts)} partial dataframes")
+      if len(df_parts) == 0:
+          df = pd.DataFrame(columns=cols)
+      elif len(df_parts) == 1:
+          df = df_parts[0]
+      else:
+          df = pd.concat(df_parts, ignore_index=True)
+      print(f"[{self.species}] fetch_exomol: transition data loaded, total rows = {len(df)} (sum of parts = {total_rows})")
 
       print(f"[{self.species}] fetch_exomol: reading states file")
       states = mgr.read(mgr.cache_file(mdb.states_file))   # pandas df, has columns i, g, J, E
