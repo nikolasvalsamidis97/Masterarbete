@@ -250,7 +250,7 @@ class Molecule:
           for col in logical_columns:
               if col in {"index", "nu_lines"}:
                   continue
-              if col in {"A", "elower", "Sij0", "airbrd", "selbrd", "Pshft", "Tdpair", "Tdpsel"}:
+              if col in {"A", "elower", "eupper", "Sij0", "airbrd", "selbrd", "Pshft", "Tdpair", "Tdpsel"}:
                   float_logical_cols.append(col)
               else:
                   int_logical_cols.append(col)
