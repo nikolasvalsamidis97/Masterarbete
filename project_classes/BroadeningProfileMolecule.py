@@ -67,8 +67,7 @@ class BroadeningProfileMolecule:
     self.sigma_total = None
     self.sigma_total_err = None
     self.temperature_cache = {}
-    self._states_i_sorted = None
-    self._states_g_sorted = None
+    self._states_g_lookup = None
 
 
     # Temporary speed hack: skip lines whose weighted central strength is tiny
@@ -196,14 +195,20 @@ class BroadeningProfileMolecule:
     return phi_val, phi_err_val
 
   def _get_exomol_state_lookup(self):
-    if self._states_i_sorted is None or self._states_g_sorted is None:
+    if self._states_g_lookup is None:
       states = self.molecule.load_exomol_states_dataframe()
       state_i = np.asarray(states["i"]).reshape(-1).astype(np.int64, copy=False)
       state_g = np.asarray(states["g"], dtype=np.float64).reshape(-1)
-      order = np.argsort(state_i)
-      self._states_i_sorted = state_i[order]
-      self._states_g_sorted = state_g[order]
-    return self._states_i_sorted, self._states_g_sorted
+
+      if len(state_i) == 0:
+        raise ValueError(f"ExoMol states file for {self.molecule.species} is empty")
+
+      max_i = int(np.max(state_i))
+      lookup = np.full(max_i + 1, np.nan, dtype=np.float64)
+      lookup[state_i] = state_g
+      self._states_g_lookup = lookup
+
+    return self._states_g_lookup
   
   def _prepare_chunk_dict(self, df_chunk):
     """
@@ -264,7 +269,7 @@ class BroadeningProfileMolecule:
   def iter_line_dataframes(self, verbose=False):
     source = getattr(self.molecule, "source", None)
     if source == "exomol":
-      states_i_sorted, states_g_sorted = self._get_exomol_state_lookup()
+      states_g_lookup = self._get_exomol_state_lookup()
       local_files = self.molecule.cache_info["local_trans_files"]
       for i, local_file in enumerate(local_files, start=1):
         t_file_start = time.perf_counter()
@@ -286,11 +291,14 @@ class BroadeningProfileMolecule:
 
         t_map_start = time.perf_counter()
         i_lower_vals = chunk.pop("i_lower_vals")
-        pos = np.searchsorted(states_i_sorted, i_lower_vals)
-        valid = (pos < len(states_i_sorted)) & (states_i_sorted[pos] == i_lower_vals)
-        glower_vals = np.full(len(i_lower_vals), np.nan, dtype=np.float64)
-        glower_vals[valid] = states_g_sorted[pos[valid]]
-        chunk["glower_vals"] = glower_vals
+        if len(i_lower_vals) == 0:
+          chunk["glower_vals"] = np.empty(0, dtype=np.float64)
+        else:
+          max_idx = len(states_g_lookup) - 1
+          valid = (i_lower_vals >= 0) & (i_lower_vals <= max_idx)
+          glower_vals = np.full(len(i_lower_vals), np.nan, dtype=np.float64)
+          glower_vals[valid] = states_g_lookup[i_lower_vals[valid]]
+          chunk["glower_vals"] = glower_vals
         t_map = time.perf_counter() - t_map_start
 
         if verbose:
