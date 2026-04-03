@@ -232,6 +232,13 @@ class Molecule:
           float_concat = np.concatenate([v for _, v in float_blocks], axis=1) if float_blocks else np.empty((len(rows), 0), dtype=np.float64)
           int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
 
+          print(
+              f"[{self.species}] pandas-block debug: colnames = {colnames}, "
+              f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
+              f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
+              f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
+          )
+
           # Expected ExoMol pandas-table packing seen in these files:
           # floats -> [A, elower, Sij0]
           # ints   -> [i_upper, i_lower, gup, jlower, jupper]
@@ -261,6 +268,10 @@ class Molecule:
               }
 
           # Safe fallback if the block layout is not the expected one.
+          print(
+              f"[{self.species}] pandas-block unpack did not match expected layout; "
+              f"falling back to pd.read_hdf for file = {local_file}"
+          )
           t_pandas_start = time.perf_counter()
           key = table_node._v_parent._v_pathname
           where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
