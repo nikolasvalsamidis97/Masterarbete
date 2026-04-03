@@ -180,8 +180,87 @@ class Molecule:
               }
 
           # Layout 2: pandas block table, e.g. /df/table with values_block_* columns.
-          # Use pandas directly on the local HDF5 file instead of trying to manually
-          # decode the block packing, which can vary between files.
+          # First try a lower-level PyTables path to avoid the heavy pd.read_hdf(...) cost.
+          t_rows_start = time.perf_counter()
+          rows = table_node.read_where(f"(nu_lines >= {nu_min}) & (nu_lines <= {nu_max})")
+          t_read_rows = time.perf_counter() - t_rows_start
+
+          if len(rows) == 0:
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+                  f"read_rows = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
+              )
+              return {
+                  "A_vals": np.empty(0, dtype=np.float64),
+                  "nu_vals": np.empty(0, dtype=np.float64),
+                  "elower_vals": np.empty(0, dtype=np.float64),
+                  "gup_vals": np.empty(0, dtype=np.float64),
+                  "i_lower_vals": np.empty(0, dtype=np.int64),
+                  "lam0_vals": np.empty(0, dtype=np.float64),
+              }
+
+          t_unpack_start = time.perf_counter()
+          nu_vals = np.asarray(rows["nu_lines"], dtype=np.float64).reshape(-1)
+
+          float_blocks = []
+          int_blocks = []
+          for name in colnames:
+              if name == "index" or name == "nu_lines":
+                  continue
+              if not name.startswith("values_block_"):
+                  continue
+
+              values = np.asarray(rows[name])
+              if values.ndim == 1:
+                  values = values.reshape(-1, 1)
+              elif values.ndim > 2:
+                  values = values.reshape(values.shape[0], -1)
+
+              if np.issubdtype(values.dtype, np.floating):
+                  float_blocks.append((name, values))
+              elif np.issubdtype(values.dtype, np.integer):
+                  int_blocks.append((name, values))
+              else:
+                  raise ValueError(
+                      f"Unsupported pandas block dtype for {name} in {local_file}: {values.dtype}"
+                  )
+
+          float_blocks.sort(key=lambda x: x[0])
+          int_blocks.sort(key=lambda x: x[0])
+
+          float_concat = np.concatenate([v for _, v in float_blocks], axis=1) if float_blocks else np.empty((len(rows), 0), dtype=np.float64)
+          int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
+
+          # Expected ExoMol pandas-table packing seen in these files:
+          # floats -> [A, elower, Sij0]
+          # ints   -> [i_upper, i_lower, gup, jlower, jupper]
+          if float_concat.shape[1] == 3 and int_concat.shape[1] == 5:
+              A_vals = np.asarray(float_concat[:, 0], dtype=np.float64)
+              elower_vals = np.asarray(float_concat[:, 1], dtype=np.float64)
+              gup_vals = np.asarray(int_concat[:, 2], dtype=np.float64)
+              i_lower_vals = np.asarray(int_concat[:, 1]).reshape(-1).astype(np.int64, copy=False)
+
+              t_unpack = time.perf_counter() - t_unpack_start
+              t_h5_total = time.perf_counter() - t_h5_total_start
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+                  f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
+              )
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+              )
+              return {
+                  "A_vals": A_vals,
+                  "nu_vals": nu_vals,
+                  "elower_vals": elower_vals,
+                  "gup_vals": gup_vals,
+                  "i_lower_vals": i_lower_vals,
+                  "lam0_vals": 1.0e8 / nu_vals,
+              }
+
+          # Safe fallback if the block layout is not the expected one.
           t_pandas_start = time.perf_counter()
           key = table_node._v_parent._v_pathname
           where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
@@ -193,9 +272,9 @@ class Molecule:
           )
           t_read_hdf = time.perf_counter() - t_pandas_start
           print(
-              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback timing: "
               f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-              f"read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
+              f"read_rows = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
           )
           if len(df) == 0:
               return {
@@ -210,7 +289,7 @@ class Molecule:
           nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
           t_h5_total = time.perf_counter() - t_h5_total_start
           print(
-              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback total = {t_h5_total:.2f} s, file = {local_file}"
           )
           return {
               "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
