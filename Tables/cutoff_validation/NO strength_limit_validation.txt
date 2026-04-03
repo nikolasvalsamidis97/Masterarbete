@@ -1,7 +1,7 @@
 NO
-all lines
+cutoff = 0.0
 1.0902338648479196e-36
-strength limit = 1e-08
+cutoff = 1e-08
 1.0900829295247519e-36
 abs diff
 1.5093532316770774e-40

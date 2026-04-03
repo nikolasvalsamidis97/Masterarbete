@@ -23,7 +23,7 @@ TEST_T_ATM = 1 * u.K
 TEST_DISTANCE = 1.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 
-MOLECULES_TO_TEST = ["H2O"]
+MOLECULES_TO_TEST = ["NO"]
 STRENGTH_LIMIT = 1e-8
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Tables" / "cutoff_validation"
@@ -98,16 +98,16 @@ with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         print(species)
         f.write(f"{species}\n")
 
-        f_all = compute_photon_pressure(species, strength_limit=None)
-        print("all lines")
+        print("cutoff = 0.0")
+        f.write("cutoff = 0.0\n")
+        f_all = compute_photon_pressure(species, strength_limit=0.0)
         print(f_all)
-        f.write("all lines\n")
         f.write(f"{f_all}\n")
 
+        print(f"cutoff = {STRENGTH_LIMIT}")
+        f.write(f"cutoff = {STRENGTH_LIMIT}\n")
         f_limited = compute_photon_pressure(species, strength_limit=STRENGTH_LIMIT)
-        print(f"strength limit = {STRENGTH_LIMIT}")
         print(f_limited)
-        f.write(f"strength limit = {STRENGTH_LIMIT}\n")
         f.write(f"{f_limited}\n")
 
         abs_diff = abs(f_all - f_limited)

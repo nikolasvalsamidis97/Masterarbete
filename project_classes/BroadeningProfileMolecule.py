@@ -8,6 +8,8 @@ import time
 from scipy.special import wofz
 from radis.io.hitran import fetch_hitran
 import pathlib
+import hashlib
+import json
 
 
 class BroadeningProfileMolecule:
@@ -66,8 +68,10 @@ class BroadeningProfileMolecule:
     self.sigmaArray_err = None
     self.sigma_total = None
     self.sigma_total_err = None
-    self.temperature_cache = {}
+    self.partition_function_cache = {}
     self._states_g_lookup = None
+    self._weight_cache_root = self._build_weight_cache_root()
+    self._weight_cache_root.mkdir(parents=True, exist_ok=True)
 
 
     # Temporary speed hack: skip lines whose weighted central strength is tiny
@@ -82,7 +86,7 @@ class BroadeningProfileMolecule:
 
   def _temperature_cache_key(self, Temp_atm):
     T_val = float(np.asarray(Temp_atm.to_value(u.K)).reshape(-1)[0])
-    return (T_val, float(self.temp_strength_rel_cutoff), self.profileType)
+    return T_val
 
   def set_lam_min(self, lam_min):
     if lam_min is not None:
@@ -209,7 +213,7 @@ class BroadeningProfileMolecule:
       self._states_g_lookup = lookup
 
     return self._states_g_lookup
-  
+
   def _prepare_chunk_dict(self, df_chunk):
     """
     Convert one molecular chunk dataframe into the minimal plain-NumPy arrays
@@ -223,7 +227,64 @@ class BroadeningProfileMolecule:
       "glower_vals": np.asarray(df_chunk["glower"], dtype=np.float64).reshape(-1),
     }
     chunk["lam0_vals"] = 1.0e8 / chunk["nu_vals"]
+    chunk["chunk_cache_id"] = "hitran_full_range"
     return chunk
+
+  def _build_weight_cache_root(self):
+    info = getattr(self.molecule, "cache_info", {}) or {}
+    localdatabase = info.get("localdatabase")
+    path = info.get("path")
+
+    if localdatabase is not None:
+      root = pathlib.Path(localdatabase)
+      if path:
+        parts = pathlib.Path(path).parts
+        if len(parts) > 0:
+          root = root / parts[0]
+      return root / "weight_cache"
+
+    return pathlib.Path("Tables") / "weight_cache" / self.molecule.species
+
+  def _format_cache_temperature_label(self, Temp_atm):
+    T_val = Temp_atm.to_value(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+    return f"{T_val:g}K"
+
+
+  def _weight_cache_manifest_path(self, Temp_atm):
+    temp_label = self._format_cache_temperature_label(Temp_atm)
+    return self._weight_cache_root / f"weight_cache_{temp_label}.txt"
+
+  def _update_weight_cache_manifest(self, chunk_cache_id, Temp_atm, cache_file):
+    T_val = Temp_atm.to_value(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")
+    manifest_path = self._weight_cache_manifest_path(Temp_atm)
+    record = {
+      "species": self.molecule.species,
+      "temperature_K": float(T_val),
+      "chunk_cache_id": str(chunk_cache_id),
+      "cache_file": cache_file.name,
+    }
+
+    with open(manifest_path, "a", encoding="utf-8") as f:
+      f.write(json.dumps(record) + "\n")
+
+  def _weight_cache_filename(self, chunk_cache_id, Temp_atm):
+    temp_label = self._format_cache_temperature_label(Temp_atm)
+    cache_key = f"{chunk_cache_id}|{temp_label}"
+    cache_hash = hashlib.md5(cache_key.encode("utf-8")).hexdigest()[:16]
+    return self._weight_cache_root / f"weight_cache_{temp_label}_{cache_hash}.npy"
+
+  def _load_cached_chunk_weights(self, chunk_cache_id, Temp_atm):
+    cache_file = self._weight_cache_filename(chunk_cache_id, Temp_atm)
+    if cache_file.exists():
+      return np.load(cache_file)
+    return None
+
+  def _save_cached_chunk_weights(self, chunk_cache_id, Temp_atm, weights_chunk):
+    cache_file = self._weight_cache_filename(chunk_cache_id, Temp_atm)
+    is_new_file = not cache_file.exists()
+    np.save(cache_file, np.asarray(weights_chunk, dtype=np.float64))
+    if is_new_file:
+      self._update_weight_cache_manifest(chunk_cache_id, Temp_atm, cache_file)
 
   def _load_hitran_dataframe(self):
     info = self.molecule.cache_info
@@ -280,6 +341,7 @@ class BroadeningProfileMolecule:
 
         t_load_start = time.perf_counter()
         chunk = self.molecule.load_exomol_transition_chunk(local_file)
+        chunk["chunk_cache_id"] = str(local_file)
         t_load = time.perf_counter() - t_load_start
 
         if len(chunk["A_vals"]) == 0:
@@ -391,11 +453,6 @@ class BroadeningProfileMolecule:
     cache_key = None
     if Temp_atm is not None:
       cache_key = self._temperature_cache_key(Temp_atm)
-      if cache_key in self.temperature_cache:
-        cached = self.temperature_cache[cache_key]
-        if verbose:
-          print(f"Using cached molecular cross-section for {self.molecule.species} at T = {Temp_atm:.3g}")
-        return cached["sigma"].copy(), cached["sigma_err"].copy()
 
     t_start = time.perf_counter()
     sigma_total_val = np.zeros(self.lam_grid_val.shape, dtype=np.float64)
@@ -403,11 +460,17 @@ class BroadeningProfileMolecule:
 
     partition_Z = None
     if Temp_atm is not None:
-      if verbose:
-        print(f"Computing partition function for {self.molecule.species} at T = {Temp_atm:.3g}")
-      partition_Z = self._compute_partition_function(Temp_atm, verbose=verbose)
-      if verbose:
-        print(f"Partition function ready for {self.molecule.species}: Z = {partition_Z:.6e}")
+      if cache_key in self.partition_function_cache:
+        partition_Z = self.partition_function_cache[cache_key]
+        if verbose:
+          print(f"Using cached partition function for {self.molecule.species} at T = {Temp_atm:.3g}: Z = {partition_Z:.6e}")
+      else:
+        if verbose:
+          print(f"Computing partition function for {self.molecule.species} at T = {Temp_atm:.3g}")
+        partition_Z = self._compute_partition_function(Temp_atm, verbose=verbose)
+        self.partition_function_cache[cache_key] = partition_Z
+        if verbose:
+          print(f"Partition function ready for {self.molecule.species}: Z = {partition_Z:.6e}")
 
 
     line_offset = 0
@@ -420,16 +483,31 @@ class BroadeningProfileMolecule:
       if n_chunk == 0:
         continue
 
+      chunk_cache_id = chunk.get("chunk_cache_id")
+
       elapsed = time.perf_counter() - t_start
       if verbose:
         print(
           f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks}: "
           f"{n_chunk:,} lines loaded after {elapsed:.2f} s"
         )
+      if Temp_atm is not None and chunk_cache_id is not None:
+          cache_file = self._weight_cache_filename(chunk_cache_id, Temp_atm)
+          manifest_path = self._weight_cache_manifest_path(Temp_atm)
+          cache_state = "found" if cache_file.exists() else "building"
+          print(
+            f"[{self.molecule.species}] Weight cache at this temperature: {cache_state} "
+            f"({cache_file}) | manifest: {manifest_path}"
+          )
 
       t_weights_start = time.perf_counter()
       if Temp_atm is not None:
-        weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
+        chunk_cache_id = chunk.get("chunk_cache_id")
+        weights_chunk = None if chunk_cache_id is None else self._load_cached_chunk_weights(chunk_cache_id, Temp_atm)
+        if weights_chunk is None:
+          weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
+          if chunk_cache_id is not None:
+            self._save_cached_chunk_weights(chunk_cache_id, Temp_atm, weights_chunk)
       elif weights is None:
         weights_chunk = np.ones(n_chunk, dtype=np.float64)
       else:
@@ -556,12 +634,6 @@ class BroadeningProfileMolecule:
 
     sigma_total = sigma_total_val * u.cm**2
     sigma_total_err = np.sqrt(sigma_total_err2_val) * u.cm**2
-
-    if cache_key is not None:
-      self.temperature_cache[cache_key] = {
-        "sigma": sigma_total.copy(),
-        "sigma_err": sigma_total_err.copy(),
-      }
 
     if verbose:
       total_time = time.perf_counter() - t_start
