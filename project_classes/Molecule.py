@@ -265,6 +265,36 @@ class Molecule:
                   gup_vals = np.asarray(int_map["gup"], dtype=np.float64)
                   i_lower_vals = np.asarray(int_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
 
+                  if len(rows) <= 10000:
+                      where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
+                      df_check = pd.read_hdf(
+                          local_file,
+                          key=key,
+                          where=where,
+                          columns=["A", "nu_lines", "elower", "gup", "i_lower"],
+                      )
+                      n_show = min(5, len(df_check), len(nu_vals))
+                      print(
+                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                          f"A_low = {A_vals[:n_show].tolist()}, A_pd = {np.asarray(df_check['A'], dtype=np.float64)[:n_show].tolist()}"
+                      )
+                      print(
+                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                          f"nu_low = {nu_vals[:n_show].tolist()}, nu_pd = {np.asarray(df_check['nu_lines'], dtype=np.float64)[:n_show].tolist()}"
+                      )
+                      print(
+                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                          f"elower_low = {elower_vals[:n_show].tolist()}, elower_pd = {np.asarray(df_check['elower'], dtype=np.float64)[:n_show].tolist()}"
+                      )
+                      print(
+                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                          f"gup_low = {gup_vals[:n_show].tolist()}, gup_pd = {np.asarray(df_check['gup'], dtype=np.float64)[:n_show].tolist()}"
+                      )
+                      print(
+                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                          f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
+                      )
+
                   t_unpack = time.perf_counter() - t_unpack_start
                   t_h5_total = time.perf_counter() - t_h5_total_start
                   print(
