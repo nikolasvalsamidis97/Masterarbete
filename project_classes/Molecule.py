@@ -198,10 +198,6 @@ class Molecule:
                       if items_attr is not None:
                           block_items_map[block_name] = list(items_attr)
 
-          print(
-              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, "
-              f"block_items_map = {block_items_map}, colnames = {colnames}, file = {local_file}"
-          )
 
           block_arrays = {
               name: []
@@ -213,7 +209,6 @@ class Molecule:
           full_match_chunks = 0
           partial_match_chunks = 0
           zero_match_chunks = 0
-          match_mode_reported = False
 
           for start in range(0, nrows_total, chunk_size):
               stop = min(start + chunk_size, nrows_total)
@@ -231,34 +226,6 @@ class Molecule:
                   full_match_chunks += 1
               else:
                   partial_match_chunks += 1
-
-              should_print_chunk = (
-                  scanned_chunks == 1
-                  or stop == nrows_total
-                  or (n_match != n_chunk_rows)
-                  or (n_match == 0)
-                  or (scanned_chunks % 25 == 0)
-              )
-              if should_print_chunk:
-                  print(
-                      f"[{self.species}] pandas-table chunk scan: rows {start}:{stop} / {nrows_total}, "
-                      f"matched = {n_match}, file = {local_file}"
-                  )
-
-              if (not match_mode_reported) and scanned_chunks >= 2:
-                  if full_match_chunks == scanned_chunks:
-                      print(
-                          f"[{self.species}] pandas-table scan note: all scanned chunks so far fully match "
-                          f"the requested nu-range in {local_file}; this file likely lies entirely inside the "
-                          f"requested interval."
-                      )
-                      match_mode_reported = True
-                  elif zero_match_chunks == scanned_chunks:
-                      print(
-                          f"[{self.species}] pandas-table scan note: all scanned chunks so far are outside "
-                          f"the requested nu-range in {local_file}."
-                      )
-                      match_mode_reported = True
 
               if n_match == 0:
                   continue
@@ -302,7 +269,7 @@ class Molecule:
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
               )
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -380,47 +347,12 @@ class Molecule:
               gup_vals = np.asarray(block_column_map["gup"], dtype=np.float64)
               i_lower_vals = np.asarray(block_column_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
 
-              if len(nu_vals) <= 10000:
-                  where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
-                  df_check = pd.read_hdf(
-                      local_file,
-                      key=key,
-                      where=where,
-                      columns=["A", "nu_lines", "elower", "gup", "i_lower"],
-                  )
-                  n_show = min(5, len(df_check), len(nu_vals))
-                  print(
-                      f"[{self.species}] pandas-unpack raw blocks file = {local_file}, n_show = {n_show}, "
-                      f"values_block_0_row0 = {float_blocks[0][1][0, :].tolist() if float_blocks else []}, "
-                      f"values_block_1_row0 = {int_blocks[0][1][0, :].tolist() if int_blocks else []}"
-                  )
-                  print(
-                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                      f"A_low = {A_vals[:n_show].tolist()}, A_pd = {np.asarray(df_check['A'], dtype=np.float64)[:n_show].tolist()}"
-                  )
-                  print(
-                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                      f"nu_low = {nu_vals[:n_show].tolist()}, nu_pd = {np.asarray(df_check['nu_lines'], dtype=np.float64)[:n_show].tolist()}"
-                  )
-                  print(
-                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                      f"elower_low = {elower_vals[:n_show].tolist()}, elower_pd = {np.asarray(df_check['elower'], dtype=np.float64)[:n_show].tolist()}"
-                  )
-                  print(
-                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                      f"gup_low = {gup_vals[:n_show].tolist()}, gup_pd = {np.asarray(df_check['gup'], dtype=np.float64)[:n_show].tolist()}"
-                  )
-                  print(
-                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                      f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
-                  )
-
               t_unpack = time.perf_counter() - t_unpack_start
               t_h5_total = time.perf_counter() - t_h5_total_start
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, file = {local_file}"
               )
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
@@ -435,10 +367,6 @@ class Molecule:
               }
 
           # Safe fallback if the block layout is not the expected one.
-          print(
-              f"[{self.species}] pandas-block unpack did not match expected layout; "
-              f"falling back to pd.read_hdf for file = {local_file}"
-          )
           t_pandas_start = time.perf_counter()
           where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
           df = pd.read_hdf(
@@ -451,7 +379,7 @@ class Molecule:
           print(
               f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback timing: "
               f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, key = {key}, file = {local_file}"
+              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
           )
           if len(df) == 0:
               return {
