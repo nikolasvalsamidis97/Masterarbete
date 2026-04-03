@@ -180,16 +180,73 @@ class Molecule:
               }
 
           # Layout 2: pandas block table, e.g. /df/table with values_block_* columns.
-          # First try a lower-level PyTables path to avoid the heavy pd.read_hdf(...) cost.
+          # Avoid table_node.read_where(...) here because it materializes the full filtered
+          # structured array at once and is still too expensive for the huge ExoMol chunks.
+          nrows_total = int(table_node.nrows)
+          chunk_size = 500_000
           t_rows_start = time.perf_counter()
-          rows = table_node.read_where(f"(nu_lines >= {nu_min}) & (nu_lines <= {nu_max})")
+
+          key = table_node._v_parent._v_pathname
+          with pd.HDFStore(local_file, mode="r") as store:
+              storer = store.get_storer(key.lstrip("/"))
+              logical_columns = list(storer.non_index_axes[0][1])
+              block_items_map = {}
+              for attr_name in getattr(storer.attrs, "_v_attrnamesuser", []):
+                  if attr_name.endswith("_kind"):
+                      block_name = attr_name[: -len("_kind")]
+                      items_attr = getattr(storer.attrs, f"{block_name}_items", None)
+                      if items_attr is not None:
+                          block_items_map[block_name] = list(items_attr)
+
+          print(
+              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, "
+              f"block_items_map = {block_items_map}, colnames = {colnames}, file = {local_file}"
+          )
+
+          block_arrays = {
+              name: []
+              for name in colnames
+              if name != "index" and (name == "nu_lines" or name.startswith("values_block_"))
+          }
+          matched_rows = 0
+
+          for start in range(0, nrows_total, chunk_size):
+              stop = min(start + chunk_size, nrows_total)
+              chunk = table_node.read(start, stop)
+              nu_chunk = np.asarray(chunk["nu_lines"], dtype=np.float64).reshape(-1)
+              mask = (nu_chunk >= nu_min) & (nu_chunk <= nu_max)
+              n_match = int(mask.sum())
+              if start == 0 or n_match > 0 or stop == nrows_total:
+                  print(
+                      f"[{self.species}] pandas-table chunk scan: rows {start}:{stop} / {nrows_total}, "
+                      f"matched = {n_match}, file = {local_file}"
+                  )
+              if n_match == 0:
+                  continue
+
+              matched_rows += n_match
+              block_arrays["nu_lines"].append(nu_chunk[mask])
+
+              for name in colnames:
+                  if name == "index" or name == "nu_lines":
+                      continue
+                  if not name.startswith("values_block_"):
+                      continue
+
+                  values = np.asarray(chunk[name])
+                  if values.ndim == 1:
+                      values = values.reshape(-1, 1)
+                  elif values.ndim > 2:
+                      values = values.reshape(values.shape[0], -1)
+                  block_arrays[name].append(values[mask])
+
           t_read_rows = time.perf_counter() - t_rows_start
 
-          if len(rows) == 0:
+          if matched_rows == 0:
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"read_rows = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
               )
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -201,19 +258,7 @@ class Molecule:
               }
 
           t_unpack_start = time.perf_counter()
-          nu_vals = np.asarray(rows["nu_lines"], dtype=np.float64).reshape(-1)
-
-          key = table_node._v_parent._v_pathname
-          with pd.HDFStore(local_file, mode="r") as store:
-              storer = store.get_storer(key.lstrip("/"))
-              logical_columns = list(storer.non_index_axes[0][1])
-              storer_attr_names = list(getattr(storer.attrs, "_v_attrnamesuser", []))
-              block_items_map = {}
-              for name in getattr(table_node, "colnames", []):
-                  if name.startswith("values_block_"):
-                      items_attr = getattr(storer.attrs, f"{name}_items", None)
-                      if items_attr is not None:
-                          block_items_map[name] = list(items_attr)
+          nu_vals = np.concatenate(block_arrays["nu_lines"], axis=0)
 
           float_blocks = []
           int_blocks = []
@@ -223,12 +268,10 @@ class Molecule:
               if not name.startswith("values_block_"):
                   continue
 
-              values = np.asarray(rows[name])
-              if values.ndim == 1:
-                  values = values.reshape(-1, 1)
-              elif values.ndim > 2:
-                  values = values.reshape(values.shape[0], -1)
+              if not block_arrays[name]:
+                  continue
 
+              values = np.concatenate(block_arrays[name], axis=0)
               if np.issubdtype(values.dtype, np.floating):
                   float_blocks.append((name, values))
               elif np.issubdtype(values.dtype, np.integer):
@@ -240,17 +283,6 @@ class Molecule:
 
           float_blocks.sort(key=lambda x: x[0])
           int_blocks.sort(key=lambda x: x[0])
-
-          float_concat = np.concatenate([v for _, v in float_blocks], axis=1) if float_blocks else np.empty((len(rows), 0), dtype=np.float64)
-          int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
-
-          print(
-              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, "
-              f"block_items_map = {block_items_map}, colnames = {colnames}, "
-              f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
-              f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
-              f"file = {local_file}"
-          )
 
           # Reconstruct pandas packed blocks.
           # In these ExoMol HDF files, `nu_lines` is stored as its own table column,
@@ -292,7 +324,7 @@ class Molecule:
               gup_vals = np.asarray(block_column_map["gup"], dtype=np.float64)
               i_lower_vals = np.asarray(block_column_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
 
-              if len(rows) <= 10000:
+              if len(nu_vals) <= 10000:
                   where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
                   df_check = pd.read_hdf(
                       local_file,
@@ -332,7 +364,7 @@ class Molecule:
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, file = {local_file}"
               )
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
@@ -352,7 +384,6 @@ class Molecule:
               f"falling back to pd.read_hdf for file = {local_file}"
           )
           t_pandas_start = time.perf_counter()
-          key = table_node._v_parent._v_pathname
           where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
           df = pd.read_hdf(
               local_file,
@@ -364,7 +395,7 @@ class Molecule:
           print(
               f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback timing: "
               f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-              f"read_rows = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
+              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
           )
           if len(df) == 0:
               return {
