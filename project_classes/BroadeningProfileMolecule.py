@@ -420,7 +420,6 @@ class BroadeningProfileMolecule:
 
       elapsed = time.perf_counter() - t_start
       print(
-        f"{"-" * 40}\n"
         f"[{self.molecule.species}] build_total_crossection: processing chunk {chunk_index}/{n_chunks}, "
         f"rows = {n_chunk}, elapsed = {elapsed:.2f} s"
       )

@@ -165,11 +165,6 @@ class Molecule:
               i_lower_vals = np.asarray(table_node.col("i_lower")).reshape(-1)[mask].astype(np.int64, copy=False)
               t_direct = time.perf_counter() - t_direct_start
               t_h5_total = time.perf_counter() - t_h5_total_start
-              print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 direct-table timing: "
-                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"read/filter = {t_direct:.2f} s, total = {t_h5_total:.2f} s, file = {local_file}"
-              )
               return {
                   "A_vals": A_vals,
                   "nu_vals": nu_vals,
@@ -267,9 +262,7 @@ class Molecule:
 
           if matched_rows == 0:
               print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
-                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
+                  f"[{self.species}] lines = 0, chunk = {pathlib.Path(local_file).name}, time = {t_read_rows:.2f} s"
               )
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -350,12 +343,7 @@ class Molecule:
               t_unpack = time.perf_counter() - t_unpack_start
               t_h5_total = time.perf_counter() - t_h5_total_start
               print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
-                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, file = {local_file}"
-              )
-              print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+                  f"[{self.species}] lines = {len(nu_vals)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s"
               )
               return {
                   "A_vals": A_vals,
@@ -376,11 +364,6 @@ class Molecule:
               columns=["A", "nu_lines", "elower", "gup", "i_lower"],
           )
           t_read_hdf = time.perf_counter() - t_pandas_start
-          print(
-              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback timing: "
-              f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
-          )
           if len(df) == 0:
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -394,7 +377,7 @@ class Molecule:
           nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
           t_h5_total = time.perf_counter() - t_h5_total_start
           print(
-              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback total = {t_h5_total:.2f} s, file = {local_file}"
+              f"[{self.species}] lines = {len(df)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s"
           )
           return {
               "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
@@ -412,7 +395,6 @@ class Molecule:
         try:
             return self._load_exomol_transition_chunk_h5(local_file)
         except (tables.exceptions.HDF5ExtError, tables.NoSuchNodeError, ValueError, OSError) as exc:
-            print(f"[{self.species}] fallback to pandas for {local_file}: {type(exc).__name__}: {exc}")
             df = self.load_exomol_transition_dataframe(local_file)
             if len(df) == 0:
                 return {
