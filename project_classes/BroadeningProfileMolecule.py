@@ -352,7 +352,7 @@ class BroadeningProfileMolecule:
 
     raise ValueError(f"Unsupported molecule source for partition function: {source}")
 
-  def build_total_crossection(self, weights=None, Temp_atm=None, verbose=False, progress_every=1000000, line_batch_size=2048):
+  def build_total_crossection(self, weights=None, Temp_atm=None, verbose=True, progress_every=1000000, line_batch_size=2048):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
@@ -383,6 +383,7 @@ class BroadeningProfileMolecule:
     last_progress_bucket = 0
 
     for chunk_index, n_chunks, chunk in self.iter_line_dataframes(verbose=verbose):
+      t_chunk_start = time.perf_counter()
       n_chunk = len(chunk["A_vals"])
       if n_chunk == 0:
         continue
@@ -393,6 +394,7 @@ class BroadeningProfileMolecule:
         f"rows = {n_chunk}, elapsed = {elapsed:.2f} s"
       )
 
+      t_weights_start = time.perf_counter()
       if Temp_atm is not None:
         weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
       elif weights is None:
@@ -402,7 +404,9 @@ class BroadeningProfileMolecule:
         weights_chunk = weights_arr[line_offset:line_offset + n_chunk]
         if len(weights_chunk) != n_chunk:
           raise ValueError("weights must have one value per molecular line across all chunks")
+      t_weights = time.perf_counter() - t_weights_start
 
+      t_profile_prep_start = time.perf_counter()
       A_vals = chunk["A_vals"]
       lam0_val = chunk["lam0_vals"]
       gup_vals = chunk["gup_vals"]
@@ -421,7 +425,9 @@ class BroadeningProfileMolecule:
       voigt_sigma_val = gauss_val / (2.0 * np.sqrt(2.0 * np.log(2.0)))
       voigt_gamma_val = 0.5 * lorentz_val
       voigt_gamma_err_val = 0.5 * lorentz_err_val
+      t_profile_prep = time.perf_counter() - t_profile_prep_start
 
+      t_filter_start = time.perf_counter()
       weighted_strength = np.abs(weights_chunk * sig0_val)
       max_weighted_strength = np.nanmax(weighted_strength) if np.any(np.isfinite(weighted_strength)) else 0.0
       strength_cutoff = self.temp_strength_rel_cutoff * max_weighted_strength if max_weighted_strength > 0.0 else 0.0
@@ -440,9 +446,11 @@ class BroadeningProfileMolecule:
 
       active_idx = np.where(active_mask)[0]
       n_active = len(active_idx)
+      t_filter = time.perf_counter() - t_filter_start
       if verbose:
         print(f"[{self.molecule.species}] build_total_crossection: active lines in chunk = {n_active}/{n_chunk}")
 
+      t_accum_start = time.perf_counter()
       for b0 in range(0, n_active, line_batch_size):
         b1 = min(b0 + line_batch_size, n_active)
         batch_idx = active_idx[b0:b1]
@@ -497,6 +505,17 @@ class BroadeningProfileMolecule:
             elapsed = time.perf_counter() - t_start
             print(f"Cross-section build progress for {self.molecule.species}: processed line {processed_lines}, elapsed = {elapsed:.2f} s")
 
+      t_accum = time.perf_counter() - t_accum_start
+      if verbose:
+        t_chunk_total = time.perf_counter() - t_chunk_start
+        print(
+          f"[{self.molecule.species}] chunk timing {chunk_index}/{n_chunks}: "
+          f"weights = {t_weights:.2f} s, "
+          f"profile_prep = {t_profile_prep:.2f} s, "
+          f"filter = {t_filter:.2f} s, "
+          f"accum = {t_accum:.2f} s, "
+          f"total = {t_chunk_total:.2f} s"
+        )
       line_offset += n_chunk
 
     sigma_total = sigma_total_val * u.cm**2
