@@ -106,7 +106,8 @@ def cache_one_species(species: str):
             TEST_T_ATM,
             TEST_DISTANCE,
             chunk_size=1,
-            lam_chunk_size=10000,
+            lam_chunk_size=100000,
+            verbose=True,
         )
         print(f"[{species}] Stage 5/5 done: photon pressure calculation finished")
         print(f"[{species}] F_ph_tot = {F_ph_tot}")
