@@ -267,17 +267,39 @@ class BroadeningProfileMolecule:
       states_i_sorted, states_g_sorted = self._get_exomol_state_lookup()
       local_files = self.molecule.cache_info["local_trans_files"]
       for i, local_file in enumerate(local_files, start=1):
+        t_file_start = time.perf_counter()
         if verbose:
           print(f"[{self.molecule.species}] iter_line_dataframes: loading file {i}/{len(local_files)}")
+
+        t_load_start = time.perf_counter()
         chunk = self.molecule.load_exomol_transition_chunk(local_file)
+        t_load = time.perf_counter() - t_load_start
+
         if len(chunk["A_vals"]) == 0:
+          if verbose:
+            t_file_total = time.perf_counter() - t_file_start
+            print(
+              f"[{self.molecule.species}] iter_line_dataframes: file {i}/{len(local_files)} empty after load, "
+              f"load = {t_load:.2f} s, total = {t_file_total:.2f} s"
+            )
           continue
+
+        t_map_start = time.perf_counter()
         i_lower_vals = chunk.pop("i_lower_vals")
         pos = np.searchsorted(states_i_sorted, i_lower_vals)
         valid = (pos < len(states_i_sorted)) & (states_i_sorted[pos] == i_lower_vals)
         glower_vals = np.full(len(i_lower_vals), np.nan, dtype=np.float64)
         glower_vals[valid] = states_g_sorted[pos[valid]]
         chunk["glower_vals"] = glower_vals
+        t_map = time.perf_counter() - t_map_start
+
+        if verbose:
+          t_file_total = time.perf_counter() - t_file_start
+          print(
+            f"[{self.molecule.species}] iter_line_dataframes: file {i}/{len(local_files)} timing: "
+            f"load = {t_load:.2f} s, glower_map = {t_map:.2f} s, total = {t_file_total:.2f} s"
+          )
+
         yield i, len(local_files), chunk
     elif source == "hitran":
       if verbose:
