@@ -352,7 +352,7 @@ class BroadeningProfileMolecule:
 
     raise ValueError(f"Unsupported molecule source for partition function: {source}")
 
-  def build_total_crossection(self, weights=None, Temp_atm=None, verbose=False, progress_every=1000000, line_batch_size=2048):
+  def build_total_crossection(self, weights=None, Temp_atm=None, verbose=False, progress_every=1000000, line_batch_size=1024):
     if (weights is not None) and (Temp_atm is not None):
       raise ValueError("Give either weights or Temp_atm, not both")
 
@@ -387,8 +387,11 @@ class BroadeningProfileMolecule:
       if n_chunk == 0:
         continue
 
-      if verbose:
-        print(f"[{self.molecule.species}] build_total_crossection: processing chunk {chunk_index}/{n_chunks}, rows = {n_chunk}")
+      elapsed = time.perf_counter() - t_start
+      print(
+        f"[{self.molecule.species}] build_total_crossection: processing chunk {chunk_index}/{n_chunks}, "
+        f"rows = {n_chunk}, elapsed = {elapsed:.2f} s"
+      )
 
       if Temp_atm is not None:
         weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
