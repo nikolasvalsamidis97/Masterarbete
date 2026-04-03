@@ -207,6 +207,12 @@ class Molecule:
           with pd.HDFStore(local_file, mode="r") as store:
               storer = store.get_storer(key.lstrip("/"))
               logical_columns = list(storer.non_index_axes[0][1])
+              block_items_map = {}
+              for name in getattr(table_node, "colnames", []):
+                  if name.startswith("values_block_"):
+                      items_attr = getattr(storer.attrs, f"{name}_items", None)
+                      if items_attr is not None:
+                          block_items_map[name] = list(items_attr)
 
           float_blocks = []
           int_blocks = []
@@ -238,81 +244,80 @@ class Molecule:
           int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
 
           print(
-              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, colnames = {colnames}, "
+              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, block_items_map = {block_items_map}, colnames = {colnames}, "
               f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
               f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
               f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
           )
 
-          # Use pandas metadata to map the packed float/int blocks back to logical columns.
-          float_logical_cols = []
-          int_logical_cols = []
-          for col in logical_columns:
-              if col in {"index", "nu_lines"}:
+          # Use the exact pandas block-item metadata to reconstruct logical columns.
+          block_column_map = {}
+          for name, values in float_blocks + int_blocks:
+              items = block_items_map.get(name)
+              if items is None:
                   continue
-              if col in {"A", "elower", "eupper", "Sij0", "airbrd", "selbrd", "Pshft", "Tdpair", "Tdpsel"}:
-                  float_logical_cols.append(col)
-              else:
-                  int_logical_cols.append(col)
+              if values.shape[1] != len(items):
+                  raise ValueError(
+                      f"Pandas block item metadata mismatch for {name} in {local_file}: "
+                      f"values.shape[1] = {values.shape[1]}, len(items) = {len(items)}"
+                  )
+              for j, item_name in enumerate(items):
+                  block_column_map[item_name] = values[:, j]
 
-          if float_concat.shape[1] == len(float_logical_cols) and int_concat.shape[1] == len(int_logical_cols):
-              float_map = {name: float_concat[:, j] for j, name in enumerate(float_logical_cols)}
-              int_map = {name: int_concat[:, j] for j, name in enumerate(int_logical_cols)}
+          if {"A", "elower", "gup", "i_lower"}.issubset(block_column_map.keys()):
+              A_vals = np.asarray(block_column_map["A"], dtype=np.float64)
+              elower_vals = np.asarray(block_column_map["elower"], dtype=np.float64)
+              gup_vals = np.asarray(block_column_map["gup"], dtype=np.float64)
+              i_lower_vals = np.asarray(block_column_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
 
-              if {"A", "elower"}.issubset(float_map.keys()) and {"gup", "i_lower"}.issubset(int_map.keys()):
-                  A_vals = np.asarray(float_map["A"], dtype=np.float64)
-                  elower_vals = np.asarray(float_map["elower"], dtype=np.float64)
-                  gup_vals = np.asarray(int_map["gup"], dtype=np.float64)
-                  i_lower_vals = np.asarray(int_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
-
-                  if len(rows) <= 10000:
-                      where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
-                      df_check = pd.read_hdf(
-                          local_file,
-                          key=key,
-                          where=where,
-                          columns=["A", "nu_lines", "elower", "gup", "i_lower"],
-                      )
-                      n_show = min(5, len(df_check), len(nu_vals))
-                      print(
-                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                          f"A_low = {A_vals[:n_show].tolist()}, A_pd = {np.asarray(df_check['A'], dtype=np.float64)[:n_show].tolist()}"
-                      )
-                      print(
-                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                          f"nu_low = {nu_vals[:n_show].tolist()}, nu_pd = {np.asarray(df_check['nu_lines'], dtype=np.float64)[:n_show].tolist()}"
-                      )
-                      print(
-                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                          f"elower_low = {elower_vals[:n_show].tolist()}, elower_pd = {np.asarray(df_check['elower'], dtype=np.float64)[:n_show].tolist()}"
-                      )
-                      print(
-                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                          f"gup_low = {gup_vals[:n_show].tolist()}, gup_pd = {np.asarray(df_check['gup'], dtype=np.float64)[:n_show].tolist()}"
-                      )
-                      print(
-                          f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
-                          f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
-                      )
-
-                  t_unpack = time.perf_counter() - t_unpack_start
-                  t_h5_total = time.perf_counter() - t_h5_total_start
+              if len(rows) <= 10000:
+                  where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
+                  df_check = pd.read_hdf(
+                      local_file,
+                      key=key,
+                      where=where,
+                      columns=["A", "nu_lines", "elower", "gup", "i_lower"],
+                  )
+                  n_show = min(5, len(df_check), len(nu_vals))
                   print(
-                      f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
-                      f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                      f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
+                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                      f"A_low = {A_vals[:n_show].tolist()}, A_pd = {np.asarray(df_check['A'], dtype=np.float64)[:n_show].tolist()}"
                   )
                   print(
-                      f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                      f"nu_low = {nu_vals[:n_show].tolist()}, nu_pd = {np.asarray(df_check['nu_lines'], dtype=np.float64)[:n_show].tolist()}"
                   )
-                  return {
-                      "A_vals": A_vals,
-                      "nu_vals": nu_vals,
-                      "elower_vals": elower_vals,
-                      "gup_vals": gup_vals,
-                      "i_lower_vals": i_lower_vals,
-                      "lam0_vals": 1.0e8 / nu_vals,
-                  }
+                  print(
+                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                      f"elower_low = {elower_vals[:n_show].tolist()}, elower_pd = {np.asarray(df_check['elower'], dtype=np.float64)[:n_show].tolist()}"
+                  )
+                  print(
+                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                      f"gup_low = {gup_vals[:n_show].tolist()}, gup_pd = {np.asarray(df_check['gup'], dtype=np.float64)[:n_show].tolist()}"
+                  )
+                  print(
+                      f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
+                      f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
+                  )
+
+              t_unpack = time.perf_counter() - t_unpack_start
+              t_h5_total = time.perf_counter() - t_h5_total_start
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+                  f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
+              )
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+              )
+              return {
+                  "A_vals": A_vals,
+                  "nu_vals": nu_vals,
+                  "elower_vals": elower_vals,
+                  "gup_vals": gup_vals,
+                  "i_lower_vals": i_lower_vals,
+                  "lam0_vals": 1.0e8 / nu_vals,
+              }
 
           # Safe fallback if the block layout is not the expected one.
           print(
