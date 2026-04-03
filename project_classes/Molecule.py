@@ -5,6 +5,7 @@ from radis.api.exomolapi import MdbExomol
 import numpy as np
 import pandas as pd
 import pathlib
+import time
 import tables
 from radis.io.hitran import fetch_hitran
 
@@ -119,14 +120,21 @@ class Molecule:
       required_cols = {"A", "nu_lines", "elower", "gup", "i_lower"}
       nu_min = float(self.wavenum_min.value)
       nu_max = float(self.wavenum_max.value)
+      t_h5_total_start = time.perf_counter()
+      t_open_start = time.perf_counter()
 
       with tables.open_file(local_file, mode="r") as h5:
+          t_open = time.perf_counter() - t_open_start
+          t_find_table_start = time.perf_counter()
+
           table_node = None
           for node in h5.walk_nodes("/", classname="Table"):
               table_node = node
               colnames = set(getattr(node, "colnames", []))
               if required_cols.issubset(colnames):
                   break
+
+          t_find_table = time.perf_counter() - t_find_table_start
 
           if table_node is None:
               raise ValueError(
@@ -137,6 +145,7 @@ class Molecule:
 
           # Layout 1: direct named columns
           if required_cols.issubset(set(colnames)):
+              t_direct_start = time.perf_counter()
               nu_vals = np.asarray(table_node.col("nu_lines"), dtype=np.float64).reshape(-1)
               mask = (nu_vals >= nu_min) & (nu_vals <= nu_max)
               if not np.any(mask):
@@ -154,6 +163,13 @@ class Molecule:
               elower_vals = np.asarray(table_node.col("elower"), dtype=np.float64).reshape(-1)[mask]
               gup_vals = np.asarray(table_node.col("gup"), dtype=np.float64).reshape(-1)[mask]
               i_lower_vals = np.asarray(table_node.col("i_lower")).reshape(-1)[mask].astype(np.int64, copy=False)
+              t_direct = time.perf_counter() - t_direct_start
+              t_h5_total = time.perf_counter() - t_h5_total_start
+              print(
+                  f"[{self.species}] _load_exomol_transition_chunk_h5 direct-table timing: "
+                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+                  f"read/filter = {t_direct:.2f} s, total = {t_h5_total:.2f} s, file = {local_file}"
+              )
               return {
                   "A_vals": A_vals,
                   "nu_vals": nu_vals,
@@ -166,6 +182,7 @@ class Molecule:
           # Layout 2: pandas block table, e.g. /df/table with values_block_* columns.
           # Use pandas directly on the local HDF5 file instead of trying to manually
           # decode the block packing, which can vary between files.
+          t_pandas_start = time.perf_counter()
           key = table_node._v_parent._v_pathname
           where = f"nu_lines >= {nu_min} & nu_lines <= {nu_max}"
           df = pd.read_hdf(
@@ -173,6 +190,12 @@ class Molecule:
               key=key,
               where=where,
               columns=["A", "nu_lines", "elower", "gup", "i_lower"],
+          )
+          t_read_hdf = time.perf_counter() - t_pandas_start
+          print(
+              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+              f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+              f"read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
           )
           if len(df) == 0:
               return {
@@ -185,6 +208,10 @@ class Molecule:
               }
 
           nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
+          t_h5_total = time.perf_counter() - t_h5_total_start
+          print(
+              f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+          )
           return {
               "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
               "nu_vals": nu_vals,
