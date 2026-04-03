@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import time
 
 import astropy.units as u
 import numpy as np
@@ -63,6 +64,8 @@ def build_molecule(species: str):
 
 
 def compute_photon_pressure(species: str, strength_limit=None):
+    t0 = time.perf_counter()
+
     mol = build_molecule(species)
 
     profile = BroadeningProfileMolecule(
@@ -88,7 +91,8 @@ def compute_photon_pressure(species: str, strength_limit=None):
         verbose=False,
     )
 
-    return float(F_ph_tot[0, 0].to_value(u.N))
+    runtime_seconds = time.perf_counter() - t0
+    return float(F_ph_tot[0, 0].to_value(u.N)), runtime_seconds
 
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,15 +104,23 @@ with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
 
         print("cutoff = 0.0")
         f.write("cutoff = 0.0\n")
-        f_all = compute_photon_pressure(species, strength_limit=0.0)
+        f_all, runtime_all = compute_photon_pressure(species, strength_limit=0.0)
         print(f_all)
+        print("run time (s)")
+        print(runtime_all)
         f.write(f"{f_all}\n")
+        f.write("run time (s)\n")
+        f.write(f"{runtime_all}\n")
 
         print(f"cutoff = {STRENGTH_LIMIT}")
         f.write(f"cutoff = {STRENGTH_LIMIT}\n")
-        f_limited = compute_photon_pressure(species, strength_limit=STRENGTH_LIMIT)
+        f_limited, runtime_limited = compute_photon_pressure(species, strength_limit=STRENGTH_LIMIT)
         print(f_limited)
+        print("run time (s)")
+        print(runtime_limited)
         f.write(f"{f_limited}\n")
+        f.write("run time (s)\n")
+        f.write(f"{runtime_limited}\n")
 
         abs_diff = abs(f_all - f_limited)
         rel_diff = abs_diff / abs(f_all) if f_all != 0.0 else np.nan
