@@ -262,7 +262,7 @@ class Molecule:
 
           if matched_rows == 0:
               print(
-                  f"[{self.species}] lines = 0, chunk = {pathlib.Path(local_file).name}, time = {t_read_rows:.2f} s"
+                  f"[{self.species}] lines = 0, chunk = {pathlib.Path(local_file).name}, time = {t_read_rows:.2f} s\n"
               )
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -343,7 +343,7 @@ class Molecule:
               t_unpack = time.perf_counter() - t_unpack_start
               t_h5_total = time.perf_counter() - t_h5_total_start
               print(
-                  f"[{self.species}] lines = {len(nu_vals)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s"
+                  f"[{self.species}] lines = {len(nu_vals)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s\n"
               )
               return {
                   "A_vals": A_vals,
@@ -377,7 +377,7 @@ class Molecule:
           nu_vals = np.asarray(df["nu_lines"], dtype=np.float64).reshape(-1)
           t_h5_total = time.perf_counter() - t_h5_total_start
           print(
-              f"[{self.species}] lines = {len(df)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s"
+              f"[{self.species}] lines = {len(df)}, chunk = {pathlib.Path(local_file).name}, time = {t_h5_total:.2f} s\n"
           )
           return {
               "A_vals": np.asarray(df["A"], dtype=np.float64).reshape(-1),
