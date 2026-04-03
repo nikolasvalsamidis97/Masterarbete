@@ -207,6 +207,7 @@ class Molecule:
           with pd.HDFStore(local_file, mode="r") as store:
               storer = store.get_storer(key.lstrip("/"))
               logical_columns = list(storer.non_index_axes[0][1])
+              storer_attr_names = list(getattr(storer.attrs, "_v_attrnamesuser", []))
               block_items_map = {}
               for name in getattr(table_node, "colnames", []):
                   if name.startswith("values_block_"):
@@ -244,7 +245,7 @@ class Molecule:
           int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
 
           print(
-              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, block_items_map = {block_items_map}, colnames = {colnames}, "
+              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, storer_attr_names = {storer_attr_names}, block_items_map = {block_items_map}, colnames = {colnames}, "
               f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
               f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
               f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
@@ -280,6 +281,11 @@ class Molecule:
                   )
                   n_show = min(5, len(df_check), len(nu_vals))
                   print(
+                      f"[{self.species}] pandas-unpack raw blocks file = {local_file}, n_show = {n_show}, "
+                      f"values_block_0_row0 = {float_blocks[0][1][0, :].tolist() if float_blocks else []}, "
+                      f"values_block_1_row0 = {int_blocks[0][1][0, :].tolist() if int_blocks else []}"
+                  )
+                  print(
                       f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
                       f"A_low = {A_vals[:n_show].tolist()}, A_pd = {np.asarray(df_check['A'], dtype=np.float64)[:n_show].tolist()}"
                   )
@@ -299,6 +305,8 @@ class Molecule:
                       f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
                       f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
                   )
+                  if {"i_upper", "jlower", "jupper"}.issubset(df_check.columns):
+                      pass
 
               t_unpack = time.perf_counter() - t_unpack_start
               t_h5_total = time.perf_counter() - t_h5_total_start
