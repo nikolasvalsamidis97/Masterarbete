@@ -23,7 +23,7 @@ TEST_T_ATM = 1 * u.K
 TEST_DISTANCE = 1.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 
-MOLECULES_TO_TEST = ["NO"]
+MOLECULES_TO_TEST = ["H2O"]
 STRENGTH_LIMIT = 1e-8
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Tables" / "cutoff_validation"
