@@ -23,7 +23,7 @@ PROFILE_TYPE = "Voigt"
 # SELECTED_MOLECULES = ["CO", "NO", "SO", "SiO", "CO2", "H2O"]
 SELECTED_MOLECULES = ["H2O"]
 TEST_STAR_KEY = "A0"
-TEST_T_ATM = 1000 * u.K
+TEST_T_ATM = 100 * u.K
 TEST_DISTANCE = 1.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 

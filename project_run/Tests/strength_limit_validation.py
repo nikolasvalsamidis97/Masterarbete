@@ -19,7 +19,7 @@ B_MOLECULE = 1 * u.km / u.s
 PROFILE_TYPE = "Voigt"
 
 TEST_STAR_KEY = "M9"
-TEST_T_ATM = 1 * u.K
+TEST_T_ATM = 1000 * u.K
 TEST_DISTANCE = 1.0 * u.AU
 TEST_NCOLS = np.array([0.0]) / u.cm**2
 

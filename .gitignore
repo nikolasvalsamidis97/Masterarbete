@@ -2206,3 +2206,4 @@ __pycache__/
 exomol_data/
 Plots/
 project_run/Tests/paralell_work_test.py
+Tables/cutoff_validation/
