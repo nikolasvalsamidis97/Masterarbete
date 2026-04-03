@@ -274,7 +274,9 @@ class BroadeningProfileMolecule:
       for i, local_file in enumerate(local_files, start=1):
         t_file_start = time.perf_counter()
         if verbose:
-          print(f"[{self.molecule.species}] iter_line_dataframes: loading file {i}/{len(local_files)}")
+          print(
+            f"\n[{self.molecule.species}] Loading chunk {i}/{len(local_files)}"
+          )
 
         t_load_start = time.perf_counter()
         chunk = self.molecule.load_exomol_transition_chunk(local_file)
@@ -304,8 +306,8 @@ class BroadeningProfileMolecule:
         if verbose:
           t_file_total = time.perf_counter() - t_file_start
           print(
-            f"[{self.molecule.species}] iter_line_dataframes: file {i}/{len(local_files)} timing: "
-            f"load = {t_load:.2f} s, glower_map = {t_map:.2f} s, total = {t_file_total:.2f} s"
+            f"[{self.molecule.species}] Chunk {i}/{len(local_files)} ready "
+            f"(load: {t_load:.2f} s, map: {t_map:.2f} s, total: {t_file_total:.2f} s)"
           )
 
         yield i, len(local_files), chunk
@@ -419,10 +421,11 @@ class BroadeningProfileMolecule:
         continue
 
       elapsed = time.perf_counter() - t_start
-      print(
-        f"[{self.molecule.species}] build_total_crossection: processing chunk {chunk_index}/{n_chunks}, "
-        f"rows = {n_chunk}, elapsed = {elapsed:.2f} s"
-      )
+      if verbose:
+        print(
+          f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks}: "
+          f"{n_chunk:,} lines loaded after {elapsed:.2f} s"
+        )
 
       t_weights_start = time.perf_counter()
       if Temp_atm is not None:
@@ -478,7 +481,10 @@ class BroadeningProfileMolecule:
       n_active = len(active_idx)
       t_filter = time.perf_counter() - t_filter_start
       if verbose:
-        print(f"[{self.molecule.species}] build_total_crossection: active lines in chunk = {n_active}/{n_chunk}")
+        print(
+          f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks}: "
+          f"{n_active:,}/{n_chunk:,} active lines"
+        )
 
       t_accum_start = time.perf_counter()
       for b0 in range(0, n_active, line_batch_size):
@@ -533,18 +539,18 @@ class BroadeningProfileMolecule:
           if current_bucket > last_progress_bucket:
             last_progress_bucket = current_bucket
             elapsed = time.perf_counter() - t_start
-            print(f"Cross-section build progress for {self.molecule.species}: processed line {processed_lines}, elapsed = {elapsed:.2f} s")
+            print(
+              f"[{self.molecule.species}] Progress: {processed_lines:,} active lines processed "
+              f"in {elapsed:.2f} s"
+            )
 
       t_accum = time.perf_counter() - t_accum_start
       if verbose:
         t_chunk_total = time.perf_counter() - t_chunk_start
         print(
-          f"[{self.molecule.species}] chunk timing {chunk_index}/{n_chunks}: "
-          f"weights = {t_weights:.2f} s, "
-          f"profile_prep = {t_profile_prep:.2f} s, "
-          f"filter = {t_filter:.2f} s, "
-          f"accum = {t_accum:.2f} s, "
-          f"total = {t_chunk_total:.2f} s"
+          f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks} finished in {t_chunk_total:.2f} s "
+          f"(weights: {t_weights:.2f} s, prep: {t_profile_prep:.2f} s, "
+          f"filter: {t_filter:.2f} s, accumulate: {t_accum:.2f} s)\n"
         )
       line_offset += n_chunk
 
@@ -559,7 +565,7 @@ class BroadeningProfileMolecule:
 
     if verbose:
       total_time = time.perf_counter() - t_start
-      print(f"Finished total cross-section for {self.molecule.species} in {total_time:.2f} s")
+      print(f"[{self.molecule.species}] Total cross-section finished in {total_time:.2f} s")
 
     return sigma_total, sigma_total_err
 
