@@ -251,19 +251,38 @@ class Molecule:
               f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
           )
 
-          # Use the exact pandas block-item metadata to reconstruct logical columns.
+                    # Reconstruct pandas packed blocks.
+          # In these ExoMol HDF files, nu_lines is stored as its own table column,
+          # while the remaining logical columns are packed by dtype into:
+          #   int block   -> i_upper, i_lower, gup, jlower, jupper
+          #   float block -> A, elower, eupper, Sij0
           block_column_map = {}
-          for name, values in float_blocks + int_blocks:
-              items = block_items_map.get(name)
-              if items is None:
-                  continue
-              if values.shape[1] != len(items):
-                  raise ValueError(
-                      f"Pandas block item metadata mismatch for {name} in {local_file}: "
-                      f"values.shape[1] = {values.shape[1]}, len(items) = {len(items)}"
-                  )
-              for j, item_name in enumerate(items):
-                  block_column_map[item_name] = values[:, j]
+
+          if block_items_map:
+              for name, values in float_blocks + int_blocks:
+                  items = block_items_map.get(name)
+                  if items is None:
+                      continue
+                  if values.shape[1] != len(items):
+                      raise ValueError(
+                          f"Pandas block item metadata mismatch for {name} in {local_file}: "
+                          f"values.shape[1] = {values.shape[1]}, len(items) = {len(items)}"
+                      )
+                  for j, item_name in enumerate(items):
+                      block_column_map[item_name] = values[:, j]
+          else:
+              int_candidates = ["i_upper", "i_lower", "gup", "jlower", "jupper"]
+              float_candidates = ["A", "elower", "eupper", "Sij0"]
+
+              if len(int_blocks) == 1 and int_blocks[0][1].shape[1] == len(int_candidates):
+                  int_values = int_blocks[0][1]
+                  for j, item_name in enumerate(int_candidates):
+                      block_column_map[item_name] = int_values[:, j]
+
+              if len(float_blocks) == 1 and float_blocks[0][1].shape[1] == len(float_candidates):
+                  float_values = float_blocks[0][1]
+                  for j, item_name in enumerate(float_candidates):
+                      block_column_map[item_name] = float_values[:, j]
 
           if {"A", "elower", "gup", "i_lower"}.issubset(block_column_map.keys()):
               A_vals = np.asarray(block_column_map["A"], dtype=np.float64)
