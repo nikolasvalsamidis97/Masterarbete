@@ -203,6 +203,11 @@ class Molecule:
           t_unpack_start = time.perf_counter()
           nu_vals = np.asarray(rows["nu_lines"], dtype=np.float64).reshape(-1)
 
+          key = table_node._v_parent._v_pathname
+          with pd.HDFStore(local_file, mode="r") as store:
+              storer = store.get_storer(key.lstrip("/"))
+              logical_columns = list(storer.non_index_axes[0][1])
+
           float_blocks = []
           int_blocks = []
           for name in colnames:
@@ -233,39 +238,51 @@ class Molecule:
           int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
 
           print(
-              f"[{self.species}] pandas-block debug: colnames = {colnames}, "
+              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, colnames = {colnames}, "
               f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
               f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
               f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
           )
 
-          # Expected ExoMol pandas-table packing seen in these files:
-          # floats -> [A, elower, Sij0]
-          # ints   -> [i_upper, i_lower, gup, jlower, jupper]
-          if float_concat.shape[1] == 3 and int_concat.shape[1] == 5:
-              A_vals = np.asarray(float_concat[:, 0], dtype=np.float64)
-              elower_vals = np.asarray(float_concat[:, 1], dtype=np.float64)
-              gup_vals = np.asarray(int_concat[:, 2], dtype=np.float64)
-              i_lower_vals = np.asarray(int_concat[:, 1]).reshape(-1).astype(np.int64, copy=False)
+          # Use pandas metadata to map the packed float/int blocks back to logical columns.
+          float_logical_cols = []
+          int_logical_cols = []
+          for col in logical_columns:
+              if col in {"index", "nu_lines"}:
+                  continue
+              if col in {"A", "elower", "Sij0", "airbrd", "selbrd", "Pshft", "Tdpair", "Tdpsel"}:
+                  float_logical_cols.append(col)
+              else:
+                  int_logical_cols.append(col)
 
-              t_unpack = time.perf_counter() - t_unpack_start
-              t_h5_total = time.perf_counter() - t_h5_total_start
-              print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
-                  f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
-              )
-              print(
-                  f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
-              )
-              return {
-                  "A_vals": A_vals,
-                  "nu_vals": nu_vals,
-                  "elower_vals": elower_vals,
-                  "gup_vals": gup_vals,
-                  "i_lower_vals": i_lower_vals,
-                  "lam0_vals": 1.0e8 / nu_vals,
-              }
+          if float_concat.shape[1] == len(float_logical_cols) and int_concat.shape[1] == len(int_logical_cols):
+              float_map = {name: float_concat[:, j] for j, name in enumerate(float_logical_cols)}
+              int_map = {name: int_concat[:, j] for j, name in enumerate(int_logical_cols)}
+
+              if {"A", "elower"}.issubset(float_map.keys()) and {"gup", "i_lower"}.issubset(int_map.keys()):
+                  A_vals = np.asarray(float_map["A"], dtype=np.float64)
+                  elower_vals = np.asarray(float_map["elower"], dtype=np.float64)
+                  gup_vals = np.asarray(int_map["gup"], dtype=np.float64)
+                  i_lower_vals = np.asarray(int_map["i_lower"]).reshape(-1).astype(np.int64, copy=False)
+
+                  t_unpack = time.perf_counter() - t_unpack_start
+                  t_h5_total = time.perf_counter() - t_h5_total_start
+                  print(
+                      f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
+                      f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
+                      f"read_rows = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(rows)}, file = {local_file}"
+                  )
+                  print(
+                      f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
+                  )
+                  return {
+                      "A_vals": A_vals,
+                      "nu_vals": nu_vals,
+                      "elower_vals": elower_vals,
+                      "gup_vals": gup_vals,
+                      "i_lower_vals": i_lower_vals,
+                      "lam0_vals": 1.0e8 / nu_vals,
+                  }
 
           # Safe fallback if the block layout is not the expected one.
           print(
