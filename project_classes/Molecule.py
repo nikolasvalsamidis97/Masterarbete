@@ -245,17 +245,19 @@ class Molecule:
           int_concat = np.concatenate([v for _, v in int_blocks], axis=1) if int_blocks else np.empty((len(rows), 0), dtype=np.int64)
 
           print(
-              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, storer_attr_names = {storer_attr_names}, block_items_map = {block_items_map}, colnames = {colnames}, "
+              f"[{self.species}] pandas-block debug: logical_columns = {logical_columns}, "
+              f"block_items_map = {block_items_map}, colnames = {colnames}, "
               f"float_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in float_blocks]}, "
               f"int_blocks = {[(name, arr.shape, str(arr.dtype)) for name, arr in int_blocks]}, "
-              f"float_concat.shape = {float_concat.shape}, int_concat.shape = {int_concat.shape}, file = {local_file}"
+              f"file = {local_file}"
           )
 
-                    # Reconstruct pandas packed blocks.
-          # In these ExoMol HDF files, nu_lines is stored as its own table column,
-          # while the remaining logical columns are packed by dtype into:
-          #   int block   -> i_upper, i_lower, gup, jlower, jupper
-          #   float block -> A, elower, eupper, Sij0
+          # Reconstruct pandas packed blocks.
+          # In these ExoMol HDF files, `nu_lines` is stored as its own table column,
+          # while the remaining logical columns are packed by dtype into unnamed
+          # pandas blocks. The observed block order for these files is:
+          #   int block   -> gup, i_lower, i_upper, jlower, jupper
+          #   float block -> A, Sij0, elower, eupper
           block_column_map = {}
 
           if block_items_map:
@@ -271,8 +273,8 @@ class Molecule:
                   for j, item_name in enumerate(items):
                       block_column_map[item_name] = values[:, j]
           else:
-              int_candidates = ["i_upper", "i_lower", "gup", "jlower", "jupper"]
-              float_candidates = ["A", "elower", "eupper", "Sij0"]
+              int_candidates = ["gup", "i_lower", "i_upper", "jlower", "jupper"]
+              float_candidates = ["A", "Sij0", "elower", "eupper"]
 
               if len(int_blocks) == 1 and int_blocks[0][1].shape[1] == len(int_candidates):
                   int_values = int_blocks[0][1]
@@ -324,8 +326,6 @@ class Molecule:
                       f"[{self.species}] pandas-unpack check file = {local_file}, n_show = {n_show}, "
                       f"i_lower_low = {i_lower_vals[:n_show].tolist()}, i_lower_pd = {np.asarray(df_check['i_lower']).reshape(-1).astype(np.int64, copy=False)[:n_show].tolist()}"
                   )
-                  if {"i_upper", "jlower", "jupper"}.issubset(df_check.columns):
-                      pass
 
               t_unpack = time.perf_counter() - t_unpack_start
               t_h5_total = time.perf_counter() - t_h5_total_start
