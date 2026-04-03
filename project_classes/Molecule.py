@@ -209,22 +209,78 @@ class Molecule:
               if name != "index" and (name == "nu_lines" or name.startswith("values_block_"))
           }
           matched_rows = 0
+          scanned_chunks = 0
+          full_match_chunks = 0
+          partial_match_chunks = 0
+          zero_match_chunks = 0
+          match_mode_reported = False
 
           for start in range(0, nrows_total, chunk_size):
               stop = min(start + chunk_size, nrows_total)
               chunk = table_node.read(start, stop)
+              scanned_chunks += 1
+
               nu_chunk = np.asarray(chunk["nu_lines"], dtype=np.float64).reshape(-1)
               mask = (nu_chunk >= nu_min) & (nu_chunk <= nu_max)
+              n_chunk_rows = len(nu_chunk)
               n_match = int(mask.sum())
-              if start == 0 or n_match > 0 or stop == nrows_total:
+
+              if n_match == 0:
+                  zero_match_chunks += 1
+              elif n_match == n_chunk_rows:
+                  full_match_chunks += 1
+              else:
+                  partial_match_chunks += 1
+
+              should_print_chunk = (
+                  scanned_chunks == 1
+                  or stop == nrows_total
+                  or (n_match != n_chunk_rows)
+                  or (n_match == 0)
+                  or (scanned_chunks % 25 == 0)
+              )
+              if should_print_chunk:
                   print(
                       f"[{self.species}] pandas-table chunk scan: rows {start}:{stop} / {nrows_total}, "
                       f"matched = {n_match}, file = {local_file}"
                   )
+
+              if (not match_mode_reported) and scanned_chunks >= 2:
+                  if full_match_chunks == scanned_chunks:
+                      print(
+                          f"[{self.species}] pandas-table scan note: all scanned chunks so far fully match "
+                          f"the requested nu-range in {local_file}; this file likely lies entirely inside the "
+                          f"requested interval."
+                      )
+                      match_mode_reported = True
+                  elif zero_match_chunks == scanned_chunks:
+                      print(
+                          f"[{self.species}] pandas-table scan note: all scanned chunks so far are outside "
+                          f"the requested nu-range in {local_file}."
+                      )
+                      match_mode_reported = True
+
               if n_match == 0:
                   continue
 
               matched_rows += n_match
+
+              if n_match == n_chunk_rows:
+                  block_arrays["nu_lines"].append(nu_chunk)
+                  for name in colnames:
+                      if name == "index" or name == "nu_lines":
+                          continue
+                      if not name.startswith("values_block_"):
+                          continue
+
+                      values = np.asarray(chunk[name])
+                      if values.ndim == 1:
+                          values = values.reshape(-1, 1)
+                      elif values.ndim > 2:
+                          values = values.reshape(values.shape[0], -1)
+                      block_arrays[name].append(values)
+                  continue
+
               block_arrays["nu_lines"].append(nu_chunk[mask])
 
               for name in colnames:
@@ -246,7 +302,7 @@ class Molecule:
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, rows = 0, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, file = {local_file}"
               )
               return {
                   "A_vals": np.empty(0, dtype=np.float64),
@@ -364,7 +420,7 @@ class Molecule:
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table timing: "
                   f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, file = {local_file}"
+                  f"scan_chunks = {t_read_rows:.2f} s, unpack = {t_unpack:.2f} s, rows = {len(nu_vals)}, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, file = {local_file}"
               )
               print(
                   f"[{self.species}] _load_exomol_transition_chunk_h5 pandas-table total = {t_h5_total:.2f} s, file = {local_file}"
@@ -395,7 +451,7 @@ class Molecule:
           print(
               f"[{self.species}] _load_exomol_transition_chunk_h5 pandas fallback timing: "
               f"open = {t_open:.2f} s, find_table = {t_find_table:.2f} s, "
-              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, key = {key}, file = {local_file}"
+              f"scan_chunks = {t_read_rows:.2f} s, read_hdf = {t_read_hdf:.2f} s, rows = {len(df)}, scanned_chunks = {scanned_chunks}, full_match_chunks = {full_match_chunks}, partial_match_chunks = {partial_match_chunks}, zero_match_chunks = {zero_match_chunks}, key = {key}, file = {local_file}"
           )
           if len(df) == 0:
               return {
