@@ -18,7 +18,7 @@ from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
-from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES, get_molecule_template
+from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.plotdata_to_txt import save_plotdata_txt
 
 
