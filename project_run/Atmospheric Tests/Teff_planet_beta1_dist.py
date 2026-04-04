@@ -1,5 +1,6 @@
 import sys
 import pathlib
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import astropy.constants as const
@@ -17,29 +18,9 @@ from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
+from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES, get_molecule_template
 from project_func.plotdata_to_txt import save_plotdata_txt
 
-try:
-    from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES, get_molecule_template
-except Exception:
-    MOLECULE_TEMPLATES = {}
-
-    def get_molecule_template(species):
-        if species not in MOLECULE_TEMPLATES:
-            raise KeyError(species)
-        return MOLECULE_TEMPLATES[species]
-
-
-def get_star_teff(star_key):
-    star = get_star(star_key)
-    teff_value = star.header.get("teff", {}).get("value", None)
-    if teff_value is None:
-        raise ValueError(f"Star header for {star_key} does not contain teff.")
-    return float(teff_value)
-
-
-# Use global templates for stellar models
-stellar_models = STAR_TEMPLATES
 
 def get_star_teff(star_key):
     star = get_star(star_key)
@@ -53,22 +34,16 @@ def get_star_teff(star_key):
 stellar_models = STAR_TEMPLATES
 
 # -----------------------------------------------------------------------------
-# Fixed setup for the first Teff study
+# Fixed setup for the Teff study
 # -----------------------------------------------------------------------------
 SELECTED_PLANET_SPECIES = {
-    "hot_jupiter": ["H I", "Na I"],
-    "inflated_hot_jupiter": ["H I", "Na I"],
-    "ultra_hot_jupiter": ["H I", "Na I", "Na II", "K I", "K II"],
-    "earth_like": ["O I", "N I"],
-    "mercury_like": ["Na I", "K I"],
+    "hot_jupiter": ["H2O"],
 }
 DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
 STAR_STRIDE = 4
-MOLECULE_FETCH = {
-    "CO": {"path": "CO/12C-16O/Li2015", "database": "Li2015"},
-    "NO": {"path": "NO/14N-16O/XABC", "database": "XABC"},
-}
-SKIP_MOLECULES = True
+TEMPERATURE_LIST = [300.0, 500.0, 700.0, 1000.0, 1500.0, 2000.0] * u.K
+TEMP_MAX_WORKERS = 6
+SKIP_MOLECULES = False
 
 wavemin = 150 * u.AA
 wavemax = 50000 * u.AA
@@ -95,6 +70,13 @@ def safe_name(value):
     return str(value).replace(" ", "").replace("/", "_")
 
 
+def get_molecule_fetch(species):
+    template = get_molecule_template(species)
+    return {
+        "path": template["path"],
+        "database": template["database"],
+    }
+
 
 def get_star(star_key):
     if star_key not in star_cache:
@@ -113,11 +95,12 @@ def get_profile(species):
     if species in profile_cache:
         return profile_cache[species]
 
-    if species in MOLECULE_FETCH:
+    if species in MOLECULE_TEMPLATES:
+        molecule_fetch = get_molecule_fetch(species)
         mol = Molecule(species, wavemin, wavemax)
         mol.fetch_exomol(
-            path=MOLECULE_FETCH[species]["path"],
-            database=MOLECULE_FETCH[species]["database"],
+            path=molecule_fetch["path"],
+            database=molecule_fetch["database"],
             localdatabase="exomol_data",
         )
         profile = BroadeningProfileMolecule(mol, b_molecule, profileType="Voigt")
@@ -162,7 +145,7 @@ def r_beta1_over_R(system_obj, planet_case, star_key, species):
     atmospheric height z using the local slant column density and local
     planetary gravity, then find the first radius where beta(z) = 1.
     """
-    if SKIP_MOLECULES and species in MOLECULE_FETCH:
+    if SKIP_MOLECULES and species in MOLECULE_TEMPLATES:
         return np.nan
 
     hill_radius = system_obj.hill_radius().to(u.cm)
@@ -232,12 +215,127 @@ def r_beta1_over_R(system_obj, planet_case, star_key, species):
     return float((r_beta1 / planet_radius).decompose().value)
 
 
+def compute_species_for_temperature(selected_planet, selected_species, temperature_quantity, star_keys_sorted):
+    planet_save_name = safe_name(selected_planet)
+    species_save_name = safe_name(selected_species)
+    temp_value_k = float(temperature_quantity.to_value(u.K))
+    temp_save_name = safe_name(f"{temp_value_k:.0f}K")
+
+    planet_case = get_planet_template(selected_planet).copy()
+    planet_case["T"] = temperature_quantity
+
+    planet_obj = Planet(
+        radius=planet_case["radius"],
+        mass=planet_case["mass"],
+        T=planet_case["T"],
+        mu=planet_case["mu"],
+        P0=planet_case["P0"],
+    )
+
+    output_dir = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "Plots"
+        / "Atmospheric test"
+        / "Teff_study"
+        / "r_at_beta1"
+        / f"{planet_save_name}_r_beta1"
+        / temp_save_name
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
+    teff_reference = None
+    rbeta_columns = []
+
+    for dist in DISTANCE_LIST:
+        print(
+            f"Processing planet={selected_planet}, species={selected_species}, "
+            f"T={temp_value_k:.0f} K, distance={dist}"
+        )
+        teff_values = []
+        rbeta_values = []
+
+        for star_key in star_keys_sorted:
+            star = get_star(star_key)
+            system_obj = PlanetarySystem(planet_obj, star, dist)
+            teff = get_star_teff(star_key)
+            value = r_beta1_over_R(system_obj, planet_case, star_key, selected_species)
+            teff_values.append(teff)
+            rbeta_values.append(value)
+
+        teff_values = np.asarray(teff_values, dtype=float)
+        rbeta_values = np.asarray(rbeta_values, dtype=float)
+
+        if teff_reference is None:
+            teff_reference = teff_values.copy()
+        elif not np.array_equal(teff_reference, teff_values):
+            raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
+
+        rbeta_columns.append(rbeta_values)
+
+    if teff_reference is None or not rbeta_columns:
+        raise ValueError(
+            f"No data were computed for planet={selected_planet}, species={selected_species}, T={temp_value_k:.0f} K"
+        )
+
+    rbeta_matrix = np.column_stack(rbeta_columns)
+    table_path = output_dir / f"{species_save_name}_r_beta1.txt"
+    save_plotdata_txt(
+        table_path,
+        dataset_name=f"{species_save_name}_r_beta1_{temp_save_name}",
+        x_label="Stellar Teff",
+        x_unit="K",
+        y_label="r_beta1 / R_p",
+        y_unit="dimensionless",
+        x_values=teff_reference,
+        y_matrix=rbeta_matrix,
+        series_values=distance_values_au,
+        series_label="distance",
+        series_unit="AU",
+        extra_metadata={
+            "planet": selected_planet,
+            "species": selected_species,
+            "temperature_K": temp_value_k,
+        },
+    )
+
+    return {
+        "selected_planet": selected_planet,
+        "selected_species": selected_species,
+        "temperature_k": temp_value_k,
+        "table_path": str(table_path),
+    }
+
+
+def run_temperature_batch(selected_planet, selected_species, star_keys_sorted):
+    max_workers = min(TEMP_MAX_WORKERS, len(TEMPERATURE_LIST))
+    futures = []
+    results = []
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for temperature_quantity in TEMPERATURE_LIST:
+            futures.append(
+                executor.submit(
+                    compute_species_for_temperature,
+                    selected_planet,
+                    selected_species,
+                    temperature_quantity,
+                    star_keys_sorted,
+                )
+            )
+
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda item: item["temperature_k"])
+    return results
+
+
 def main():
     star_keys_sorted = sorted(stellar_models.keys(), key=get_star_teff)
     star_keys_sorted = star_keys_sorted[::STAR_STRIDE]
 
     for selected_planet, requested_species in SELECTED_PLANET_SPECIES.items():
-        planet_save_name = safe_name(selected_planet)
         planet_case = get_planet_template(selected_planet)
 
         if not requested_species:
@@ -252,78 +350,18 @@ def main():
                 f"Available species: {list(planet_case['composition'].keys())}"
             )
 
-        planet_obj = Planet(
-            radius=planet_case["radius"],
-            mass=planet_case["mass"],
-            T=planet_case["T"],
-            mu=planet_case["mu"],
-            P0=planet_case["P0"],
-        )
-
         for selected_species in requested_species:
-            species_save_name = safe_name(selected_species)
-            output_dir = (
-                pathlib.Path(__file__).resolve().parents[2]
-                / "Plots"
-                / "Atmospheric test"
-                / "Teff_study"
-                / "r_at_beta1"
-                / f"{planet_save_name}_r_beta1"
+            print(
+                f"Starting batch for planet={selected_planet}, species={selected_species}, "
+                f"temperatures={[float(t.to_value(u.K)) for t in TEMPERATURE_LIST]} K"
             )
-            output_dir.mkdir(parents=True, exist_ok=True)
+            results = run_temperature_batch(selected_planet, selected_species, star_keys_sorted)
 
-            used_species_summary = [selected_species]
-            distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
-            teff_reference = None
-            rbeta_columns = []
-
-            for dist in DISTANCE_LIST:
-                print(f"Processing planet={selected_planet}, species={selected_species}, distance={dist}")
-                teff_values = []
-                rbeta_values = []
-
-                for star_key in star_keys_sorted:
-                    star = get_star(star_key)
-                    system_obj = PlanetarySystem(planet_obj, star, dist)
-                    teff = get_star_teff(star_key)
-                    value = r_beta1_over_R(system_obj, planet_case, star_key, selected_species)
-                    teff_values.append(teff)
-                    rbeta_values.append(value)
-
-                teff_values = np.asarray(teff_values, dtype=float)
-                rbeta_values = np.asarray(rbeta_values, dtype=float)
-
-                if teff_reference is None:
-                    teff_reference = teff_values.copy()
-                elif not np.array_equal(teff_reference, teff_values):
-                    raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
-
-                rbeta_columns.append(rbeta_values)
-
-            if teff_reference is None or not rbeta_columns:
-                raise ValueError(f"No data were computed for planet={selected_planet}, species={selected_species}")
-
-            rbeta_matrix = np.column_stack(rbeta_columns)
-            table_path = output_dir / f"{species_save_name}_r_beta1.txt"
-            save_plotdata_txt(
-                table_path,
-                dataset_name=f"{species_save_name}_r_beta1",
-                x_label="Stellar Teff",
-                x_unit="K",
-                y_label="r_beta1 / R_p",
-                y_unit="dimensionless",
-                x_values=teff_reference,
-                y_matrix=rbeta_matrix,
-                series_values=distance_values_au,
-                series_label="distance",
-                series_unit="AU",
-                extra_metadata={
-                    "planet": selected_planet,
-                    "species": selected_species,
-                },
-            )
-            print(f"Used species: {used_species_summary}")
-            print(f"Saved table to {table_path}")
+            for result in results:
+                print(
+                    f"Saved planet={result['selected_planet']}, species={result['selected_species']}, "
+                    f"T={result['temperature_k']:.0f} K -> {result['table_path']}"
+                )
 
 
 main()
