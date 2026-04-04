@@ -71,10 +71,12 @@ def safe_name(value):
 
 
 def get_molecule_fetch(species):
-    template = get_molecule_template(species)
+    template = MOLECULE_TEMPLATES[species]
+    fetch_kwargs = template["fetch_kwargs"]
     return {
-        "path": template["path"],
-        "database": template["database"],
+        "path": fetch_kwargs["path"],
+        "database": fetch_kwargs["database"],
+        "localdatabase": fetch_kwargs.get("localdatabase", "exomol_data"),
     }
 
 
@@ -101,7 +103,7 @@ def get_profile(species):
         mol.fetch_exomol(
             path=molecule_fetch["path"],
             database=molecule_fetch["database"],
-            localdatabase="exomol_data",
+            localdatabase=molecule_fetch["localdatabase"],
         )
         profile = BroadeningProfileMolecule(mol, b_molecule, profileType="Voigt")
         if hasattr(profile, "temp_strength_rel_cutoff"):
@@ -339,16 +341,7 @@ def main():
         planet_case = get_planet_template(selected_planet)
 
         if not requested_species:
-            requested_species = list(planet_case["composition"].keys())
-            print(f"No species specified for {selected_planet}; using all composition species: {requested_species}")
-
-        invalid_species = [sp for sp in requested_species if sp not in planet_case["composition"]]
-        if invalid_species:
-            raise ValueError(
-                f"Selected species for {selected_planet} must be in the planet composition. "
-                f"Invalid entries: {invalid_species}. "
-                f"Available species: {list(planet_case['composition'].keys())}"
-            )
+            raise ValueError(f"No species specified for {selected_planet}.")
 
         for selected_species in requested_species:
             print(
