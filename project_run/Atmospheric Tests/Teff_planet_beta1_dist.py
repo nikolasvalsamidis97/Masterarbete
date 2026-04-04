@@ -19,6 +19,28 @@ from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, ge
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
 from project_func.plotdata_to_txt import save_plotdata_txt
 
+try:
+    from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES, get_molecule_template
+except Exception:
+    MOLECULE_TEMPLATES = {}
+
+    def get_molecule_template(species):
+        if species not in MOLECULE_TEMPLATES:
+            raise KeyError(species)
+        return MOLECULE_TEMPLATES[species]
+
+
+def get_star_teff(star_key):
+    star = get_star(star_key)
+    teff_value = star.header.get("teff", {}).get("value", None)
+    if teff_value is None:
+        raise ValueError(f"Star header for {star_key} does not contain teff.")
+    return float(teff_value)
+
+
+# Use global templates for stellar models
+stellar_models = STAR_TEMPLATES
+
 def get_star_teff(star_key):
     star = get_star(star_key)
     teff_value = star.header.get("teff", {}).get("value", None)
