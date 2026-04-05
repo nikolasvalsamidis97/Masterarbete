@@ -488,17 +488,17 @@ class BroadeningProfileMolecule:
       elapsed = time.perf_counter() - t_start
       if verbose:
         print(
-          f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks}: "
-          f"{n_chunk:,} lines loaded after {elapsed:.2f} s"
+            f"[{self.molecule.species}] Chunk {chunk_index}/{n_chunks}: "
+            f"{n_chunk:,} lines loaded after {elapsed:.2f} s"
         )
-      if Temp_atm is not None and chunk_cache_id is not None:
-          cache_file = self._weight_cache_filename(chunk_cache_id, Temp_atm)
-          manifest_path = self._weight_cache_manifest_path(Temp_atm)
-          cache_state = "found" if cache_file.exists() else "building"
-          print(
-            f"[{self.molecule.species}] Weight cache at this temperature: {cache_state} "
-            f"({cache_file}) | manifest: {manifest_path}"
-          )
+      if verbose and Temp_atm is not None and chunk_cache_id is not None and chunk_index == 1:
+        cache_file = self._weight_cache_filename(chunk_cache_id, Temp_atm)
+        manifest_path = self._weight_cache_manifest_path(Temp_atm)
+        cache_state = "found" if cache_file.exists() else "building"
+        print(
+          f"[{self.molecule.species}] Weight cache at this temperature: {cache_state} "
+          f"({cache_file}) | manifest: {manifest_path}"
+        )
 
       t_weights_start = time.perf_counter()
       if Temp_atm is not None:
