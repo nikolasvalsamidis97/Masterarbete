@@ -464,7 +464,7 @@ class BroadeningProfileMolecule:
         partition_Z = None
         if Temp_atm is not None:
             if cache_key not in self._announced_weight_build_temps:
-                print(f"starting calculating for T={Temp_atm.to_value(u.K):.0f}K")
+                print(f"[{self.molecule.species}] starting calculating for T={Temp_atm.to_value(u.K):.0f}K")
                 self._announced_weight_build_temps.add(cache_key)
 
             if cache_key in self.partition_function_cache:
@@ -633,7 +633,7 @@ class BroadeningProfileMolecule:
             line_offset += n_chunk
 
         if Temp_atm is not None and cache_key not in self._announced_weight_ready_temps:
-            print(f"Finished caching data for T={Temp_atm.to_value(u.K):.0f}K")
+            print(f"[{self.molecule.species}] Finished caching data for T={Temp_atm.to_value(u.K):.0f}K")
             self._announced_weight_ready_temps.add(cache_key)
 
         sigma_total = sigma_total_val * u.cm**2
