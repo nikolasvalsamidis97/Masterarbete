@@ -324,7 +324,7 @@ class PhotonPressure:
     self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
     temp_key = float(Temp[0].to_value(u.K))
     if temp_key not in self.broad_prof._announced_beta_calc_temps:
-        print("[{self.broad_prof.molecule.species}] calculating betas")
+        print(f"[{self.broad_prof.molecule.species}] calculating betas at d = {d.to(u.AU):.2f} AU for T={Temp[0]:.0f}K")
         self.broad_prof._announced_beta_calc_temps.add(temp_key)
     self.sigma_total = self.broad_prof.sigmaArray
     self.sigma_total_err = self.broad_prof.sigmaArray_err
