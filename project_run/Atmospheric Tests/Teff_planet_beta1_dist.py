@@ -21,6 +21,7 @@ from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, ge
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.plotdata_to_txt import save_plotdata_txt
+import traceback
 
 def get_star_teff(star_key):
     star = get_star(star_key)
@@ -39,8 +40,8 @@ stellar_models = STAR_TEMPLATES
 SELECTED_PLANET_SPECIES = {
     "hot_jupiter": ["H2O"],
 }
-DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
-# DISTANCE_LIST = [0.1, 0.5] * u.AU
+# DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
+DISTANCE_LIST = [0.1] * u.AU
 SELECTED_STARS = [
     "O0",
     "B0",
@@ -192,6 +193,7 @@ def r_beta1_over_R(system_obj, planet_case, star_key, species):
             beta_profile[iz] = float(np.squeeze(beta_species.value))
         except Exception as exc:
             print(f"Skipping {species} for {star_key} at z={z.to_value(u.km):.3f} km: {exc}")
+            traceback.print_exc()
             return np.nan
 
     finite_mask = np.isfinite(beta_profile)
