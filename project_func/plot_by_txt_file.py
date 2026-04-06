@@ -1,5 +1,3 @@
-
-
 import pathlib
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
@@ -40,7 +38,7 @@ DEFAULT_PLOT_CONFIG: Dict[str, Any] = {
     "x_divide_by": 1e4,
     "x_label": r"Stellar $T_{\rm eff}$ [$10^4$ K]",
     "y_label": r"$r_{\beta=1} / R_{\rm p}$",
-    "title_template": "{planet}: {species} at multiple orbital distances",
+    "title_template": "{y_label_plain} | {planet_pretty} | {species}",
     "legend_title": "Distance",
     "line_colormap": "viridis",
     "line_alpha": 0.9,
@@ -50,6 +48,14 @@ DEFAULT_PLOT_CONFIG: Dict[str, Any] = {
     "grid": True,
     "grid_alpha": 0.3,
     "tight_layout": True,
+    "right_margin": None,
+    "show_metadata_box": True,
+    "metadata_box_keys": [
+        "planet_radius_Rjup",
+        "planet_mass_Mjup",
+        "planet_temperature_K",
+        "planet_mu",
+    ],
     "x_ticks": [0.26, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 3, 4, 5],
     "x_tick_labels": ["0.26", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1", "2", "3", "4", "5"],
     "xlim": (0.26, 5.0),
@@ -165,6 +171,72 @@ def _metadata_or_default(metadata: Mapping[str, str], key: str, default: str) ->
     return value
 
 
+def _pretty_planet_name(name: str) -> str:
+    parts = str(name).replace("_", " ").split()
+    return " ".join(part.capitalize() for part in parts)
+
+
+def _plain_label(text: str) -> str:
+    text = str(text)
+    replacements = {
+        r"$r_{\beta=1} / R_{\rm p}$": "Critical height",
+        r"$r_{\beta=1}/R_{\rm p}$": "Critical height",
+        "r_beta1 / R_p": "Critical height",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+
+def _format_float_string(value: str, decimals: int = 2) -> str:
+    try:
+        return f"{float(value):.{decimals}f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _build_default_title(metadata: Mapping[str, str], table_path: pathlib.Path, y_label_text: str) -> str:
+    planet = metadata.get("planet", table_path.parent.name)
+    species = metadata.get("species", table_path.stem)
+    planet_pretty = _pretty_planet_name(planet)
+    y_label_plain = _plain_label(y_label_text)
+    return DEFAULT_PLOT_CONFIG["title_template"].format(
+        planet=planet,
+        planet_pretty=planet_pretty,
+        species=species,
+        dataset_name=metadata.get("dataset_name", table_path.stem),
+        y_label_plain=y_label_plain,
+    )
+
+
+
+def _metadata_box_label(key: str, value: str) -> str:
+    if key == "planet_radius_Rjup":
+        return rf"$R = {_format_float_string(value)}\ R_{{\rm jup}}$"
+    if key == "planet_mass_Mjup":
+        return rf"$M = {_format_float_string(value)}\ M_{{\rm jup}}$"
+    if key == "planet_temperature_K":
+        return rf"$T = {_format_float_string(value, decimals=0)}\ \mathrm{{K}}$"
+    if key == "planet_mu":
+        return rf"$\mu = {_format_float_string(value)}$"
+    return f"{key} = {value}"
+
+
+
+def _build_metadata_box_lines(metadata: Mapping[str, str], plot_config: Mapping[str, Any]) -> List[str]:
+    if not plot_config.get("show_metadata_box", True):
+        return []
+
+    keys = plot_config.get("metadata_box_keys", [])
+    lines: List[str] = []
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and value != "":
+            lines.append(_metadata_box_label(str(key), str(value)))
+    return lines
+
+
 
 def plot_table(table_path: pathlib.Path, overrides: Mapping[str, Any] | None = None) -> pathlib.Path:
     metadata, columns, data = parse_header_and_table(table_path)
@@ -233,25 +305,49 @@ def plot_table(table_path: pathlib.Path, overrides: Mapping[str, Any] | None = N
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
 
-    planet = metadata.get("planet", table_path.parent.name)
-    species = metadata.get("species", table_path.stem)
     title = plot_config.get("title")
     if title is None:
-        title = plot_config["title_template"].format(
-            planet=planet,
-            species=species,
-            dataset_name=metadata.get("dataset_name", table_path.stem),
-        )
+        title = _build_default_title(metadata, table_path, default_y_label)
     ax.set_title(title)
 
     if plot_config.get("grid", True):
         ax.grid(True, alpha=plot_config.get("grid_alpha", 0.3))
 
+    legend = None
     if plot_config.get("legend", True):
-        ax.legend(title=legend_title)
+        legend = ax.legend(title=legend_title)
+
+    metadata_box_lines = _build_metadata_box_lines(metadata, plot_config)
+
+    right_margin = plot_config.get("right_margin")
+    if right_margin is not None:
+        plt.subplots_adjust(right=right_margin)
+
+    if metadata_box_lines and legend is not None:
+        ax.text(
+            0.73,
+            0.96,
+            "\n".join(metadata_box_lines),
+            transform=ax.transAxes,
+            va="top",
+            ha="right",
+            multialignment="left",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
+        )
+    elif metadata_box_lines:
+        ax.text(
+            0.98,
+            0.96,
+            "\n".join(metadata_box_lines),
+            transform=ax.transAxes,
+            va="top",
+            ha="right",
+            multialignment="left",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
+        )
 
     if plot_config.get("tight_layout", True):
-        plt.tight_layout()
+        plt.tight_layout(rect=(0.02, 0.02, 0.98, 0.98))
 
     pdf_path = output_pdf_path_from_table(table_path, plot_config)
     if SAVE_PDF:

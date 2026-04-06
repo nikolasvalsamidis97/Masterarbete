@@ -1,0 +1,31 @@
+ATOM_SPECIES = [
+    "H I",
+    "He I", "He II",
+    "Li I", "Li II", "Li III",
+    "Be I", "Be II", "Be III",
+    "B I", "B II", "B III",
+    "C I", "C II", "C III",
+    "N I", "N II", "N III",
+    "O I", "O II", "O III",
+    "F I", "F II", "F III",
+    "Ne I", "Ne II", "Ne III",
+    "Na I", "Na II", "Na III",
+    "Mg I", "Mg II", "Mg III",
+    "Al I", "Al II", "Al III",
+    "Si I", "Si II", "Si III",
+    "P I", "P II", "P III",
+    "S I", "S II", "S III",
+    "Cl I", "Cl II", "Cl III",
+    "Ar I", "Ar II", "Ar III",
+    "K I", "K II", "K III",
+    "Ca I", "Ca II", "Ca III",
+    "Sc I", "Sc II", "Sc III",
+    "Ti I", "Ti II", "Ti III",
+    "V I", "V II", "V III",
+    "Cr I", "Cr II", "Cr III",
+    "Mn I", "Mn II", "Mn III",
+    "Fe I", "Fe II", "Fe III",
+]
+
+# Backward-compatible alias
+atoms = ATOM_SPECIES

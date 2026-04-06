@@ -322,6 +322,10 @@ class PhotonPressure:
       print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
     t_start_sigma = time.perf_counter()
     self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
+    temp_key = float(Temp[0].to_value(u.K))
+    if temp_key not in self.broad_prof._announced_beta_calc_temps:
+        print("calculating betas")
+        self.broad_prof._announced_beta_calc_temps.add(temp_key)
     self.sigma_total = self.broad_prof.sigmaArray
     self.sigma_total_err = self.broad_prof.sigmaArray_err
     t_end_sigma = time.perf_counter()

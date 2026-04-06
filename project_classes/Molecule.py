@@ -8,6 +8,8 @@ import pathlib
 import time
 import tables
 from radis.io.hitran import fetch_hitran
+import io
+import contextlib
 
 class Molecule:
   def __init__(self, species: "str", lam_min, lam_max):
@@ -56,13 +58,21 @@ class Molecule:
           print(f"[{self.species}] fetch_exomol: path = {path}")
           print(f"[{self.species}] fetch_exomol: database = {database}")
 
-      mdb = self._build_exomol_mdb(path, database, localdatabase)
+      if verbose:
+            mdb = self._build_exomol_mdb(path, database, localdatabase)
+      else:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                mdb = self._build_exomol_mdb(path, database, localdatabase)
       if verbose:
           print(f"[{self.species}] fetch_exomol: MdbExomol created")
 
       if verbose:
           print(f"[{self.species}] fetch_exomol: getting datafile manager")
-      mgr = mdb.get_datafile_manager()
+      if verbose:
+        mgr = mdb.get_datafile_manager()
+      else:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            mgr = mdb.get_datafile_manager()
       if verbose:
           print(f"[{self.species}] fetch_exomol: datafile manager ready")
           print(f"[{self.species}] fetch_exomol: number of transition files listed = {len(mdb.trans_file)}")
@@ -71,13 +81,21 @@ class Molecule:
       for i, f in enumerate(mdb.trans_file, start=1):
           if verbose:
               print(f"[{self.species}] fetch_exomol: caching trans file {i}/{len(mdb.trans_file)} -> {f}")
-          local_trans_files.append(mgr.cache_file(f))
+          if verbose:
+            local_trans_files.append(mgr.cache_file(f))
+          else:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                local_trans_files.append(mgr.cache_file(f))
       if verbose:
           print(f"[{self.species}] fetch_exomol: all transition files cached/resolved")
 
       if verbose:
           print(f"[{self.species}] fetch_exomol: caching states file")
-      local_states_file = mgr.cache_file(mdb.states_file)
+      if verbose:
+        local_states_file = mgr.cache_file(mdb.states_file)
+      else:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            local_states_file = mgr.cache_file(mdb.states_file)
       if verbose:
           print(f"[{self.species}] fetch_exomol: states file cached/resolved")
 
