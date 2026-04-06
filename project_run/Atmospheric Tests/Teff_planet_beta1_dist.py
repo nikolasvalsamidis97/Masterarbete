@@ -123,7 +123,7 @@ def get_profile(species):
             database=molecule_fetch["database"],
             localdatabase=molecule_fetch["localdatabase"],
         )
-        print("molecule loaded")
+        print(f"[{species}] molecule loaded")
         profile = BroadeningProfileMolecule(mol, b_molecule, profileType="Voigt")
         if hasattr(profile, "temp_strength_rel_cutoff"):
             profile.temp_strength_rel_cutoff = 1e-8
