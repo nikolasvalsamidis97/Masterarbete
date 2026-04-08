@@ -216,6 +216,140 @@ def r_beta1_over_R(
         maybe_print_traceback()
         return np.nan
 
+    if is_molecular_species(species):
+        z_cm_values = np.asarray([float(z.to_value(u.cm)) for z in z_grid], dtype=float)
+        ncol_values = np.empty(len(z_grid), dtype=float)
+        missing_indices = []
+
+        for i, z_cm_value in enumerate(z_cm_values):
+            ncol_key = z_cm_value
+            if ncol_cache is not None and ncol_key in ncol_cache:
+                ncol_values[i] = float(np.squeeze(ncol_cache[ncol_key].to_value(1 / u.cm**2)))
+            else:
+                missing_indices.append(i)
+
+        for i in missing_indices:
+            z = z_grid[i]
+            ncol_local = np.array([
+                system_obj.planet.slant_column_density(z).to_value(1 / u.cm**2)
+            ]) / u.cm**2
+            if ncol_cache is not None:
+                ncol_cache[z_cm_values[i]] = ncol_local
+            ncol_values[i] = float(np.squeeze(ncol_local.to_value(1 / u.cm**2)))
+
+        ncol_grid = ncol_values / u.cm**2
+        r_grid = planet_radius + z_grid
+
+        try:
+            F_ph_tot_grid, F_ph_tot_err_grid, _, _ = pp.calc_PhotonPressure(
+                ncol_grid,
+                planet_case["T"],
+                system_obj.distance,
+            )
+            beta_species_grid, _ = pp.beta_Values(
+                F_ph_tot_grid,
+                F_ph_tot_err_grid,
+                system_obj.planet.mass,
+                r_grid,
+            )
+            beta_values_grid = np.asarray(beta_species_grid.value, dtype=float).reshape(-1)
+        except Exception as exc:
+            print(f"Skipping {species} for {star_key} in coarse molecular grid: {exc}")
+            maybe_print_traceback()
+            return np.nan
+
+        exact_matches = np.where(np.isclose(beta_values_grid, 1.0, atol=1e-6))[0]
+        if len(exact_matches) > 0:
+            idx = int(exact_matches[0])
+            return float((r_grid[idx] / planet_radius).decompose().value)
+
+        for i in range(1, len(beta_values_grid)):
+            b1 = beta_values_grid[i - 1]
+            b2 = beta_values_grid[i]
+            if not np.isfinite(b1) or not np.isfinite(b2):
+                continue
+
+            crossed = ((b1 < 1.0 and b2 > 1.0) or (b1 > 1.0 and b2 < 1.0))
+            if not crossed:
+                continue
+
+            z1 = z_grid[i - 1]
+            z2 = z_grid[i]
+            r1 = (planet_radius + z1).to_value(u.cm)
+            r2 = (planet_radius + z2).to_value(u.cm)
+
+            if np.isclose(b2, b1):
+                r_beta1_cm = r1
+            else:
+                r_beta1_cm = r1 + (1.0 - b1) * (r2 - r1) / (b2 - b1)
+
+            z_refine_grid = np.linspace(z1.to_value(u.cm), z2.to_value(u.cm), refine_points) * u.cm
+            z_refine_cm_values = np.asarray([float(z.to_value(u.cm)) for z in z_refine_grid], dtype=float)
+            ncol_refine_values = np.empty(len(z_refine_grid), dtype=float)
+            missing_refine_indices = []
+
+            for j, z_refine_cm_value in enumerate(z_refine_cm_values):
+                ncol_refine_key = z_refine_cm_value
+                if ncol_cache is not None and ncol_refine_key in ncol_cache:
+                    ncol_refine_values[j] = float(np.squeeze(ncol_cache[ncol_refine_key].to_value(1 / u.cm**2)))
+                else:
+                    missing_refine_indices.append(j)
+
+            for j in missing_refine_indices:
+                z_refine = z_refine_grid[j]
+                ncol_local_refine = np.array([
+                    system_obj.planet.slant_column_density(z_refine).to_value(1 / u.cm**2)
+                ]) / u.cm**2
+                if ncol_cache is not None:
+                    ncol_cache[z_refine_cm_values[j]] = ncol_local_refine
+                ncol_refine_values[j] = float(np.squeeze(ncol_local_refine.to_value(1 / u.cm**2)))
+
+            ncol_refine_grid = ncol_refine_values / u.cm**2
+            r_refine_grid = planet_radius + z_refine_grid
+
+            try:
+                F_ph_tot_refine, F_ph_tot_err_refine, _, _ = pp.calc_PhotonPressure(
+                    ncol_refine_grid,
+                    planet_case["T"],
+                    system_obj.distance,
+                )
+                beta_species_refine, _ = pp.beta_Values(
+                    F_ph_tot_refine,
+                    F_ph_tot_err_refine,
+                    system_obj.planet.mass,
+                    r_refine_grid,
+                )
+                beta_values_refine = np.asarray(beta_species_refine.value, dtype=float).reshape(-1)
+            except Exception as exc:
+                print(f"Skipping {species} for {star_key} in refined molecular grid: {exc}")
+                maybe_print_traceback()
+                return np.nan
+
+            exact_matches_refine = np.where(np.isclose(beta_values_refine, 1.0, atol=1e-6))[0]
+            if len(exact_matches_refine) > 0:
+                j = int(exact_matches_refine[0])
+                return float((r_refine_grid[j] / planet_radius).decompose().value)
+
+            for j in range(1, len(beta_values_refine)):
+                br1 = beta_values_refine[j - 1]
+                br2 = beta_values_refine[j]
+                if not np.isfinite(br1) or not np.isfinite(br2):
+                    continue
+
+                crossed_refine = ((br1 < 1.0 and br2 > 1.0) or (br1 > 1.0 and br2 < 1.0))
+                if crossed_refine:
+                    rr1 = r_refine_grid[j - 1].to_value(u.cm)
+                    rr2 = r_refine_grid[j].to_value(u.cm)
+                    if np.isclose(br2, br1):
+                        r_beta1_refine_cm = rr1
+                    else:
+                        r_beta1_refine_cm = rr1 + (1.0 - br1) * (rr2 - rr1) / (br2 - br1)
+                    return float(((r_beta1_refine_cm * u.cm) / planet_radius).decompose().value)
+
+            return float(((r_beta1_cm * u.cm) / planet_radius).decompose().value)
+
+        return np.nan
+
     prev_r_local = None
     prev_beta_value = None
     prev_z = None
