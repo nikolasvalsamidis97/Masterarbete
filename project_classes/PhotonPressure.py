@@ -11,6 +11,7 @@ import time
 
 
 class PhotonPressure:
+  _molecule_flux_interp_cache = {}
   
   def __init__(self, broadening_profile: BroadeningProfile | BroadeningProfileMolecule, star: Star):
     """
@@ -73,13 +74,43 @@ class PhotonPressure:
 
     return F_star_interp
   
+  def _molecule_flux_cache_key(self):
+    lam_grid_val = self.lam_grid.to_value(u.AA)
+    lam_star_val = self.lam_star.to_value(u.AA)
+
+    star_path = getattr(self.star, "path", None)
+    if star_path is None and hasattr(self.star, "header") and isinstance(self.star.header, dict):
+      teff_entry = self.star.header.get("teff")
+      if isinstance(teff_entry, dict) and "value" in teff_entry:
+        star_path = ("teff", float(teff_entry["value"]))
+      elif teff_entry is not None:
+        star_path = ("teff", float(teff_entry))
+
+    if star_path is None:
+      star_path = ("star_id", id(self.star))
+
+    return (
+      star_path,
+      len(lam_star_val),
+      float(lam_star_val[0]),
+      float(lam_star_val[-1]),
+      len(lam_grid_val),
+      float(lam_grid_val[0]),
+      float(lam_grid_val[-1]),
+    )
+
   def get_interp_Spectra_molecule(self):
     """
     Interpolates the stellar spectrum onto the shared molecular wavelength grid.
-    Cached after the first build because the star and molecular wavelength grid
-    do not change within a PhotonPressure object.
+    Cached both on the object and in a class-level cache so repeated
+    PhotonPressure objects for the same star/grid can reuse the interpolation.
     """
     if self._flux_star_interp_molecule is not None:
+      return self._flux_star_interp_molecule
+
+    cache_key = self._molecule_flux_cache_key()
+    if cache_key in PhotonPressure._molecule_flux_interp_cache:
+      self._flux_star_interp_molecule = PhotonPressure._molecule_flux_interp_cache[cache_key]
       return self._flux_star_interp_molecule
 
     lam_grid = self.lam_grid.to_value(u.AA)
@@ -90,6 +121,7 @@ class PhotonPressure:
     F_star_interp *= self.flux_star.unit
 
     self._flux_star_interp_molecule = F_star_interp
+    PhotonPressure._molecule_flux_interp_cache[cache_key] = F_star_interp
     return self._flux_star_interp_molecule
   
   def plot_interp_Spectra(self, line: int):
@@ -353,7 +385,6 @@ class PhotonPressure:
     n_col_chunks = int(np.ceil(n_col / chunk_size))
 
     F_ph_tot = np.zeros(n_col) * u.N
-    F_ph_tot_err2 = np.zeros(n_col) * (u.N**2)
 
     Flux_unit = Flux.unit
     sigma_unit = sigma.unit
@@ -397,7 +428,6 @@ class PhotonPressure:
 
 
       F_ph_tot[j0:j1] = (F_chunk_sum * force_unit).to(u.N)
-      F_ph_tot_err2[j0:j1] = 0.0 * u.N**2
 
       if verbose and n_col_chunks > 1:
         col_chunk_idx = j0 // chunk_size + 1
@@ -406,7 +436,7 @@ class PhotonPressure:
           f"for {self.broad_prof.molecule.species}"
         )
 
-    F_ph_tot_err = np.sqrt(F_ph_tot_err2)
+    F_ph_tot_err = np.zeros(n_col) * u.N
 
     t_end_total = time.perf_counter()
     self.last_calc_time_molecule = t_end_total - t_start_total
