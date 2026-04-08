@@ -61,7 +61,13 @@ DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
 SELECTED_STARS = None
 # SELECTED_STARS = ["O0", "B0", "A0"]
 STAR_STRIDE = 5
+DISTANCE_MAX_WORKERS = 8
 STAR_MAX_WORKERS = 15
+# Choose outer parallelization strategy:
+# "distance"      -> one worker per distance (reuses stars serially inside each worker)
+# "distance_star" -> one worker per (distance, star) pair (more workers, less reuse)
+# "serial"        -> no outer parallelism
+PARALLEL_TASK_MODE = "distance_star"
 N_HEIGHT_POINTS = 150
 COARSE_HEIGHT_POINTS = 30
 REFINE_HEIGHT_POINTS = 30
@@ -483,6 +489,23 @@ def compute_distance_column_worker(args):
     return dist_value_au, teff_values, rbeta_values
 
 
+# New worker function for parallel distance-star computation
+def compute_distance_star_worker(args):
+    selected_planet, selected_species, planet_case, planet_obj, dist_value_au, star_key = args
+
+    dist = dist_value_au * u.AU
+    star = get_star(star_key)
+    system_obj = PlanetarySystem(planet_obj, star, dist)
+    teff = infer_teff_from_star_template(star_key)
+    value = r_beta1_over_R(
+        system_obj,
+        planet_case,
+        star_key,
+        selected_species,
+    )
+    return dist_value_au, teff, value
+
+
 
 
 
@@ -544,7 +567,12 @@ def main():
                 f"SKIP_ATOMS={SKIP_ATOMS}, and SKIP_MOLECULES={SKIP_MOLECULES}."
             )
 
-        use_parallel = len(DISTANCE_LIST) > 1
+        if PARALLEL_TASK_MODE not in {"distance", "distance_star", "serial"}:
+            raise ValueError(
+                f"Unknown PARALLEL_TASK_MODE={PARALLEL_TASK_MODE!r}. "
+                f"Use 'distance', 'distance_star', or 'serial'."
+            )
+        use_parallel = PARALLEL_TASK_MODE != "serial"
 
         for selected_species in requested_species:
             species_start_time = time.perf_counter()
@@ -564,7 +592,7 @@ def main():
             teff_reference = None
             rbeta_columns = []
 
-            if use_parallel:
+            if use_parallel and PARALLEL_TASK_MODE == "distance":
                 tasks = []
                 for dist in DISTANCE_LIST:
                     print(
@@ -585,7 +613,7 @@ def main():
                     )
 
                 distance_results = {}
-                with ProcessPoolExecutor(max_workers=min(STAR_MAX_WORKERS, len(tasks))) as executor:
+                with ProcessPoolExecutor(max_workers=min(DISTANCE_MAX_WORKERS, len(tasks))) as executor:
                     futures = [executor.submit(compute_distance_column_worker, task) for task in tasks]
                     for future in as_completed(futures):
                         dist_value_au, teff_values, rbeta_values = future.result()
@@ -594,6 +622,50 @@ def main():
                 for dist in DISTANCE_LIST:
                     dist_value_au = float(dist.to_value(u.AU))
                     teff_values, rbeta_values = distance_results[dist_value_au]
+
+                    if teff_reference is None:
+                        teff_reference = teff_values.copy()
+                    elif not np.array_equal(teff_reference, teff_values):
+                        raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
+
+                    rbeta_columns.append(rbeta_values)
+            elif use_parallel and PARALLEL_TASK_MODE == "distance_star":
+                tasks = []
+                for dist in DISTANCE_LIST:
+                    print(
+                        f"species={selected_species}, "
+                        f"temp_atm={planet_case['T'].to_value(u.K):.0f} K, "
+                        f"planet_distance={dist.to_value(u.AU):g} AU, "
+                        f"Teff={teff_labels} K"
+                    )
+                    for star_key in star_keys_sorted:
+                        tasks.append(
+                            (
+                                selected_planet,
+                                selected_species,
+                                planet_case,
+                                planet_obj,
+                                float(dist.to_value(u.AU)),
+                                star_key,
+                            )
+                        )
+
+                distance_teff_pairs = {
+                    float(dist.to_value(u.AU)): []
+                    for dist in DISTANCE_LIST
+                }
+                with ProcessPoolExecutor(max_workers=min(STAR_MAX_WORKERS, len(tasks))) as executor:
+                    futures = [executor.submit(compute_distance_star_worker, task) for task in tasks]
+                    for future in as_completed(futures):
+                        dist_value_au, teff, rbeta_value = future.result()
+                        distance_teff_pairs[dist_value_au].append((teff, rbeta_value))
+
+                for dist in DISTANCE_LIST:
+                    dist_value_au = float(dist.to_value(u.AU))
+                    teff_pairs = distance_teff_pairs[dist_value_au]
+                    teff_pairs.sort(key=lambda item: item[0])
+                    teff_values = np.asarray([item[0] for item in teff_pairs], dtype=float)
+                    rbeta_values = np.asarray([item[1] for item in teff_pairs], dtype=float)
 
                     if teff_reference is None:
                         teff_reference = teff_values.copy()
