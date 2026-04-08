@@ -29,6 +29,10 @@ class PhotonPressure:
 
       self.lam_grid = broadening_profile.lam_grid
       self._flux_star_interp_molecule = None
+      self._molecule_sigma_temp_key = None
+      self._molecule_sigma_total = None
+      self._molecule_sigma_total_err = None
+      self._announced_beta_calc_conditions = set()
 
     else:
       self.mode = "atom"
@@ -299,7 +303,7 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=100000, verbose=False):
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=1000000, verbose=False):
     """
     Calculates total photon pressure for a molecule using a stitched molecular
     spectrum built for the requested atmospheric temperature.
@@ -318,16 +322,26 @@ class PhotonPressure:
 
     t_start_total = time.perf_counter()
 
-    if verbose:
-      print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
-    t_start_sigma = time.perf_counter()
-    self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
     temp_key = float(Temp[0].to_value(u.K))
-    if temp_key not in self.broad_prof._announced_beta_calc_temps:
-        print(f"[{self.broad_prof.molecule.species}] calculating betas at d = {d.to(u.AU):.2f} AU for T={Temp[0]:.0f}K")
-        self.broad_prof._announced_beta_calc_temps.add(temp_key)
-    self.sigma_total = self.broad_prof.sigmaArray
-    self.sigma_total_err = self.broad_prof.sigmaArray_err
+    t_start_sigma = time.perf_counter()
+    if self._molecule_sigma_temp_key != temp_key:
+      if verbose:
+        print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
+      self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
+      self._molecule_sigma_temp_key = temp_key
+      self._molecule_sigma_total = self.broad_prof.sigmaArray
+      self._molecule_sigma_total_err = self.broad_prof.sigmaArray_err
+    self.sigma_total = self._molecule_sigma_total
+    self.sigma_total_err = self._molecule_sigma_total_err
+    dist_key = float(d.to_value(u.AU))
+    star_teff = self.star.header["teff"]["value"]
+    announce_key = (temp_key, dist_key, float(star_teff))
+    if announce_key not in self._announced_beta_calc_conditions:
+        print(
+            f"[{self.broad_prof.molecule.species}] calculating betas at d = {dist_key:.2f} AU "
+            f"for T_atm={Temp[0].to_value(u.K):.0f} K and T_eff={float(star_teff):.0f} K"
+        )
+        self._announced_beta_calc_conditions.add(announce_key)
     t_end_sigma = time.perf_counter()
     if verbose:
       print(
@@ -339,7 +353,7 @@ class PhotonPressure:
     lam = self.lam_grid
     Flux = self.get_interp_Spectra_molecule() * omega
     sigma = self.sigma_total
-    sigma_err = self.sigma_total_err
+    sigma_err = None
 
     n_col = N_col.shape[0]
     n_lam = lam.shape[0]
@@ -350,13 +364,11 @@ class PhotonPressure:
 
     Flux_unit = Flux.unit
     sigma_unit = sigma.unit
-    sigma_err_unit = sigma_err.unit
     lam_unit = lam.unit
     force_unit = (Flux_unit * sigma_unit * lam_unit / const.c.unit)
 
     Flux_val = np.asarray(Flux.value, dtype=np.float64)
     sigma_val = np.asarray(sigma.value, dtype=np.float64)
-    sigma_err_val = np.asarray(sigma_err.value, dtype=np.float64)
     lam_val = np.asarray(lam.value, dtype=np.float64)
     N_col_val = np.asarray(N_col.to_value(1 / u.cm**2), dtype=np.float64)
 
@@ -374,7 +386,6 @@ class PhotonPressure:
         lam_chunk = lam_val[i0:i1]
         Flux_chunk = Flux_val[i0:i1]
         sigma_chunk = sigma_val[i0:i1]
-        sigma_err_chunk = sigma_err_val[i0:i1]
 
         if len(N_chunk_val) == 1:
           N_val = N_chunk_val[0]
@@ -383,14 +394,6 @@ class PhotonPressure:
 
           integrand_chunk = Flux_chunk * sigma_chunk * Trans_chunk
           F_chunk_sum[0] += trapezoid(integrand_chunk, lam_chunk, axis=0) / const.c.to_value(u.m / u.s)
-
-          factor_chunk = 1.0 - (sigma_chunk * N_val)
-          dF_dsigma_chunk = trapezoid(
-            (Flux_chunk * Trans_chunk * factor_chunk * sigma_err_chunk) / const.c.to_value(u.m / u.s),
-            lam_chunk,
-            axis=0
-          )
-          F_chunk_err2_sum[0] += dF_dsigma_chunk**2
         else:
           tau_chunk = sigma_chunk[:, None] * N_chunk_val[None, :]
           Trans_chunk = np.exp(-tau_chunk)
@@ -398,17 +401,9 @@ class PhotonPressure:
           integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
           F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
 
-          factor_chunk = 1.0 - (sigma_chunk[:, None] * N_chunk_val[None, :])
-          dF_dsigma_chunk = trapezoid(
-            (Flux_chunk[:, None] * Trans_chunk * factor_chunk * sigma_err_chunk[:, None]) / const.c.to_value(u.m / u.s),
-            lam_chunk[:, None],
-            axis=0
-          )
-          F_chunk_err2_sum += dF_dsigma_chunk**2
-
 
       F_ph_tot[j0:j1] = (F_chunk_sum * force_unit).to(u.N)
-      F_ph_tot_err2[j0:j1] = (F_chunk_err2_sum * (Flux_unit * sigma_err_unit * lam_unit / const.c.unit)**2).to(u.N**2)
+      F_ph_tot_err2[j0:j1] = 0.0 * u.N**2
 
       if verbose and n_col_chunks > 1:
         col_chunk_idx = j0 // chunk_size + 1

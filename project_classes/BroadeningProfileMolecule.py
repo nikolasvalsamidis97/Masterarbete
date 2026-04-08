@@ -464,7 +464,7 @@ class BroadeningProfileMolecule:
         partition_Z = None
         if Temp_atm is not None:
             if cache_key not in self._announced_weight_build_temps:
-                print(f"[{self.molecule.species}] starting calculating for T={Temp_atm.to_value(u.K):.0f}K")
+                print(f"[{self.molecule.species}] starting calculating weights for T={Temp_atm.to_value(u.K):.0f}K")
                 self._announced_weight_build_temps.add(cache_key)
 
             if cache_key in self.partition_function_cache:

@@ -93,12 +93,36 @@ MOLECULE_TEMPLATES = {
             "localdatabase": "exomol_data",
             "databank_name": "HITRAN-O2-loc",
         },
-    },        
+    },
+    "NaCl": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "NaCl/23Na-35Cl/Barton",
+            "database": "Barton",
+            "localdatabase": "exomol_data",
+        },
+    },
+    "PH3": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "PH3/31P-1H3/SAlTY",
+            "database": "SAlTY",
+            "localdatabase": "exomol_data",
+        },
+    },
     "H2S": {
         "source": "exomol",
         "fetch_kwargs": {
             "path": "H2S/1H2-32S/AYT2",
             "database": "AYT2",
+            "localdatabase": "exomol_data",
+        },
+    },
+    "H2": {
+        "source": "exomol",
+        "fetch_kwargs": {
+            "path": "H2/1H2/RACPPK",
+            "database": "RACPPK",
             "localdatabase": "exomol_data",
         },
     },

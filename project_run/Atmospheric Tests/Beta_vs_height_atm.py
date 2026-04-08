@@ -1,443 +1,278 @@
-import sys, pathlib
+
+import sys
+import pathlib
+import importlib.util
+
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
-import os
 from astropy import units as u
-from astropy import constants as const
-from matplotlib import pyplot as plt
-from project_classes.Atom import Atom
-from project_classes.Molecule import Molecule
-from project_classes.BroadeningProfile import BroadeningProfile
-from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
-from project_classes.PhotonPressure import PhotonPressure
-from project_classes.Planet import Planet
-from project_classes.Star import Star
-from project_classes.PlanetarySystem import PlanetarySystem
 
 
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
-# Test photon pressure / beta as a function of atmospheric height
-# ------------------------------------------------------------------------------------------------------------------------------------------------ #
+# -----------------------------------------------------------------------------
+# Beta vs height for one planet-star-distance configuration
+# Reuses the same optimized profile/template logic as Teff_planet_beta1_dist.py
+# and saves all selected species for the configuration in one txt table.
+# -----------------------------------------------------------------------------
 
-# -- CREATE ATOM AND BROADENING PROFILE -- #
-atom_species = [
-  "H I",
-  "He I", "He II",
-  "N I", "N II", "N III",
-  "O I", "O II", "O III",
-  "Na I", "Na II", "Na III",
-  "K I", "K II", "K III",
-]
-molecule_configs = {
-  "CO": {
-    "source": "exomol",
-    "fetch_kwargs": {
-      "path": "CO/12C-16O/Li2015",
-      "database": "Li2015",
-      "localdatabase": "exomol_data",
-    },
-  },
-  "NO": {
-    "source": "exomol",
-    "fetch_kwargs": {
-      "path": "NO/14N-16O/XABC",
-      "database": "XABC",
-      "localdatabase": "exomol_data",
-    },
-  },
-}
+PLANET_KEY = "55_Cnc_e"
+STAR_KEY = "G8"
+DISTANCE_AU = 0.01544
 
-b = 1 * u.km / u.s
-Npts = 150
-wav_min = 150 * u.AA
-wav_max = 50000 * u.AA
+# None -> use all species present in the selected planet composition, after skip
+# filters below. Otherwise give a list, for example ["Na I", "K I", "CO"].
+SELECTED_SPECIES = None
+
+SKIP_ATOMS = False
+SKIP_MOLECULES = True
+
+# Height grid from the planet surface up to the Hill limit.
+HEIGHT_POINTS = 400
+HEIGHT_GRID_POWER = 2.0
+
+# Save only txt table by default. Set True if you also want a quick PDF preview.
+SAVE_PREVIEW_PDF = False
+
+PRINT_TRACEBACKS = False
 
 
-def make_molecule(species, config, wav_min, wav_max):
-  molecule = Molecule(species, wav_min, wav_max)
-  source = config["source"].lower()
-  fetch_kwargs = config["fetch_kwargs"]
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
 
-  if source == "exomol":
-    molecule.fetch_exomol(**fetch_kwargs)
-  elif source == "hitran":
-    molecule.fetch_hitran(**fetch_kwargs)
-  else:
-    raise ValueError(f"Unknown molecule source: {config['source']}")
+def load_teff_module():
+    script_path = pathlib.Path(__file__).resolve().parent / "Teff_planet_beta1_dist.py"
+    spec = importlib.util.spec_from_file_location("teff_planet_beta1_dist_reuse", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from: {script_path}")
 
-  return molecule
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-# Atom and molecule objects
-atoms = {species: Atom(species, wav_min, wav_max) for species in atom_species}
-broad = {species: BroadeningProfile(atom, b, Npts, 'Voigt') for species, atom in atoms.items()}
-# print("Defined atoms:", list(atoms.keys()))
 
-molecules = {
-  species: make_molecule(species, config, wav_min, wav_max)
-  for species, config in molecule_configs.items()
-}
-broad_mol = {
-  species: BroadeningProfileMolecule(molecule, b, profileType='Voigt')
-  for species, molecule in molecules.items()
-}
-# print("Defined molecules:", list(molecules.keys()))
-# ---------------------------------------- #
+def species_is_atom(module, species: str) -> bool:
+    return species in set(module.ATOM_SPECIES)
 
-# -- PLANET / ATMOSPHERE CASES -- #
-planet_cases = {
 
-  # Solar-system reference cases
-  "Earth": {
-    "radius": 1.0 * const.R_earth,
-    "mass": 1.0 * const.M_earth,
-    "T": 288 * u.K,
-    "mu": 28.97 * u.dimensionless_unscaled,
-    "P0": 1.0 * u.bar,
-    "composition": {"N I": 0.7808, "O I": 0.2095, "He I": 5.24e-6, "H I": 5.5e-7, "Na I": 1e-9, "K I": 1e-10},
-  },
+def species_is_molecule(module, species: str) -> bool:
+    return species in set(module.MOLECULE_TEMPLATES.keys())
 
-  "Mars": {
-    "radius": 3390 * u.km,
-    "mass": 6.417e23 * u.kg,
-    "T": 210 * u.K,
-    "mu": 43.0 * u.dimensionless_unscaled,
-    "P0": 6.0e-3 * u.bar,
-    "composition": {"N I": 0.027, "O I": 0.0013, "He I": 1e-5, "H I": 1e-6},
-  },
 
-  "Mercury": {
-    "radius": 2440 * u.km,
-    "mass": 3.301e23 * u.kg,
-    "T": 440 * u.K,
-    "mu": 23.0 * u.dimensionless_unscaled,
-    "P0": 1.0e-9 * u.bar,
-    "composition": {"H I": 0.22, "He I": 0.06, "O I": 0.42, "Na I": 0.29, "K I": 0.01},
-  },
+def species_matches_run_filters(module, species: str) -> bool:
+    if SKIP_ATOMS and species_is_atom(module, species):
+        return False
+    if SKIP_MOLECULES and species_is_molecule(module, species):
+        return False
+    return True
 
-  "Jupiter": {
-    "radius": 69911 * u.km,
-    "mass": 1.898e27 * u.kg,
-    "T": 165 * u.K,
-    "mu": 2.3 * u.dimensionless_unscaled,
-    "P0": 1.0 * u.bar,
-    "composition": {"H I": 0.898, "He I": 0.102},
-  },
 
-  "Pluto": {
-    "radius": 1188.3 * u.km,
-    "mass": 1.303e22 * u.kg,
-    "T": 44 * u.K,
-    "mu": 28.0 * u.dimensionless_unscaled,
-    "P0": 1.0e-5 * u.bar,
-    "composition": {"N I": 0.97, "H I": 0.01},
-  },
-
-  # Exoplanet benchmark cases
-  "HD_209458_b": {
-    "radius": 1.39 * const.R_jup,
-    "mass": 0.73 * const.M_jup,
-    "T": 1400 * u.K,
-    "mu": 2.3 * u.dimensionless_unscaled,
-    "P0": 1.0e-3 * u.bar,
-    "composition": {
-      "H I": 0.8997989,
-      "He I": 0.1,
-      "CO": 1e-4,
-      "O I": 1e-4,
-      "Na I": 1e-6,
-      "K I": 1e-7,
-    },
-  },
-
-  "WASP_121_b": {
-    "radius": 1.742 * const.R_jup,
-    "mass": 1.17 * const.M_jup,
-    "T": 2350 * u.K,
-    "mu": 2.3 * u.dimensionless_unscaled,
-    "P0": 1.0e-7 * u.bar,
-    "composition": {
-      "H I": 0.880899,
-      "He I": 0.09,
-      "He II": 0.01,
-      "O I": 0.015,
-      "O II": 0.003,
-      "Na I": 1.5e-3,
-      "Na II": 3.5e-4,
-      "K I": 1.2e-4,
-      "K II": 3.0e-5,
-      "CO": 1e-4,
-      "NO": 1e-6,
-    },
-  },
-
-  "HAT_P_11_b": {
-    "radius": 4.84 * const.R_earth,
-    "mass": 25.0 * const.M_earth,
-    "T": 880 * u.K,
-    "mu": 2.3 * u.dimensionless_unscaled,
-    "P0": 1.0e-3 * u.bar,
-    "composition": {"H I": 0.85, "He I": 0.14, "O I": 1e-3, "Na I": 1e-5, "K I": 1e-6},
-  },
-
-  "K2_18_b": {
-    "radius": 2.37 * const.R_earth,
-    "mass": 8.92 * const.M_earth,
-    "T": 300 * u.K,
-    "mu": 2.3 * u.dimensionless_unscaled,
-    "P0": 1.0e-5 * u.bar,
-    "composition": {"H I": 0.8, "He I": 0.19, "O I": 0.01},
-  },
-
-  "55_Cnc_e": {
-    "radius": 1.875 * const.R_earth,
-    "mass": 7.99 * const.M_earth,
-    "T": 2000 * u.K,
-    "mu": 44.0 * u.dimensionless_unscaled,
-    "P0": 1.0e-3 * u.bar,
-    "composition": {"O I": 0.50, "O II": 0.15, "N I": 0.18, "N II": 0.02, "Na I": 0.08, "Na II": 0.02, "K I": 0.04, "K II": 0.01},
-  },
-
-}
-
-planet_sources = {
-  "Earth": "NASA Earth facts / JPL planetary parameters",
-  "Mars": "NASA Mars facts",
-  "Mercury": "NASA Mercury facts",
-  "Jupiter": "NASA Jupiter facts",
-  "Pluto": "NASA Pluto facts",
-  "HD_209458_b": "NASA Exoplanet Catalog",
-  "WASP_121_b": "NASA Exoplanet Catalog",
-  "HAT_P_11_b": "NASA Exoplanet Catalog",
-  "K2_18_b": "NASA Exoplanet Catalog",
-  "55_Cnc_e": "NASA Exoplanet Catalog",
-}
-
-# Create Planet instances for each case
-planets = {
-  case: Planet(
-    params["radius"],
-    params["mass"],
-    params["T"],
-    params["mu"],
-    params["P0"],
-  )
-  for case, params in planet_cases.items()
-}
-# print("Defined planets:", list(planets.keys()))
-# -------------------------------- #
-
-# -- STELLAR MODELS -- #
-stellar_models = {
-
-  "O0": {"path": "TS/Spectral_type/O/O0/lte500-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 12 * const.R_sun, "mass": 60 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O1": {"path": "TS/Spectral_type/O/O1/lte480-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 11 * const.R_sun, "mass": 50 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O2": {"path": "TS/Spectral_type/O/O2/lte460-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 10 * const.R_sun, "mass": 45 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O3": {"path": "TS/Spectral_type/O/O3/lte440-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 9.5 * const.R_sun, "mass": 40 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O4": {"path": "TS/Spectral_type/O/O4/lte420-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 9 * const.R_sun, "mass": 35 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O5": {"path": "TS/Spectral_type/O/O5/lte400-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 8.5 * const.R_sun, "mass": 30 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O6": {"path": "TS/Spectral_type/O/O6/lte380-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 8 * const.R_sun, "mass": 28 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O7": {"path": "TS/Spectral_type/O/O7/lte360-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 7.5 * const.R_sun, "mass": 25 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O8": {"path": "TS/Spectral_type/O/O8/lte340-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 7 * const.R_sun, "mass": 22 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-  "O9": {"path": "TS/Spectral_type/O/O9/lte320-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 6.5 * const.R_sun, "mass": 20 * const.M_sun, "vsini": 100 * u.km/u.s, "epsilon": 0.3 * u.dimensionless_unscaled},
-
-  "B0": {"path": "TS/Spectral_type/B/B0/lte300-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 6 * const.R_sun, "mass": 18 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B1": {"path": "TS/Spectral_type/B/B1/lte250-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 5.5 * const.R_sun, "mass": 14 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B2": {"path": "TS/Spectral_type/B/B2/lte220-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 5 * const.R_sun, "mass": 10 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B3": {"path": "TS/Spectral_type/B/B3/lte190-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 4.5 * const.R_sun, "mass": 8 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B4": {"path": "TS/Spectral_type/B/B4/lte170-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 4.3 * const.R_sun, "mass": 7 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B5": {"path": "TS/Spectral_type/B/B5/lte150-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 4.1 * const.R_sun, "mass": 6 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B6": {"path": "TS/Spectral_type/B/B6/lte140-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 3.9 * const.R_sun, "mass": 5.5 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B7": {"path": "TS/Spectral_type/B/B7/lte130-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 3.7 * const.R_sun, "mass": 5 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B8": {"path": "TS/Spectral_type/B/B8/lte120-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 3.4 * const.R_sun, "mass": 4 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-  "B9": {"path": "TS/Spectral_type/B/B9/lte110-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 3.1 * const.R_sun, "mass": 3 * const.M_sun, "vsini": 80 * u.km/u.s, "epsilon": 0.4 * u.dimensionless_unscaled},
-
-  "A0": {"path": "TS/Spectral_type/A/A0/lte100-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 2.5 * const.R_sun, "mass": 2.5 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A1": {"path": "TS/Spectral_type/A/A1/lte094-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 2.3 * const.R_sun, "mass": 2.4 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A2": {"path": "TS/Spectral_type/A/A2/lte090-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 2.2 * const.R_sun, "mass": 2.3 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A3": {"path": "TS/Spectral_type/A/A3/lte088-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 2.1 * const.R_sun, "mass": 2.2 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A4": {"path": "TS/Spectral_type/A/A4/lte086-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 2.0 * const.R_sun, "mass": 2.1 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A5": {"path": "TS/Spectral_type/A/A5/lte082-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.9 * const.R_sun, "mass": 2.0 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A6": {"path": "TS/Spectral_type/A/A6/lte080-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.85 * const.R_sun, "mass": 1.95 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A7": {"path": "TS/Spectral_type/A/A7/lte078-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.8 * const.R_sun, "mass": 1.9 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A8": {"path": "TS/Spectral_type/A/A8/lte076-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.75 * const.R_sun, "mass": 1.85 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-  "A9": {"path": "TS/Spectral_type/A/A9/lte074-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.7 * const.R_sun, "mass": 1.8 * const.M_sun, "vsini": 120 * u.km/u.s, "epsilon": 0.5 * u.dimensionless_unscaled},
-
-  "F0": {"path": "TS/Spectral_type/F/F0/lte072-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.6 * const.R_sun, "mass": 1.6 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F1": {"path": "TS/Spectral_type/F/F1/lte070-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.55 * const.R_sun, "mass": 1.55 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F2": {"path": "TS/Spectral_type/F/F2/lte068-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.5 * const.R_sun, "mass": 1.5 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F4": {"path": "TS/Spectral_type/F/F4/lte066-4.0-0.0a+0.2.BT-NextGen.7.dat.txt", "radius": 1.45 * const.R_sun, "mass": 1.45 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F5": {"path": "TS/Spectral_type/F/F5/lte064-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.4 * const.R_sun, "mass": 1.4 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F6": {"path": "TS/Spectral_type/F/F6/lte062-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.35 * const.R_sun, "mass": 1.35 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "F8": {"path": "TS/Spectral_type/F/F8/lte060-4.0-0.0a+0.2.BT-NextGen.7.dat.txt", "radius": 1.25 * const.R_sun, "mass": 1.25 * const.M_sun, "vsini": 20 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-
-  "G1": {"path": "TS/Spectral_type/G/G1/lte058-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 1.05 * const.R_sun, "mass": 1.05 * const.M_sun, "vsini": 5 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "G4": {"path": "TS/Spectral_type/G/G4/lte056-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.98 * const.R_sun, "mass": 0.98 * const.M_sun, "vsini": 5 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "G6": {"path": "TS/Spectral_type/G/G6/lte054-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.93 * const.R_sun, "mass": 0.93 * const.M_sun, "vsini": 5 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "G8": {"path": "TS/Spectral_type/G/G8/lte052-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.88 * const.R_sun, "mass": 0.88 * const.M_sun, "vsini": 5 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-
-  "K1": {"path": "TS/Spectral_type/K/K1/lte050-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.82 * const.R_sun, "mass": 0.82 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K3": {"path": "TS/Spectral_type/K/K3/lte048-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.78 * const.R_sun, "mass": 0.78 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K4": {"path": "TS/Spectral_type/K/K4/lte046-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.74 * const.R_sun, "mass": 0.74 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K5": {"path": "TS/Spectral_type/K/K5/lte044-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.70 * const.R_sun, "mass": 0.70 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K6": {"path": "TS/Spectral_type/K/K6/lte042-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.68 * const.R_sun, "mass": 0.68 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K7": {"path": "TS/Spectral_type/K/K7/lte040-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.65 * const.R_sun, "mass": 0.65 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "K9": {"path": "TS/Spectral_type/K/K9/lte038-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.60 * const.R_sun, "mass": 0.60 * const.M_sun, "vsini": 3 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-
-  "M1": {"path": "TS/Spectral_type/M/M1/lte036-4.0-0.0a+0.2.BT-NextGen.7.dat.txt", "radius": 0.50 * const.R_sun, "mass": 0.50 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "M2": {"path": "TS/Spectral_type/M/M2/lte034-4.0-0.0a+0.2.BT-NextGen.7.dat.txt", "radius": 0.45 * const.R_sun, "mass": 0.45 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "M4": {"path": "TS/Spectral_type/M/M4/lte032-4.0-0.0a+0.2.BT-NextGen.7.dat.txt", "radius": 0.35 * const.R_sun, "mass": 0.35 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "M6": {"path": "TS/Spectral_type/M/M6/lte030-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.25 * const.R_sun, "mass": 0.25 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "M8": {"path": "TS/Spectral_type/M/M8/lte028-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.15 * const.R_sun, "mass": 0.15 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-  "M9": {"path": "TS/Spectral_type/M/M9/lte026-4.0-0.0a+0.0.BT-NextGen.7.dat.txt", "radius": 0.10 * const.R_sun, "mass": 0.10 * const.M_sun, "vsini": 2 * u.km/u.s, "epsilon": 0.6 * u.dimensionless_unscaled},
-
-}
-
-stars = {stype: Star(**params) for stype, params in stellar_models.items()}
-# print("Defined stellar models:", list(stars.keys()))
-# -------------------- #
-
-# -- System cases -- #
-systems = {
-  "Earth-Sun": {"planet": planets["Earth"], "star": stars["G1"], "distance": 1.0 * u.AU},
-  "Mars-Sun": {"planet": planets["Mars"], "star": stars["G1"], "distance": 1.524 * u.AU},
-  "Mercury-Sun": {"planet": planets["Mercury"], "star": stars["G1"], "distance": 0.387 * u.AU},
-  "Jupiter-Sun": {"planet": planets["Jupiter"], "star": stars["G1"], "distance": 5.2 * u.AU},
-  "Pluto-Sun": {"planet": planets["Pluto"], "star": stars["G1"], "distance": 39.0 * u.AU},
-  "HD_209458_b": {"planet": planets["HD_209458_b"], "star": stars["G1"], "distance": 0.04707 * u.AU},
-  "WASP_121_b": {"planet": planets["WASP_121_b"], "star": stars["F0"], "distance": 0.02571 * u.AU},
-  "HAT_P_11_b": {"planet": planets["HAT_P_11_b"], "star": stars["K1"], "distance": 0.05258 * u.AU},
-  "K2_18_b": {"planet": planets["K2_18_b"], "star": stars["M1"], "distance": 0.1429 * u.AU},
-  "55_Cnc_e": {"planet": planets["55_Cnc_e"], "star": stars["G8"], "distance": 0.01544 * u.AU},
-}
-systems_hot_jupiters = {
-  "HD_209458_b": {
-    "planet": planets["HD_209458_b"],
-    "star": stars["G1"],
-    "distance": 0.04707 * u.AU,
-  },
-  "WASP_121_b": {
-    "planet": planets["WASP_121_b"],
-    "star": stars["F0"],
-    "distance": 0.02571 * u.AU,
-  },
-}
-planetary_systems = {name: PlanetarySystem(**params) for name, params in systems_hot_jupiters.items()}
-print("Defined planetary systems:", list(planetary_systems.keys()))
-# -------------------- #  
-
-# -- CALCULATE AND PLOT BETA VS HEIGHT -- #
-def calc_beta_vs_height(system_name, n_z=1000, z_max_type="hill"):
-
-  system = planetary_systems[system_name]
-  planet_key = next(name for name, planet_obj in planets.items() if planet_obj is system.planet)
-  allowed_species = list(planet_cases[planet_key]["composition"].keys())
-
-  if z_max_type == "grav":
-    z = system.z_grid_gravity_equal(n_z=n_z)
-  elif z_max_type == "hill":
-    z = system.z_grid_hill(n_z=n_z)
-  elif z_max_type == "roche":
-    z = system.z_grid_roche(n_z=n_z)
-  else:
-    raise ValueError("z_max_type must be 'grav', 'hill', or 'roche'")
-
-  Temp_atm = system.planet.T
-
-  Ncol_z = np.array([
-    system.planet.slant_column_density(zi).to_value(1 / u.cm**2) for zi in z
-  ]) / u.cm**2
-
-  beta_results = []
-
-  for species in allowed_species:
-    if species in broad:
-      pp = PhotonPressure(broad[species], system.star)
-    elif species in molecules:
-      pp = PhotonPressure(broad_mol[species], system.star)
+def resolve_species_list(module, composition_species):
+    if SELECTED_SPECIES is None:
+        requested_species = [
+            species
+            for species in composition_species
+            if species_matches_run_filters(module, species)
+        ]
+        print(
+            f"No species specified for {PLANET_KEY}; using filtered composition species: {requested_species}"
+        )
     else:
-      continue
-    Fph, Fph_err, _, _ = pp.calc_PhotonPressure(Ncol_z, Temp_atm, system.distance)
-    beta, beta_err = pp.beta_Values(Fph, Fph_err, system.planet.mass, z + system.planet.radius)
+        requested_species = [
+            species
+            for species in SELECTED_SPECIES
+            if species in composition_species and species_matches_run_filters(module, species)
+        ]
+        print(f"Using explicitly selected species: {requested_species}")
 
-    beta_results.append({
-      "system_name": system_name,
-      "species": species,
-      "z": z,
-      "beta": beta,
-      "beta_err": beta_err,
-      "Fph": Fph,
-      "Fph_err": Fph_err,
-      "z_max_grav": system.max_height_gravity_equal().to(u.km),
-      "z_max_roche": system.max_height_roche().to(u.km),
-      "z_max_hill": system.max_height_hill().to(u.km),
-    })
+    if not requested_species:
+        raise ValueError("No species selected after applying composition and skip filters.")
 
-  return beta_results
-
-def plot_beta_vs_height(beta_results, save_path=None):
-
-  fig, ax = plt.subplots(figsize=(8, 5))
-
-  # use the first result for shared x-grid and vertical limits
-  z = beta_results[0]["z"]
-  z_km = z.to_value(u.km)
-
-  z_max_grav = beta_results[0]["z_max_grav"].to_value(u.km)
-  z_max_roche = beta_results[0]["z_max_roche"].to_value(u.km)
-  z_max_hill = beta_results[0]["z_max_hill"].to_value(u.km)
-
-  for beta_result in beta_results:
-    beta = beta_result["beta"]
-    beta_err = beta_result["beta_err"]
-
-    beta_y = beta[0].to_value(u.dimensionless_unscaled)
-    beta_yerr = beta_err[0].to_value(u.dimensionless_unscaled)
-
-    ax.plot(z_km, beta_y, linewidth=0.8, label=beta_result["species"])
-
-    # ax.fill_between(
-    #   z_km,
-    #   np.maximum(beta_y - beta_yerr, 1e-300),
-    #   beta_y + beta_yerr,
-    #   alpha=0.12,
-    #   linewidth=0
-    # )
-
-  ax.axvline(z_max_grav, linestyle='--', linewidth=1, label="Planet = Star gravity")
-  ax.axvline(z_max_roche, linestyle='-.', linewidth=1, label="Roche-lobe limit")
-  # ax.axvline(z_max_hill, linestyle=':', linewidth=1.5, label="Hill radius")
-  ax.axhline(1.0, linestyle='-', color='gray', linewidth=1, label=r"$\beta = 1$")
-
-  ax.set_xlim(z_km[0], z_max_hill)
-  ax.set_xscale("log")
-  ax.set_yscale("log")
-  ax.set_xlabel("Height [km]")
-  ax.set_ylabel(r"$\beta$")
-  ax.set_title(f"Beta vs height | {beta_results[0]['system_name']}")
-
-  ax.legend(fontsize=8, ncol=2)
-  fig.tight_layout()
-
-  if save_path is not None:
-    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    return requested_species
 
 
-# New function to save plots for all systems
-def save_beta_plots_all_systems(system_names=None, n_z=1000, z_max_type="hill"):
+def build_height_grid(system_obj, n_points: int, grid_power: float):
+    hill_radius = system_obj.hill_radius().to(u.cm)
+    planet_radius = system_obj.planet.radius.to(u.cm)
+    if hill_radius <= planet_radius:
+        raise ValueError("Hill radius is not larger than planet radius.")
 
-  output_dir = "Plots/Atmospheric test/Beta_vs_height_system"
-  os.makedirs(output_dir, exist_ok=True)
+    z_max_cm = (hill_radius - planet_radius).to_value(u.cm)
+    fraction = np.linspace(0.0, 1.0, n_points) ** grid_power
+    z_grid = (fraction * z_max_cm) * u.cm
+    return z_grid.to(u.km), hill_radius.to(u.km), planet_radius.to(u.km)
 
-  if system_names is None:
-    system_names = list(planetary_systems.keys())
 
-  for system_name in system_names:
-    beta_results = calc_beta_vs_height(system_name, n_z=n_z, z_max_type=z_max_type)
-    save_path = os.path.join(output_dir, f"{system_name}_beta_vs_height.pdf")
-    plot_beta_vs_height(beta_results, save_path=save_path)
-    print(f"Saved plot: {save_path}")
+def save_beta_table(table_path, metadata, x_values_km, species_columns):
+    lines = []
+    for key, value in metadata.items():
+        lines.append(f"# {key}: {value}")
+    lines.append("#")
 
-save_beta_plots_all_systems(n_z=1000, z_max_type="hill")
+    header = ["x__Height"] + [f"beta__{species.replace(' ', '_')}" for species in species_columns.keys()]
+    lines.append("\t".join(header))
 
-# ----------------------------------------# 
+    n_rows = len(x_values_km)
+    for i in range(n_rows):
+        row = [f"{x_values_km[i]:.9g}"]
+        for values in species_columns.values():
+            value = values[i]
+            if np.isfinite(value):
+                row.append(f"{value:.9g}")
+            else:
+                row.append("nan")
+        lines.append("\t".join(row))
+
+    table_path.parent.mkdir(parents=True, exist_ok=True)
+    table_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"Saved table to {table_path}")
+
+
+def save_preview_pdf(module, pdf_path, z_values_km, species_columns, system_label):
+    from matplotlib import pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for species, values in species_columns.items():
+        ax.plot(z_values_km, values, linewidth=1.0, label=species)
+
+    ax.axhline(1.0, linestyle="-", color="gray", linewidth=1, label=r"$\beta = 1$")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Height [km]")
+    ax.set_ylabel(r"$\beta$")
+    ax.set_title(f"Beta vs height | {system_label}")
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved preview plot to {pdf_path}")
+
+
+# -----------------------------------------------------------------------------
+# Main run
+# -----------------------------------------------------------------------------
+
+def main():
+    module = load_teff_module()
+
+    planet_case = module.get_planet_template(PLANET_KEY)
+    star = module.get_star(STAR_KEY)
+    planet_obj = module.Planet(
+        radius=planet_case["radius"],
+        mass=planet_case["mass"],
+        T=planet_case["T"],
+        mu=planet_case["mu"],
+        P0=planet_case["P0"],
+    )
+    distance = DISTANCE_AU * u.AU
+    system_obj = module.PlanetarySystem(planet_obj, star, distance)
+
+    composition_species = list(planet_case["composition"].keys())
+    requested_species = resolve_species_list(module, composition_species)
+
+    z_grid_km, hill_radius_km, planet_radius_km = build_height_grid(
+        system_obj,
+        n_points=HEIGHT_POINTS,
+        grid_power=HEIGHT_GRID_POWER,
+    )
+    z_grid_cm = z_grid_km.to(u.cm)
+
+    ncol_z = np.array([
+        system_obj.planet.slant_column_density(z_i).to_value(1 / u.cm**2)
+        for z_i in z_grid_cm
+    ]) / u.cm**2
+    r_values = system_obj.planet.radius.to(u.cm) + z_grid_cm
+
+    species_columns = {}
+    used_species = []
+
+    for species in requested_species:
+        try:
+            print(
+                f"species={species}, planet={PLANET_KEY}, star={STAR_KEY}, "
+                f"temp_atm={planet_case['T']}, distance={distance}"
+            )
+            profile = module.get_profile(species)
+            pp = module.PhotonPressure(profile, system_obj.star)
+
+            F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(
+                ncol_z,
+                planet_case["T"],
+                system_obj.distance,
+            )
+            beta_species, _ = pp.beta_Values(
+                F_ph_tot,
+                F_ph_tot_err,
+                system_obj.planet.mass,
+                r_values,
+            )
+            beta_values = np.asarray(beta_species.value).reshape(-1).astype(float)
+
+            species_columns[species] = beta_values
+            used_species.append(species)
+        except Exception as exc:
+            print(f"Failed for species {species}: {exc}")
+            if PRINT_TRACEBACKS:
+                import traceback
+                traceback.print_exc()
+            species_columns[species] = np.full(len(z_grid_km), np.nan, dtype=float)
+
+    if not used_species:
+        raise RuntimeError("No species completed successfully.")
+
+    planet_safe = module.safe_name(PLANET_KEY)
+    star_safe = module.safe_name(STAR_KEY)
+    distance_safe = module.safe_name(f"{DISTANCE_AU:g}AU")
+
+    output_dir = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "Plots"
+        / "Atmospheric test"
+        / "Beta_vs_height_system"
+    )
+    table_path = output_dir / f"{planet_safe}_{star_safe}_{distance_safe}_beta_vs_height.txt"
+
+    metadata = {
+        "dataset_name": f"{planet_safe}_{star_safe}_{distance_safe}_beta_vs_height",
+        "x_label": "Height",
+        "x_unit": "km",
+        "y_label": "beta",
+        "y_unit": "dimensionless",
+        "series_label": "species",
+        "series_unit": "",
+        "series_values": ", ".join(species_columns.keys()),
+        "planet": PLANET_KEY,
+        "star": STAR_KEY,
+        "distance_AU": DISTANCE_AU,
+        "planet_radius_Rjup": (system_obj.planet.radius / module.const.R_jup).decompose().value,
+        "planet_mass_Mjup": (system_obj.planet.mass / module.const.M_jup).decompose().value,
+        "planet_temperature_K": planet_case["T"].to_value(u.K),
+        "planet_mu": planet_case["mu"].value,
+        "hill_radius_km": hill_radius_km.to_value(u.km),
+        "planet_radius_km": planet_radius_km.to_value(u.km),
+        "height_grid_points": HEIGHT_POINTS,
+        "height_grid_power": HEIGHT_GRID_POWER,
+        "used_species": ", ".join(used_species),
+    }
+
+    save_beta_table(
+        table_path,
+        metadata,
+        z_grid_km.to_value(u.km),
+        species_columns,
+    )
+
+    if SAVE_PREVIEW_PDF:
+        pdf_path = table_path.with_suffix(".pdf")
+        save_preview_pdf(
+            module,
+            pdf_path,
+            z_grid_km.to_value(u.km),
+            species_columns,
+            system_label=f"{PLANET_KEY} | {STAR_KEY} | {DISTANCE_AU:g} AU",
+        )
+
+
+if __name__ == "__main__":
+    main()

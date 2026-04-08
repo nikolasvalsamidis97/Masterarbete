@@ -28,8 +28,8 @@ import traceback
 # Use exact species names, for example:
 # SELECTED_ATOMIC_SPECIES = ["Na I", "Na II", "Fe I", "Fe III"]
 # SELECTED_MOLECULAR_SPECIES = ["H2O", "CO", "CH4"]
-SELECTED_ATOMIC_SPECIES = None
-SELECTED_MOLECULAR_SPECIES = ["CO", "NO", "H2O"]
+SELECTED_ATOMIC_SPECIES = ["Na I"]
+SELECTED_MOLECULAR_SPECIES = ["NO"]
 SKIP_ATOMS = True
 SKIP_MOLECULES = False
 
@@ -40,9 +40,16 @@ stellar_models = STAR_TEMPLATES
 # -----------------------------------------------------------------------------
 # Fixed setup for the first Teff study
 # -----------------------------------------------------------------------------
+# All planets
+# DEFAULT_PLANET_KEYS = list(PLANET_TEMPLATES.keys())
+# Partial
 DEFAULT_PLANET_KEYS = [
     "hot_jupiter",
 ]
+# For quick testing, you can set this to a subset of planets, for example:
+# DEFAULT_PLANET_KEYS = [
+#     "hot_jupiter",
+# ]
 SELECTED_PLANET_SPECIES = {
     planet_key: None
     for planet_key in DEFAULT_PLANET_KEYS
@@ -50,19 +57,21 @@ SELECTED_PLANET_SPECIES = {
 }
 
 DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
-# DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0] * u.AU
-SELECTED_STARS = None
-STAR_STRIDE = 15
-STAR_MAX_WORKERS = 10
+# DISTANCE_LIST = [0.1, 0.5, 1.0] * u.AU
+# SELECTED_STARS = None
+SELECTED_STARS = ["O0", "B0", "A0"]
+STAR_STRIDE = 5
+STAR_MAX_WORKERS = 1
 N_HEIGHT_POINTS = 150
-# COARSE_HEIGHT_POINTS = 30
-# REFINE_HEIGHT_POINTS = 30
+COARSE_HEIGHT_POINTS = 30
+REFINE_HEIGHT_POINTS = 30
 ### For faster testing ###
-COARSE_HEIGHT_POINTS = 20
-REFINE_HEIGHT_POINTS = 15
+# COARSE_HEIGHT_POINTS = 20
+# REFINE_HEIGHT_POINTS = 15
 ##########################
 COARSE_GRID_POWER = 3.0
 PRINT_TRACEBACKS = False
+SAVE_OUTPUT_TXT = True
 
 wavemin = 150 * u.AA
 wavemax = 50000 * u.AA
@@ -124,7 +133,9 @@ def get_profile(species):
             localdatabase=molecule_fetch["localdatabase"],
         )
         print(f"[{species}] molecule loaded")
+        print(f"Starting to build broadening profile for {species}...")
         profile = BroadeningProfileMolecule(mol, b_molecule, profileType="Voigt")
+        print(f"[{species}] broadening profile built")
         if hasattr(profile, "temp_strength_rel_cutoff"):
             profile.temp_strength_rel_cutoff = 1e-8
     else:
@@ -176,13 +187,13 @@ def r_beta1_over_R(
         coarse_points = COARSE_HEIGHT_POINTS
     if refine_points is None:
         refine_points = REFINE_HEIGHT_POINTS
-    cache_key = (
+    geometry_cache_key = (
         star_key,
         float(system_obj.distance.to_value(u.AU)),
     )
 
-    if geometry_cache is not None and cache_key in geometry_cache:
-        hill_radius, planet_radius, z_grid = geometry_cache[cache_key]
+    if geometry_cache is not None and geometry_cache_key in geometry_cache:
+        hill_radius, planet_radius, z_grid = geometry_cache[geometry_cache_key]
     else:
         hill_radius = system_obj.hill_radius().to(u.cm)
         planet_radius = system_obj.planet.radius.to(u.cm)
@@ -195,7 +206,7 @@ def r_beta1_over_R(
         z_grid = (coarse_fraction * z_max_cm) * u.cm
 
         if geometry_cache is not None:
-            geometry_cache[cache_key] = (hill_radius, planet_radius, z_grid)
+            geometry_cache[geometry_cache_key] = (hill_radius, planet_radius, z_grid)
 
     try:
         profile = get_profile(species)
@@ -212,7 +223,7 @@ def r_beta1_over_R(
     for z in z_grid:
         r_local = planet_radius + z
         z_cm_value = float(z.to_value(u.cm))
-        ncol_key = (cache_key, z_cm_value)
+        ncol_key = z_cm_value
 
         if ncol_cache is not None and ncol_key in ncol_cache:
             ncol_local = ncol_cache[ncol_key]
@@ -264,7 +275,7 @@ def r_beta1_over_R(
                 for z_refine in z_refine_grid:
                     r_local_refine = planet_radius + z_refine
                     z_refine_cm_value = float(z_refine.to_value(u.cm))
-                    ncol_refine_key = (cache_key, z_refine_cm_value)
+                    ncol_refine_key = z_refine_cm_value
 
                     if ncol_cache is not None and ncol_refine_key in ncol_cache:
                         ncol_local_refine = ncol_cache[ncol_refine_key]
@@ -304,35 +315,38 @@ def r_beta1_over_R(
     return np.nan
 
 
-def compute_rbeta_for_star(args):
-    selected_planet, selected_species, planet_case, planet_obj, dist_value_au, star_key = args
+
+
+
+
+
+# New worker function for parallel distance column computation
+def compute_distance_column_worker(args):
+    selected_planet, selected_species, planet_case, planet_obj, dist_value_au, star_keys_sorted = args
 
     dist = dist_value_au * u.AU
-    star = get_star(star_key)
-    system_obj = PlanetarySystem(planet_obj, star, dist)
-    teff = infer_teff_from_star_template(star_key)
-    value = r_beta1_over_R(system_obj, planet_case, star_key, selected_species)
-    return teff, value
+    geometry_cache = {}
+    ncol_cache = {}
+    teff_pairs = []
 
+    for star_key in star_keys_sorted:
+        teff = infer_teff_from_star_template(star_key)
+        star = get_star(star_key)
+        system_obj = PlanetarySystem(planet_obj, star, dist)
+        value = r_beta1_over_R(
+            system_obj,
+            planet_case,
+            star_key,
+            selected_species,
+            geometry_cache=geometry_cache,
+            ncol_cache=ncol_cache,
+        )
+        teff_pairs.append((teff, value))
 
-
-def compute_distance_column_parallel(selected_planet, selected_species, planet_case, planet_obj, dist, star_keys_sorted):
-    dist_value_au = float(dist.to_value(u.AU))
-    tasks = [
-        (selected_planet, selected_species, planet_case, planet_obj, dist_value_au, star_key)
-        for star_key in star_keys_sorted
-    ]
-
-    results = []
-    with ProcessPoolExecutor(max_workers=min(STAR_MAX_WORKERS, len(tasks))) as executor:
-        futures = [executor.submit(compute_rbeta_for_star, task) for task in tasks]
-        for future in as_completed(futures):
-            results.append(future.result())
-
-    results.sort(key=lambda item: item[0])
-    teff_values = np.asarray([item[0] for item in results], dtype=float)
-    rbeta_values = np.asarray([item[1] for item in results], dtype=float)
-    return teff_values, rbeta_values
+    teff_pairs.sort(key=lambda item: item[0])
+    teff_values = np.asarray([item[0] for item in teff_pairs], dtype=float)
+    rbeta_values = np.asarray([item[1] for item in teff_pairs], dtype=float)
+    return dist_value_au, teff_values, rbeta_values
 
 
 
@@ -366,6 +380,8 @@ def main():
             P0=planet_case["P0"],
         )
         planet_save_name = safe_name(selected_planet)
+        geometry_cache = {}
+        ncol_cache = {}
 
         if requested_species is None:
             requested_species = [
@@ -394,9 +410,7 @@ def main():
                 f"SKIP_ATOMS={SKIP_ATOMS}, and SKIP_MOLECULES={SKIP_MOLECULES}."
             )
 
-
-
-        use_parallel = len(requested_species) > 1
+        use_parallel = len(DISTANCE_LIST) > 1
 
         for selected_species in requested_species:
             species_start_time = time.perf_counter()
@@ -410,40 +424,61 @@ def main():
                 / f"{planet_save_name}_r_beta1"
             )
             output_dir.mkdir(parents=True, exist_ok=True)
-            star_objects = {
-                star_key: get_star(star_key)
-                for star_key in star_keys_sorted
-            }
-            geometry_cache = {}
-            ncol_cache = {}
-
 
             distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
             teff_labels = [f"{infer_teff_from_star_template(star_key):.0f}" for star_key in star_keys_sorted]
             teff_reference = None
             rbeta_columns = []
 
-            for dist in DISTANCE_LIST:
-                print(
-                    f"species={selected_species}, "
-                    f"temp_atm={planet_case['T'].to_value(u.K):.0f} K, "
-                    f"planet_distance={dist.to_value(u.AU):g} AU, "
-                    f"Teff={teff_labels} K"
-                )
-                if use_parallel:
-                    teff_values, rbeta_values = compute_distance_column_parallel(
-                        selected_planet,
-                        selected_species,
-                        planet_case,
-                        planet_obj,
-                        dist,
-                        star_keys_sorted,
+            if use_parallel:
+                tasks = []
+                for dist in DISTANCE_LIST:
+                    print(
+                        f"species={selected_species}, "
+                        f"temp_atm={planet_case['T'].to_value(u.K):.0f} K, "
+                        f"planet_distance={dist.to_value(u.AU):g} AU, "
+                        f"Teff={teff_labels} K"
                     )
-                else:
+                    tasks.append(
+                        (
+                            selected_planet,
+                            selected_species,
+                            planet_case,
+                            planet_obj,
+                            float(dist.to_value(u.AU)),
+                            star_keys_sorted,
+                        )
+                    )
+
+                distance_results = {}
+                with ProcessPoolExecutor(max_workers=min(STAR_MAX_WORKERS, len(tasks))) as executor:
+                    futures = [executor.submit(compute_distance_column_worker, task) for task in tasks]
+                    for future in as_completed(futures):
+                        dist_value_au, teff_values, rbeta_values = future.result()
+                        distance_results[dist_value_au] = (teff_values, rbeta_values)
+
+                for dist in DISTANCE_LIST:
+                    dist_value_au = float(dist.to_value(u.AU))
+                    teff_values, rbeta_values = distance_results[dist_value_au]
+
+                    if teff_reference is None:
+                        teff_reference = teff_values.copy()
+                    elif not np.array_equal(teff_reference, teff_values):
+                        raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
+
+                    rbeta_columns.append(rbeta_values)
+            else:
+                for dist in DISTANCE_LIST:
+                    print(
+                        f"species={selected_species}, "
+                        f"temp_atm={planet_case['T'].to_value(u.K):.0f} K, "
+                        f"planet_distance={dist.to_value(u.AU):g} AU, "
+                        f"Teff={teff_labels} K"
+                    )
                     teff_pairs = []
                     for star_key in star_keys_sorted:
                         teff = infer_teff_from_star_template(star_key)
-                        star = star_objects[star_key]
+                        star = get_star(star_key)
                         system_obj = PlanetarySystem(planet_obj, star, dist)
                         value = r_beta1_over_R(
                             system_obj,
@@ -459,43 +494,47 @@ def main():
                     teff_values = np.asarray([item[0] for item in teff_pairs], dtype=float)
                     rbeta_values = np.asarray([item[1] for item in teff_pairs], dtype=float)
 
-                if teff_reference is None:
-                    teff_reference = teff_values.copy()
-                elif not np.array_equal(teff_reference, teff_values):
-                    raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
+                    if teff_reference is None:
+                        teff_reference = teff_values.copy()
+                    elif not np.array_equal(teff_reference, teff_values):
+                        raise ValueError("Teff grid changed between distances; cannot save a consistent table.")
 
-                rbeta_columns.append(rbeta_values)
+                    rbeta_columns.append(rbeta_values)
 
             if teff_reference is None or not rbeta_columns:
                 raise ValueError(f"No data were computed for planet={selected_planet}, species={selected_species}")
 
             rbeta_matrix = np.column_stack(rbeta_columns)
             table_path = output_dir / f"{species_save_name}_r_beta1.txt"
-            save_plotdata_txt(
-                table_path,
-                dataset_name=f"{species_save_name}_r_beta1",
-                x_label="Stellar Teff",
-                x_unit="K",
-                y_label="r_beta1 / R_p",
-                y_unit="dimensionless",
-                x_values=teff_reference,
-                y_matrix=rbeta_matrix,
-                series_values=distance_values_au,
-                series_label="distance",
-                series_unit="AU",
-                extra_metadata={
-                    "planet": selected_planet,
-                    "species": selected_species,
-                    "planet_radius_Rjup": planet_case["radius"].to_value(u.R_jup),
-                    "planet_mass_Mjup": planet_case["mass"].to_value(u.M_jup),
-                    "planet_temperature_K": planet_case["T"].to_value(u.K),
-                    "planet_mu": float(planet_case["mu"]),
-                    "stellar_teff_grid_K": teff_reference.tolist(),
-                },
-            )
+            if SAVE_OUTPUT_TXT:
+                save_plotdata_txt(
+                    table_path,
+                    dataset_name=f"{species_save_name}_r_beta1",
+                    x_label="Stellar Teff",
+                    x_unit="K",
+                    y_label="r_beta1 / R_p",
+                    y_unit="dimensionless",
+                    x_values=teff_reference,
+                    y_matrix=rbeta_matrix,
+                    series_values=distance_values_au,
+                    series_label="distance",
+                    series_unit="AU",
+                    extra_metadata={
+                        "planet": selected_planet,
+                        "species": selected_species,
+                        "planet_radius_Rjup": planet_case["radius"].to_value(u.R_jup),
+                        "planet_mass_Mjup": planet_case["mass"].to_value(u.M_jup),
+                        "planet_temperature_K": planet_case["T"].to_value(u.K),
+                        "planet_mu": float(planet_case["mu"]),
+                        "stellar_teff_grid_K": teff_reference.tolist(),
+                    },
+                )
             species_elapsed_s = time.perf_counter() - species_start_time
             print(f"Used species: {selected_species}")
-            print(f"Saved table to {table_path}")
+            if SAVE_OUTPUT_TXT:
+                print(f"Saved table to {table_path}")
+            else:
+                print("SAVE_OUTPUT_TXT=False, skipping table save")
             print(f"Total time for {selected_species}: {species_elapsed_s:.2f} s")
 
 
