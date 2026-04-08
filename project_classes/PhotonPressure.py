@@ -29,9 +29,6 @@ class PhotonPressure:
 
       self.lam_grid = broadening_profile.lam_grid
       self._flux_star_interp_molecule = None
-      self._molecule_sigma_temp_key = None
-      self._molecule_sigma_total = None
-      self._molecule_sigma_total_err = None
       self._announced_beta_calc_conditions = set()
 
     else:
@@ -324,15 +321,11 @@ class PhotonPressure:
 
     temp_key = float(Temp[0].to_value(u.K))
     t_start_sigma = time.perf_counter()
-    if self._molecule_sigma_temp_key != temp_key:
-      if verbose:
-        print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
-      self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
-      self._molecule_sigma_temp_key = temp_key
-      self._molecule_sigma_total = self.broad_prof.sigmaArray
-      self._molecule_sigma_total_err = self.broad_prof.sigmaArray_err
-    self.sigma_total = self._molecule_sigma_total
-    self.sigma_total_err = self._molecule_sigma_total_err
+    if verbose:
+      print(f"Building weighted molecular cross-section for {self.broad_prof.molecule.species} at T = {Temp[0]:.3g}")
+    self.broad_prof.apply_boltzmann_weights(Temp[0], verbose=verbose)
+    self.sigma_total = self.broad_prof.sigmaArray
+    self.sigma_total_err = self.broad_prof.sigmaArray_err
     dist_key = float(d.to_value(u.AU))
     star_teff = self.star.header["teff"]["value"]
     announce_key = (temp_key, dist_key, float(star_teff))
@@ -378,7 +371,6 @@ class PhotonPressure:
       N_chunk_val = N_col_val[j0:j1]
 
       F_chunk_sum = np.zeros(j1 - j0, dtype=np.float64)
-      F_chunk_err2_sum = np.zeros(j1 - j0, dtype=np.float64)
 
       for i0 in range(0, n_lam, lam_chunk_size):
         i1 = min(i0 + lam_chunk_size, n_lam)

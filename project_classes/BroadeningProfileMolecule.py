@@ -72,6 +72,7 @@ class BroadeningProfileMolecule:
         self.sigmaArray_err = None
         self.sigma_total = None
         self.sigma_total_err = None
+        self._sigma_cache_by_temp = {}
         self.partition_function_cache = {}
         self._states_g_lookup = None
         self._weight_cache_root = self._build_weight_cache_root()
@@ -646,10 +647,21 @@ class BroadeningProfileMolecule:
         return sigma_total, sigma_total_err
 
     def apply_boltzmann_weights(self, Temp_atm, verbose=False):
+        temp_key = self._temperature_cache_key(Temp_atm)
+
+        if temp_key in self._sigma_cache_by_temp:
+            sigma_cached, sigma_err_cached = self._sigma_cache_by_temp[temp_key]
+            self.sigmaArray = sigma_cached
+            self.sigmaArray_err = sigma_err_cached
+            self.sigma_total = self.sigmaArray
+            self.sigma_total_err = self.sigmaArray_err
+            return self.sigmaArray, self.sigmaArray_err
+
         self.sigmaArray, self.sigmaArray_err = self.build_total_crossection(
             Temp_atm=Temp_atm,
             verbose=verbose,
         )
+        self._sigma_cache_by_temp[temp_key] = (self.sigmaArray, self.sigmaArray_err)
         self.sigma_total = self.sigmaArray
         self.sigma_total_err = self.sigmaArray_err
         return self.sigmaArray, self.sigmaArray_err
