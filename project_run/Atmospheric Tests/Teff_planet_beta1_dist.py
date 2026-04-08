@@ -28,8 +28,8 @@ import traceback
 # Use exact species names, for example:
 # SELECTED_ATOMIC_SPECIES = ["Na I", "Na II", "Fe I", "Fe III"]
 # SELECTED_MOLECULAR_SPECIES = ["H2O", "CO", "CH4"]
-SELECTED_ATOMIC_SPECIES = ["Na I"]
-SELECTED_MOLECULAR_SPECIES = ["CO2"]
+SELECTED_ATOMIC_SPECIES = None
+SELECTED_MOLECULAR_SPECIES = None
 SKIP_ATOMS = True
 SKIP_MOLECULES = False
 
@@ -56,12 +56,12 @@ SELECTED_PLANET_SPECIES = {
     if planet_key in PLANET_TEMPLATES
 }
 
-DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
-# DISTANCE_LIST = [0.1, 0.5, 1.0] * u.AU
+# DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
+DISTANCE_LIST = [0.1, 1, 10, 100] * u.AU
 SELECTED_STARS = None
 # SELECTED_STARS = ["O0", "B0", "A0"]
 STAR_STRIDE = 5
-DISTANCE_MAX_WORKERS = 8
+DISTANCE_MAX_WORKERS = 4
 STAR_MAX_WORKERS = 15
 # Choose outer parallelization strategy:
 # "distance"      -> one worker per distance (reuses stars serially inside each worker)
@@ -541,14 +541,14 @@ def main():
         ncol_cache = {}
 
         if requested_species is None:
+            composition_species = list(planet_case["composition"].keys())
             requested_species = [
-                species for species in (
-                    (SELECTED_ATOMIC_SPECIES or []) + (SELECTED_MOLECULAR_SPECIES or [])
-                )
-                if species_matches_run_filters(species)
+                species
+                for species in composition_species
+                if species_matches_run_filters(species) and species != "O2"
             ]
             print(
-                f"No species specified for {selected_planet}; using filtered explicitly selected species: {requested_species}"
+                f"No species specified for {selected_planet}; using filtered planet composition species: {requested_species}"
             )
         else:
             requested_species = [

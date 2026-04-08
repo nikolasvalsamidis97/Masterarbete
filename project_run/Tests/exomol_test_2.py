@@ -1,61 +1,78 @@
-from astropy import units as u
+
+
 import sys
 import pathlib
+import importlib.util
+import numpy as np
+from astropy import units as u
+from astropy import constants as const
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
-from project_classes.Molecule import Molecule
+
+def load_teff_module():
+    script_path = pathlib.Path(__file__).resolve().parents[1] / "Atmospheric Tests" / "Teff_planet_beta1_dist.py"
+    spec = importlib.util.spec_from_file_location("teff_planet_beta1_dist_reuse", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from: {script_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-WAVEMIN = 150 * u.AA
-WAVEMAX = 50000 * u.AA
+def main():
+    module = load_teff_module()
 
-MOLECULE_TEMPLATES = {
-    "CO": {
-        "source": "exomol",
-        "fetch_kwargs": {
-            "path": "CO/12C-16O/Li2015",
-            "database": "Li2015",
-            "localdatabase": "exomol_data",
-        },
-    },
-    "O2": {
-        "source": "hitran",
-        "fetch_kwargs": {
-            "isotope": 1,
-        },
-    },
-}
+    species = "O2"
+    planet_key = "hot_jupiter"
+    star_key = "G4"
+    distance = 0.1 * u.AU
+    z_test = 0.1 * const.R_jup
 
+    planet_case = module.get_planet_template(planet_key)
+    planet_obj = module.Planet(
+        radius=planet_case["radius"],
+        mass=planet_case["mass"],
+        T=planet_case["T"],
+        mu=planet_case["mu"],
+        P0=planet_case["P0"],
+    )
+    star = module.get_star(star_key)
+    system_obj = module.PlanetarySystem(planet_obj, star, distance)
 
-def test_fetch(species: str) -> None:
-    if species not in MOLECULE_TEMPLATES:
-        raise KeyError(f"Unknown molecule template '{species}'. Available: {list(MOLECULE_TEMPLATES)}")
+    print(f"Testing HITRAN pipeline for species={species}")
+    print(
+        f"planet={planet_key}, star={star_key}, distance={distance.to_value(u.AU):g} AU, "
+        f"T_atm={planet_case['T'].to_value(u.K):.0f} K"
+    )
 
-    config = MOLECULE_TEMPLATES[species]
-    source = config["source"]
-    fetch_kwargs = dict(config["fetch_kwargs"])
+    profile = module.get_profile(species)
+    pp = module.PhotonPressure(profile, system_obj.star)
 
-    mol = Molecule(species, WAVEMIN, WAVEMAX)
+    ncol_test = np.array([
+        system_obj.planet.slant_column_density(z_test).to_value(1 / u.cm**2)
+    ]) / u.cm**2
+    r_test = system_obj.planet.radius.to(u.cm) + z_test.to(u.cm)
 
-    print("-" * 60)
-    print(f"Testing molecule: {species}")
-    print(f"Source: {source}")
-    print(f"Fetch kwargs: {fetch_kwargs}")
+    F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(
+        ncol_test,
+        planet_case["T"],
+        system_obj.distance,
+    )
+    beta_species, beta_err = pp.beta_Values(
+        F_ph_tot,
+        F_ph_tot_err,
+        system_obj.planet.mass,
+        r_test,
+    )
 
-    if source == "exomol":
-        mol.fetch_exomol(**fetch_kwargs)
-        print(f"ExoMol fetch succeeded for {species}")
-    elif source == "hitran":
-        isotope = fetch_kwargs.get("isotope", 1)
-        df = mol.fetch_hitran(species, isotope=isotope)
-        print(df.head())
-        print(f"HITRAN fetch succeeded for {species}; rows = {len(df)}")
-        mol.pandas_to_numpy()
-        print(f"HITRAN numpy conversion succeeded for {species}")
-    else:
-        raise ValueError(f"Unknown source '{source}' for molecule '{species}'")
+    print("HITRAN test completed successfully.")
+    print(f"z_test = {z_test.to_value(u.km):.3f} km")
+    print(f"Ncol = {float(np.squeeze(ncol_test.to_value(1 / u.cm**2))):.6e} 1/cm^2")
+    print(f"beta = {float(np.squeeze(beta_species.value)):.6e}")
+    print(f"beta_err = {float(np.squeeze(beta_err.value)):.6e}")
 
 
 if __name__ == "__main__":
-    test_fetch("O2")
+    main()
