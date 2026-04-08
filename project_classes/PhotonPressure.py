@@ -300,7 +300,7 @@ class PhotonPressure:
     return F_ph_tot, F_ph_tot_err, None, None
 
 
-  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=1000000, verbose=False):
+  def calc_PhotonPressure_molecule(self, column_density, Temp_atm, distance, chunk_size=1, lam_chunk_size=5000000, verbose=False):
     """
     Calculates total photon pressure for a molecule using a stitched molecular
     spectrum built for the requested atmospheric temperature.
@@ -359,11 +359,13 @@ class PhotonPressure:
     sigma_unit = sigma.unit
     lam_unit = lam.unit
     force_unit = (Flux_unit * sigma_unit * lam_unit / const.c.unit)
+    c_val = const.c.to_value(u.m / u.s)
 
     Flux_val = np.asarray(Flux.value, dtype=np.float64)
     sigma_val = np.asarray(sigma.value, dtype=np.float64)
     lam_val = np.asarray(lam.value, dtype=np.float64)
     N_col_val = np.asarray(N_col.to_value(1 / u.cm**2), dtype=np.float64)
+    base_integrand_val = (Flux_val * sigma_val) / c_val
 
 
     for j0 in range(0, n_col, chunk_size):
@@ -376,22 +378,22 @@ class PhotonPressure:
         i1 = min(i0 + lam_chunk_size, n_lam)
 
         lam_chunk = lam_val[i0:i1]
-        Flux_chunk = Flux_val[i0:i1]
         sigma_chunk = sigma_val[i0:i1]
+        base_integrand_chunk = base_integrand_val[i0:i1]
 
         if len(N_chunk_val) == 1:
           N_val = N_chunk_val[0]
           tau_chunk = sigma_chunk * N_val
           Trans_chunk = np.exp(-tau_chunk)
 
-          integrand_chunk = Flux_chunk * sigma_chunk * Trans_chunk
-          F_chunk_sum[0] += trapezoid(integrand_chunk, lam_chunk, axis=0) / const.c.to_value(u.m / u.s)
+          integrand_chunk = base_integrand_chunk * Trans_chunk
+          F_chunk_sum[0] += trapezoid(integrand_chunk, lam_chunk, axis=0)
         else:
           tau_chunk = sigma_chunk[:, None] * N_chunk_val[None, :]
           Trans_chunk = np.exp(-tau_chunk)
 
-          integrand_chunk = Flux_chunk[:, None] * sigma_chunk[:, None] * Trans_chunk
-          F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0) / const.c.to_value(u.m / u.s)
+          integrand_chunk = base_integrand_chunk[:, None] * Trans_chunk
+          F_chunk_sum += trapezoid(integrand_chunk, lam_chunk[:, None], axis=0)
 
 
       F_ph_tot[j0:j1] = (F_chunk_sum * force_unit).to(u.N)
