@@ -67,7 +67,7 @@ STAR_MAX_WORKERS = 15
 # "distance"      -> one worker per distance (reuses stars serially inside each worker)
 # "distance_star" -> one worker per (distance, star) pair (more workers, less reuse)
 # "serial"        -> no outer parallelism
-PARALLEL_TASK_MODE = "distance_star"
+PARALLEL_TASK_MODE = "distance"
 N_HEIGHT_POINTS = 150
 COARSE_HEIGHT_POINTS = 30
 REFINE_HEIGHT_POINTS = 30
