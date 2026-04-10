@@ -44,7 +44,9 @@ stellar_models = STAR_TEMPLATES
 # DEFAULT_PLANET_KEYS = list(PLANET_TEMPLATES.keys())
 # Partial
 DEFAULT_PLANET_KEYS = [
-    "hot_jupiter",
+    "super_puff",
+    "volatile_super_earth",
+    "sub_neptune",
 ]
 # For quick testing, you can set this to a subset of planets, for example:
 # DEFAULT_PLANET_KEYS = [
@@ -545,7 +547,7 @@ def main():
             requested_species = [
                 species
                 for species in composition_species
-                if species_matches_run_filters(species) and species != "O2"
+                if species_matches_run_filters(species) and species not in {"O2", "OH"}
             ]
             print(
                 f"No species specified for {selected_planet}; using filtered planet composition species: {requested_species}"
