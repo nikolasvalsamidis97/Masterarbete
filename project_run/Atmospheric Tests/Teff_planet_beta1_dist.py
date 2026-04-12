@@ -44,9 +44,11 @@ stellar_models = STAR_TEMPLATES
 # DEFAULT_PLANET_KEYS = list(PLANET_TEMPLATES.keys())
 # Partial
 DEFAULT_PLANET_KEYS = [
-    "super_puff",
-    "volatile_super_earth",
-    "sub_neptune",
+    "earth_like",
+    "mars_like",
+    "super_earth_rocky",
+    "metal_rich_secondary",
+    "mini_neptune_cool",
 ]
 # For quick testing, you can set this to a subset of planets, for example:
 # DEFAULT_PLANET_KEYS = [
@@ -59,7 +61,7 @@ SELECTED_PLANET_SPECIES = {
 }
 
 # DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
-DISTANCE_LIST = [0.1, 1, 10, 100] * u.AU
+DISTANCE_LIST = [0.05, 0.1, 1, 10, 100] * u.AU
 SELECTED_STARS = None
 # SELECTED_STARS = ["O0", "B0", "A0"]
 STAR_STRIDE = 5

@@ -7,6 +7,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
 from astropy import units as u
+from astropy import constants as const
 
 
 # -----------------------------------------------------------------------------
@@ -24,11 +25,11 @@ DISTANCE_AU = 0.01544
 SELECTED_SPECIES = None
 
 SKIP_ATOMS = False
-SKIP_MOLECULES = True
+SKIP_MOLECULES = False
 
 # Height grid from the planet surface up to the Hill limit.
-HEIGHT_POINTS = 400
-HEIGHT_GRID_POWER = 2.0
+HEIGHT_POINTS = 200
+HEIGHT_GRID_POWER = 3
 
 # Save only txt table by default. Set True if you also want a quick PDF preview.
 SAVE_PREVIEW_PDF = False
@@ -103,30 +104,30 @@ def build_height_grid(system_obj, n_points: int, grid_power: float):
     return z_grid.to(u.km), hill_radius.to(u.km), planet_radius.to(u.km)
 
 
-def save_beta_table(table_path, metadata, x_values_km, species_columns):
-    lines = []
-    for key, value in metadata.items():
-        lines.append(f"# {key}: {value}")
-    lines.append("#")
-
-    header = ["x__Height"] + [f"beta__{species.replace(' ', '_')}" for species in species_columns.keys()]
-    lines.append("\t".join(header))
-
-    n_rows = len(x_values_km)
-    for i in range(n_rows):
-        row = [f"{x_values_km[i]:.9g}"]
-        for values in species_columns.values():
-            value = values[i]
-            if np.isfinite(value):
-                row.append(f"{value:.9g}")
-            else:
-                row.append("nan")
-        lines.append("\t".join(row))
-
-    table_path.parent.mkdir(parents=True, exist_ok=True)
-    table_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def save_beta_table(module, table_path, metadata, x_values_km, species_columns):
+    y_matrix = np.column_stack([species_columns[species] for species in species_columns.keys()])
+    module.save_plotdata_txt(
+        table_path,
+        dataset_name=metadata["dataset_name"],
+        x_label=metadata["x_label"],
+        x_unit=metadata["x_unit"],
+        y_label=metadata["y_label"],
+        y_unit=metadata["y_unit"],
+        x_values=x_values_km,
+        y_matrix=y_matrix,
+        series_values=list(species_columns.keys()),
+        series_label=metadata["series_label"],
+        series_unit=metadata["series_unit"],
+        extra_metadata={
+            key: value
+            for key, value in metadata.items()
+            if key not in {
+                "dataset_name", "x_label", "x_unit",
+                "y_label", "y_unit", "series_label", "series_unit"
+            }
+        },
+    )
     print(f"Saved table to {table_path}")
-
 
 def save_preview_pdf(module, pdf_path, z_values_km, species_columns, system_label):
     from matplotlib import pyplot as plt
@@ -156,7 +157,32 @@ def save_preview_pdf(module, pdf_path, z_values_km, species_columns, system_labe
 def main():
     module = load_teff_module()
 
-    planet_case = module.get_planet_template(PLANET_KEY)
+    TEMP_PLANET_CASE = {
+        "label": "55 Cnc e (temporary example)",
+        "category": "rocky",
+        "radius": 1.875 * const.R_earth,
+        "mass": 7.99 * const.M_earth,
+        "T": 2000 * u.K,
+        "mu": 44.0 * u.dimensionless_unscaled,
+        "P0": 1.0e-3 * u.bar,
+        "composition": {
+            "O I": 0.50,
+            "O II": 0.15,
+            "N I": 0.18,
+            "N II": 0.02,
+            "Na I": 0.08,
+            "Na II": 0.02,
+            "K I": 0.04,
+            "K II": 0.01,
+            "CO": 0.02,
+            "NO": 0.01,
+        },
+    }
+
+    if PLANET_KEY == "55_Cnc_e":
+        planet_case = TEMP_PLANET_CASE
+    else:
+        planet_case = module.get_planet_template(PLANET_KEY)
     star = module.get_star(STAR_KEY)
     planet_obj = module.Planet(
         radius=planet_case["radius"],
@@ -170,6 +196,12 @@ def main():
 
     composition_species = list(planet_case["composition"].keys())
     requested_species = resolve_species_list(module, composition_species)
+    requested_species = [
+        species
+        for species in requested_species
+        if (species in set(module.ATOM_SPECIES)) or (species in {"CO", "NO"})
+    ]
+    print(f"Final species selection for {PLANET_KEY}: {requested_species}")
 
     z_grid_km, hill_radius_km, planet_radius_km = build_height_grid(
         system_obj,
@@ -245,8 +277,8 @@ def main():
         "planet": PLANET_KEY,
         "star": STAR_KEY,
         "distance_AU": DISTANCE_AU,
-        "planet_radius_Rjup": (system_obj.planet.radius / module.const.R_jup).decompose().value,
-        "planet_mass_Mjup": (system_obj.planet.mass / module.const.M_jup).decompose().value,
+        "planet_radius_Rjup": (system_obj.planet.radius / const.R_jup).decompose().value,
+        "planet_mass_Mjup": (system_obj.planet.mass / const.M_jup).decompose().value,
         "planet_temperature_K": planet_case["T"].to_value(u.K),
         "planet_mu": planet_case["mu"].value,
         "hill_radius_km": hill_radius_km.to_value(u.km),
@@ -257,6 +289,7 @@ def main():
     }
 
     save_beta_table(
+        module,
         table_path,
         metadata,
         z_grid_km.to_value(u.km),
