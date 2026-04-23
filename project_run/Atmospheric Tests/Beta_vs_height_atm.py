@@ -23,7 +23,7 @@ DISTANCE_AU = 0.01544
 SELECTED_SPECIES = None
 
 SKIP_ATOMS = False
-SKIP_MOLECULES = False
+SKIP_MOLECULES = True
 EXCLUDED_SPECIES = {"O2", "OH"}
 
 # Height grid from the planet surface up to the Hill limit.

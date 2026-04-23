@@ -106,6 +106,7 @@ class BroadeningProfileMolecule:
         if dlam is not None:
             return dlam.to(u.AA) if isinstance(dlam, u.Quantity) else _not_quantity("dlam")
 
+        # rep = 0.5 * self.lam_min
         rep = 0.5 * (self.lam_min + self.lam_max)
         doppler_sigma = (rep * (self.b / const.c)).to(u.AA)
         dlam_auto = (doppler_sigma / 3.0).to(u.AA)
@@ -425,28 +426,51 @@ class BroadeningProfileMolecule:
 
         if source == "hitran":
             if verbose:
-                print(f"[{self.molecule.species}] partition function: using HITRAN chunk scan")
+                print(f"[{self.molecule.species}] partition function: using HITRAN TIPS data")
 
-            unique_states = set()
-            for _, _, chunk in self.iter_line_dataframes(verbose=verbose):
-                el_vals = chunk["elower_vals"]
-                gl_vals = chunk["glower_vals"]
-                pairs = np.unique(np.column_stack((el_vals, gl_vals)), axis=0)
-                for pair in pairs:
-                    unique_states.add((float(pair[0]), float(pair[1])))
+            info = getattr(self.molecule, "cache_info", {}) or {}
+            molecule_name = info.get("molecule_name", self.molecule.species)
+            isotope = int(info.get("isotope", 1))
 
-            if len(unique_states) == 0:
-                raise ValueError("No lower-state information found while building partition function")
+            try:
+                from radis.levels.partfunc import PartFuncTIPS
 
-            states_arr = np.array(list(unique_states), dtype=np.float64)
-            El_unique_eV = states_arr[:, 0] * self.invcm_to_eV
-            gl_unique = states_arr[:, 1]
+                partfunc = PartFuncTIPS(molecule_name, isotope, verbose=False)
+                Z = float(partfunc.at(T))
+                if not np.isfinite(Z) or Z <= 0.0:
+                    raise ValueError("Partition function is zero or non-finite for the requested temperature")
+                return Z
+            except Exception as exc:
+                if verbose:
+                    print(
+                        f"[{self.molecule.species}] HITRAN TIPS partition function unavailable "
+                        f"({type(exc).__name__}: {exc}); falling back to scanned states"
+                    )
 
-            boltz_unique = gl_unique * np.exp(-El_unique_eV / (self.kb_eV_per_K * T))
-            Z = np.nansum(boltz_unique)
-            if not np.isfinite(Z) or Z == 0:
-                raise ValueError("Partition function is zero or non-finite for the requested temperature")
-            return float(Z)
+                unique_states = set()
+                for _, _, chunk in self.iter_line_dataframes(verbose=verbose):
+                    lower_states = np.column_stack((chunk["elower_vals"], chunk["glower_vals"]))
+                    upper_states = np.column_stack((
+                        chunk["elower_vals"] + chunk["nu_vals"],
+                        chunk["gup_vals"],
+                    ))
+                    states = np.vstack((lower_states, upper_states))
+                    finite_states = states[np.all(np.isfinite(states), axis=1)]
+                    for energy, degeneracy in np.unique(finite_states, axis=0):
+                        unique_states.add((float(energy), float(degeneracy)))
+
+                if len(unique_states) == 0:
+                    raise ValueError("No finite HITRAN state information found while building partition function")
+
+                states_arr = np.array(list(unique_states), dtype=np.float64)
+                E_unique_eV = states_arr[:, 0] * self.invcm_to_eV
+                g_unique = states_arr[:, 1]
+
+                boltz_unique = g_unique * np.exp(-E_unique_eV / (self.kb_eV_per_K * T))
+                Z = np.nansum(boltz_unique)
+                if not np.isfinite(Z) or Z <= 0.0:
+                    raise ValueError("Partition function is zero or non-finite for the requested temperature")
+                return float(Z)
 
         raise ValueError(f"Unsupported molecule source for partition function: {source}")
 
@@ -505,6 +529,15 @@ class BroadeningProfileMolecule:
             if Temp_atm is not None:
                 chunk_cache_id = chunk.get("chunk_cache_id")
                 weights_chunk = None if chunk_cache_id is None else self._load_cached_chunk_weights(chunk_cache_id, Temp_atm)
+                if weights_chunk is not None:
+                    weights_chunk = np.asarray(weights_chunk, dtype=np.float64).reshape(-1)
+                    if weights_chunk.shape[0] != n_chunk:
+                        if verbose:
+                            print(
+                                f"[{self.molecule.species}] Ignoring stale weight cache for chunk {chunk_cache_id}: "
+                                f"cached length {weights_chunk.shape[0]} != current length {n_chunk}"
+                            )
+                        weights_chunk = None
                 if weights_chunk is None:
                     weights_chunk = self._compute_chunk_weights(chunk, None, Temp_atm, partition_Z=partition_Z)
                     if chunk_cache_id is not None:

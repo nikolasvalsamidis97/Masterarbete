@@ -1,0 +1,54 @@
+Molecule temperature-array regression test
+=========================================
+
+Label: after_profile_hitran_fix
+Star template: A5
+Star Teff (from template): 8200 K
+Molecule species: CO
+Molecule source: exomol
+Wavelength range: 150.0 Angstrom to 50000.0 Angstrom
+Distance: 1.0 AU
+Molecular b-value: 1.0 km / s
+Profile type: Voigt
+Temperature array: [ 500. 1000. 3000. 5000.] K
+Column density grid: [1.e+08 1.e+10 1.e+12 1.e+14 1.e+16 1.e+18 1.e+20 1.e+22 1.e+24] 1 / cm2
+
+Summary
+-------
+Array beta shape: (4, 9)
+Scalar reference shape: (4, 9)
+Missing temperature rows in array result: 0
+Max relative difference over overlapping rows: 0.000000e+00
+Array setup runtime [s]: 0.020
+Array run runtime [s]: 1.472
+Scalar setup runtime [s]: 0.016
+Scalar total run runtime [s]: 1.412
+Scalar per-temperature runtimes [s]: [0.28190400000130467, 0.2876181669998914, 0.34988112499922863, 0.4927935420000722]
+Whole script runtime [s]: 2.923
+
+Array temperature call beta
+---------------------------
+    Ncol_cm^-2       beta_500K      beta_1000K      beta_3000K      beta_5000K
+  1.000000e+08    3.405440e-04    3.479613e-04    4.191519e-04    5.116331e-04
+  1.000000e+10    3.405439e-04    3.479613e-04    4.191519e-04    5.116331e-04
+  1.000000e+12    3.405395e-04    3.479584e-04    4.191509e-04    5.116324e-04
+  1.000000e+14    3.400979e-04    3.476724e-04    4.190453e-04    5.115585e-04
+  1.000000e+16    2.995882e-04    3.206856e-04    4.086928e-04    5.042563e-04
+  1.000000e+18    1.992000e-05    3.654874e-05    1.107785e-04    1.966741e-04
+  1.000000e+20    1.106686e-06    2.439541e-06    1.058740e-05    2.195304e-05
+  1.000000e+22    4.042521e-08    8.624878e-08    4.240679e-07    1.019897e-06
+  1.000000e+24    8.609180e-10    1.797916e-09    1.097454e-08    2.894291e-08
+
+Scalar temperature reference beta
+---------------------------------
+    Ncol_cm^-2       beta_500K      beta_1000K      beta_3000K      beta_5000K
+  1.000000e+08    3.405440e-04    3.479613e-04    4.191519e-04    5.116331e-04
+  1.000000e+10    3.405439e-04    3.479613e-04    4.191519e-04    5.116331e-04
+  1.000000e+12    3.405395e-04    3.479584e-04    4.191509e-04    5.116324e-04
+  1.000000e+14    3.400979e-04    3.476724e-04    4.190453e-04    5.115585e-04
+  1.000000e+16    2.995882e-04    3.206856e-04    4.086928e-04    5.042563e-04
+  1.000000e+18    1.992000e-05    3.654874e-05    1.107785e-04    1.966741e-04
+  1.000000e+20    1.106686e-06    2.439541e-06    1.058740e-05    2.195304e-05
+  1.000000e+22    4.042521e-08    8.624878e-08    4.240679e-07    1.019897e-06
+  1.000000e+24    8.609180e-10    1.797916e-09    1.097454e-08    2.894291e-08
+
