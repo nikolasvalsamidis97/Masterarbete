@@ -1,0 +1,54 @@
+Broadening Window Constants Validation
+=====================================
+Representative atomic species: Na I, N I
+b parameter for Voigt-line test: 1.0 km / s
+Purpose: validate the numerical constants in the finite integration rule
+         v_lim = max(6 Δv_G, 25 Δv_L)
+
+Pure Gaussian analytic enclosed-area fractions
+---------------------------------------------
+± 1 Δv_G : 0.981468322249
+± 2 Δv_G : 0.999997518454
+± 3 Δv_G : 0.999999999998
+± 4 Δv_G : 1.000000000000
+± 5 Δv_G : 1.000000000000
+± 6 Δv_G : 1.000000000000
+± 7 Δv_G : 1.000000000000
+± 8 Δv_G : 1.000000000000
+
+Pure Lorentzian analytic enclosed-area fractions
+------------------------------------------------
+± 1 Δv_L : 0.704832764699
+± 5 Δv_L : 0.936548965139
+±10 Δv_L : 0.968195497488
+±15 Δv_L : 0.978787195189
+±20 Δv_L : 0.984087820176
+±25 Δv_L : 0.987269301798
+±30 Δv_L : 0.989390652735
+±40 Δv_L : 0.992042667273
+±50 Δv_L : 0.993634014470
+
+Interpretation of the analytic results:
+  The Gaussian factor 6 is extremely conservative and retains essentially
+  the full Gaussian area. The Lorentzian factor 25 retains about 98.7%
+  of the total Lorentzian area, so it should be interpreted as a practical
+  truncation of the far wings rather than a mathematically exact full-area bound.
+
+Representative atomic Voigt-line test
+-------------------------------------
+For each real atomic line, the Voigt profile was integrated directly in velocity
+space up to the candidate finite window. The reported capture fraction is the
+area retained inside that window.
+g=4, l=15: min=0.999513012515, median=0.999997830999, max=1.000000039153, worst line λ0=3882.900000 AA
+g=5, l=20: min=0.999612083546, median=0.999998289926, max=1.000000048941, worst line λ0=3882.900000 AA
+g=6, l=25: min=0.999677488718, median=0.999998596214, max=1.000000058730, worst line λ0=3882.900000 AA
+g=7, l=30: min=0.999723955282, median=0.999998816635, max=1.000000068518, worst line λ0=3882.900000 AA
+
+Practical conclusion:
+  The adopted rule v_lim = max(6 Δv_G, 25 Δv_L) is strongly justified for
+  atomic Voigt profiles as a practical finite integration range. In the
+  representative test set used here, its worst-case retained fraction was
+  99.967749%.
+
+Detailed per-line output: broadening_window_constants_validation_details.csv
+Total runtime [s]: 8.31

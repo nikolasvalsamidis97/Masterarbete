@@ -22,8 +22,8 @@ from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_t
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-INCLUDE_ATOMS = True
-INCLUDE_MOLECULES = False
+INCLUDE_ATOMS = False
+INCLUDE_MOLECULES = True
 
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
@@ -58,8 +58,18 @@ RAW_MOLECULES_NAME = "beta_bigtable_molecules.csv"
 TEX_ATOMS_NAME = "beta_bigtable_atoms.tex"
 TEX_MOLECULES_NAME = "beta_bigtable_molecules.tex"
 
-SELECTED_STARS_NAME = "beta_bigtable_selected_stars.csv"
-SELECTED_STARS_TEX_NAME = "beta_bigtable_selected_stars.tex"
+def active_run_suffix() -> str:
+    parts = []
+    if INCLUDE_ATOMS:
+        parts.append("atoms")
+    if INCLUDE_MOLECULES:
+        parts.append("molecules")
+    return "_".join(parts) if parts else "none"
+
+
+RUN_SUFFIX = active_run_suffix()
+SELECTED_STARS_NAME = f"beta_bigtable_selected_stars_{RUN_SUFFIX}.csv"
+SELECTED_STARS_TEX_NAME = f"beta_bigtable_selected_stars_{RUN_SUFFIX}.tex"
 
 
 # -----------------------------------------------------------------------------
@@ -403,6 +413,27 @@ def format_pm(value: float, err: float) -> str:
     return f"$({scaled_value:.1f} \\pm {scaled_err:.1f})10^{{{exponent}}}$"
 
 
+def format_value_only(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+
+    abs_value = abs(value)
+    if abs_value == 0.0:
+        return "$0$"
+
+    if 1e-2 <= abs_value < 1e4:
+        if abs_value < 10:
+            value_fmt = f"{value:.2f}"
+        elif abs_value < 100:
+            value_fmt = f"{value:.1f}"
+        else:
+            value_fmt = f"{value:.0f}"
+        return f"${value_fmt}$"
+
+    exponent = int(math.floor(math.log10(abs_value)))
+    scaled_value = value / (10 ** exponent)
+    return f"${scaled_value:.1f}10^{{{exponent}}}$"
+
 
 def make_longtable_block(
     rows: List[str],
@@ -452,6 +483,7 @@ def build_latex_tables(df: pd.DataFrame, selected_stars: List[dict], category_la
     if "species" not in df.columns or df.empty:
         return ""
     species_order = list(dict.fromkeys(df["species"].tolist()))
+    include_errors = category_label == "Atoms"
 
     blocks: List[str] = []
     for b_kms in B_VALUES_KMS:
@@ -469,7 +501,10 @@ def build_latex_tables(df: pd.DataFrame, selected_stars: List[dict], category_la
                 else:
                     beta_value = float(row.iloc[0]["beta"])
                     beta_err = float(row.iloc[0]["beta_err"])
-                    cell_text.append(format_pm(beta_value, beta_err))
+                    if include_errors:
+                        cell_text.append(format_pm(beta_value, beta_err))
+                    else:
+                        cell_text.append(format_value_only(beta_value))
             rows.append("{} & {} \\\\".format(latex_species_name(species), " & ".join(cell_text)))
 
         block_title = f"{category_label}: $b = {b_label}$ km s$^{{-1}}$ (species-wise $N_{{\\tau=1}}$)"
@@ -487,7 +522,7 @@ def build_latex_tables(df: pd.DataFrame, selected_stars: List[dict], category_la
                     rows,
                     teff_headers,
                     block_title=block_title,
-                    first_col_label="Ion",
+                    first_col_label="Ion" if category_label == "Atoms" else "Molecule",
                     caption=caption,
                     label=label,
                 ),

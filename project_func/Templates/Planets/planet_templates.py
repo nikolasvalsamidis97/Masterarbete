@@ -151,7 +151,7 @@ PLANET_TEMPLATES = {
         "mass": 7.0 * const.M_earth,
         "T": 400 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-5 * u.bar,
+        "P0": 1.0e-4 * u.bar,
         "composition": {
             "H I": 0.46,
             "He I": 0.12,
@@ -173,7 +173,7 @@ PLANET_TEMPLATES = {
         "mass": 9.0 * const.M_earth,
         "T": 700 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-5 * u.bar,
+        "P0": 1.0e-4 * u.bar,
         "composition": {
             "H I": 0.42,
             "He I": 0.11,
@@ -218,7 +218,7 @@ PLANET_TEMPLATES = {
         "mass": 17.0 * const.M_earth,
         "T": 900 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-3 * u.bar,
+        "P0": 1.0e-4 * u.bar,
         "composition": {
             "H I": 0.45,
             "He I": 0.10,
@@ -264,7 +264,7 @@ PLANET_TEMPLATES = {
         "mass": 4.5 * const.M_earth,
         "T": 650 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-6 * u.bar,
+        "P0": 1.0e-4 * u.bar,
         "composition": {
             "H I": 0.44,
             "He I": 0.10,
@@ -291,7 +291,7 @@ PLANET_TEMPLATES = {
         "mass": 1.1 * const.M_jup,
         "T": 180 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-1 * u.bar,
+        "P0": 1.0e-3 * u.bar,
         "composition": {
             "H I": 0.48,
             "He I": 0.11,
@@ -314,7 +314,7 @@ PLANET_TEMPLATES = {
         "mass": 1.0 * const.M_jup,
         "T": 600 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-2 * u.bar,
+        "P0": 1.0e-3 * u.bar,
         "composition": {
             "H I": 0.54,
             "He I": 0.10,
@@ -359,7 +359,7 @@ PLANET_TEMPLATES = {
         "mass": 0.6 * const.M_jup,
         "T": 1700 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-4 * u.bar,
+        "P0": 1.0e-3 * u.bar,
         "composition": {
             "H I": 0.58,
             "He I": 0.08,
@@ -382,7 +382,7 @@ PLANET_TEMPLATES = {
         "mass": 1.2 * const.M_jup,
         "T": 2500 * u.K,
         "mu": 2.3 * u.dimensionless_unscaled,
-        "P0": 1.0e-7 * u.bar,
+        "P0": 1.0e-3 * u.bar,
         "composition": {
             "H I": 0.62,
             "He I": 0.07,
