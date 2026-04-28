@@ -75,11 +75,11 @@ PLANET_TEMPLATES = {
     "super_earth_rocky": {
         "label": "Super-Earth rocky planet",
         "category": "rocky",
-        "radius": 1.7 * const.R_earth,
-        "mass": 5.0 * const.M_earth,
-        "T": 700 * u.K,
-        "mu": 30.0 * u.dimensionless_unscaled,
-        "P0": 1.0e-2 * u.bar,
+        "radius": 2 * const.R_earth,
+        "mass": 4.0 * const.M_earth,
+        "T": 300 * u.K,
+        "mu": 25.0 * u.dimensionless_unscaled,
+        "P0": 1.0 * u.bar,
         "composition": {
             "O I": 0.18,
             "N I": 0.12,
@@ -92,7 +92,7 @@ PLANET_TEMPLATES = {
             "H2O": 0.05,
             "SiO": 0.03,
         },
-        "notes": "Generic hot rocky super-Earth with a heavy secondary atmosphere.",
+        "notes": "Generic rocky super-Earth",
     },
     "lava_world": {
         "label": "Lava world",

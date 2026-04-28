@@ -31,7 +31,7 @@ INCLUDE_MOLECULES = True
 # ["H I", "Na I", "Fe I"] to do a small test run.
 SELECTED_ATOM_SPECIES = []
 
-STAR_KEY = "A5"
+TARGET_STELLAR_TEFFS_K = [2600.0, 10000.0, 50000.0]
 DISTANCE_AU = 1.0
 B_KMS = 1.0
 WAVEMIN = 150 * u.AA
@@ -40,8 +40,8 @@ NPTS_ATOM = 150
 
 # Excitation temperatures for beta(T_exc), from low to high.
 T_EXC_VALUES_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
-# Use the same near-0 K reference as the tau=1 big-table study.
-FIXED_NCOL_REFERENCE_T_K = 0.001
+# Use the same optically thin reference column as the tau=0 big-table study.
+FIXED_NCOL_CM2 = 1e-20
 
 SAVE_TXT = True
 SAVE_RAW_CSV = False
@@ -85,6 +85,33 @@ def make_star(star_key: str) -> Star:
             epsilon=params["epsilon"],
         )
     return star_cache[star_key]
+
+
+def select_star_keys(target_teffs_k: Iterable[float | None]) -> List[str]:
+    teff_by_key = {key: float(infer_teff_from_star_template(key)) for key in STAR_TEMPLATES}
+    selected_keys: List[str] = []
+
+    for target_teff_k in target_teffs_k:
+        if target_teff_k is None:
+            star_key = min(
+                teff_by_key,
+                key=lambda key: (teff_by_key[key], key),
+            )
+        else:
+            star_key = min(
+                teff_by_key,
+                key=lambda key: (abs(teff_by_key[key] - float(target_teff_k)), key),
+            )
+
+        if star_key not in selected_keys:
+            selected_keys.append(star_key)
+
+    return selected_keys
+
+
+def suffixed_output_name(base_name: str, star_key: str) -> str:
+    base_path = pathlib.Path(base_name)
+    return f"{base_path.stem}_{star_key}{base_path.suffix}"
 
 
 
@@ -210,16 +237,6 @@ def beta_for_atom_with_ncol(
     return float(n_col.to_value(1 / u.cm**2)), beta_value, beta_err_value
 
 
-def beta_for_atom_fixed_n(species: str, b_kms: float, t_exc: u.Quantity, star: Star, fixed_ncol_reference_t_k: float) -> Tuple[float, float, float]:
-    reference_t_exc = float(fixed_ncol_reference_t_k) * u.K
-    n_fixed = tau_one_ncol_atom(species, b_kms, reference_t_exc, star)
-    if not np.isfinite(n_fixed.value) or n_fixed <= 0 / u.cm**2:
-        return np.nan, np.nan, np.nan
-
-    return beta_for_atom_with_ncol(species, b_kms, t_exc, star, n_fixed)
-
-
-
 def beta_for_molecule(species: str, b_kms: float, t_exc: u.Quantity, star: Star) -> Tuple[float, float, float]:
     n_tau1 = tau_one_ncol_molecule(species, b_kms, t_exc, star)
     if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
@@ -247,15 +264,6 @@ def beta_for_molecule_with_ncol(
     return float(n_col.to_value(1 / u.cm**2)), beta_value, beta_err_value
 
 
-def beta_for_molecule_fixed_n(species: str, b_kms: float, t_exc: u.Quantity, star: Star, fixed_ncol_reference_t_k: float) -> Tuple[float, float, float]:
-    reference_t_exc = float(fixed_ncol_reference_t_k) * u.K
-    n_fixed = tau_one_ncol_molecule(species, b_kms, reference_t_exc, star)
-    if not np.isfinite(n_fixed.value) or n_fixed <= 0 / u.cm**2:
-        return np.nan, np.nan, np.nan
-
-    return beta_for_molecule_with_ncol(species, b_kms, t_exc, star, n_fixed)
-
-
 # -----------------------------------------------------------------------------
 # Data builders
 # -----------------------------------------------------------------------------
@@ -264,7 +272,7 @@ def build_category_matrices(
     category: str,
     star: Star,
     use_fixed_ncol: bool = False,
-    fixed_ncol_reference_t_k: float = FIXED_NCOL_REFERENCE_T_K,
+    fixed_ncol_cm2: float = FIXED_NCOL_CM2,
 ):
     t_exc_values = np.array(T_EXC_VALUES_K, dtype=float)
     beta_columns = []
@@ -280,15 +288,7 @@ def build_category_matrices(
         fixed_ncol = None
 
         if use_fixed_ncol:
-            reference_t_exc = float(fixed_ncol_reference_t_k) * u.K
-            try:
-                if category == "atom":
-                    fixed_ncol = tau_one_ncol_atom(species, B_KMS, reference_t_exc, star)
-                else:
-                    fixed_ncol = tau_one_ncol_molecule(species, B_KMS, reference_t_exc, star)
-            except Exception as exc:
-                print(f"Skipping {category} species={species}, T_ref={fixed_ncol_reference_t_k:g} K: {type(exc).__name__}: {exc}")
-                fixed_ncol = np.nan / u.cm**2
+            fixed_ncol = float(fixed_ncol_cm2) / u.cm**2
 
         for t_exc_k in t_exc_values:
             t_exc = t_exc_k * u.K
@@ -355,7 +355,7 @@ def save_category_txt(
     star: Star,
     category: str,
     use_fixed_ncol: bool = False,
-    fixed_ncol_reference_t_k: float = FIXED_NCOL_REFERENCE_T_K,
+    fixed_ncol_cm2: float = FIXED_NCOL_CM2,
 ) -> None:
     output_path = OUTPUT_DIR / txt_name
     save_plotdata_txt(
@@ -377,8 +377,9 @@ def save_category_txt(
             "distance_AU": DISTANCE_AU,
             "b_km_s": B_KMS,
             "use_fixed_ncol": use_fixed_ncol,
-            "fixed_ncol_mode": "species_tau1_at_reference_T" if use_fixed_ncol else "species_tau1_per_temperature",
-            "fixed_ncol_reference_t_K": fixed_ncol_reference_t_k if use_fixed_ncol else "",
+            "fixed_ncol_mode": "constant_fixed_ncol" if use_fixed_ncol else "species_tau1_per_temperature",
+            "fixed_ncol_reference_t_K": "",
+            "fixed_ncol_cm2": fixed_ncol_cm2 if use_fixed_ncol else "",
             "category": category,
             "vsini_km_s": float(star.vsini.to_value(u.km / u.s)),
             "radius_rsun": float(star.radius.to_value(u.R_sun)),
@@ -387,7 +388,7 @@ def save_category_txt(
             "note": (
                 "beta calculated against stellar gravity using gas excitation temperature T_exc and species-wise N_tau=1"
                 if not use_fixed_ncol
-                else f"beta calculated against stellar gravity using gas excitation temperature T_exc and a fixed species-wise N_tau=1 evaluated at T_exc={float(fixed_ncol_reference_t_k):.0f} K"
+                else f"beta calculated against stellar gravity using gas excitation temperature T_exc and a fixed optically thin column density N_col={fixed_ncol_cm2:.1e} cm^-2"
             ),
         },
     )
@@ -399,63 +400,68 @@ def save_category_txt(
 # -----------------------------------------------------------------------------
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    star = make_star(STAR_KEY)
+    star_keys = select_star_keys(TARGET_STELLAR_TEFFS_K)
+    print(f"Selected star keys: {', '.join(star_keys)}")
 
     if INCLUDE_ATOMS:
-        t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
-            ATOM_SPECIES,
-            "atom",
-            star,
-            use_fixed_ncol=True,
-            fixed_ncol_reference_t_k=FIXED_NCOL_REFERENCE_T_K,
-        )
-        if kept_species and SAVE_TXT:
-            save_category_txt(
-                ATOMS_TXT_NAME,
-                dataset_name=f"beta_vs_Texc_atoms_{STAR_KEY}",
-                t_exc_values=t_exc_values,
-                beta_matrix=beta_matrix,
-                kept_species=kept_species,
-                star_key=STAR_KEY,
-                star=star,
-                category="atom",
+        for star_key in star_keys:
+            star = make_star(star_key)
+            t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
+                ATOM_SPECIES,
+                "atom",
+                star,
                 use_fixed_ncol=True,
-                fixed_ncol_reference_t_k=FIXED_NCOL_REFERENCE_T_K,
+                fixed_ncol_cm2=FIXED_NCOL_CM2,
             )
-        else:
-            print("No valid atom data produced.")
+            if kept_species and SAVE_TXT:
+                save_category_txt(
+                    suffixed_output_name(ATOMS_TXT_NAME, star_key),
+                    dataset_name=f"beta_vs_Texc_atoms_{star_key}",
+                    t_exc_values=t_exc_values,
+                    beta_matrix=beta_matrix,
+                    kept_species=kept_species,
+                    star_key=star_key,
+                    star=star,
+                    category="atom",
+                    use_fixed_ncol=True,
+                    fixed_ncol_cm2=FIXED_NCOL_CM2,
+                )
+            else:
+                print(f"No valid atom data produced for {star_key}.")
 
-        if SAVE_RAW_CSV and raw_rows:
-            import pandas as pd
-            pd.DataFrame(raw_rows).to_csv(OUTPUT_DIR / ATOMS_RAW_NAME, index=False)
+            if SAVE_RAW_CSV and raw_rows:
+                import pandas as pd
+                pd.DataFrame(raw_rows).to_csv(OUTPUT_DIR / suffixed_output_name(ATOMS_RAW_NAME, star_key), index=False)
 
     if INCLUDE_MOLECULES:
-        t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
-            MOLECULE_SPECIES,
-            "molecule",
-            star,
-            use_fixed_ncol=True,
-            fixed_ncol_reference_t_k=FIXED_NCOL_REFERENCE_T_K,
-        )
-        if kept_species and SAVE_TXT:
-            save_category_txt(
-                MOLECULES_TXT_NAME,
-                dataset_name=f"beta_vs_Texc_molecules_{STAR_KEY}",
-                t_exc_values=t_exc_values,
-                beta_matrix=beta_matrix,
-                kept_species=kept_species,
-                star_key=STAR_KEY,
-                star=star,
-                category="molecule",
+        for star_key in star_keys:
+            star = make_star(star_key)
+            t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
+                MOLECULE_SPECIES,
+                "molecule",
+                star,
                 use_fixed_ncol=True,
-                fixed_ncol_reference_t_k=FIXED_NCOL_REFERENCE_T_K,
+                fixed_ncol_cm2=FIXED_NCOL_CM2,
             )
-        else:
-            print("No valid molecule data produced.")
+            if kept_species and SAVE_TXT:
+                save_category_txt(
+                    suffixed_output_name(MOLECULES_TXT_NAME, star_key),
+                    dataset_name=f"beta_vs_Texc_molecules_{star_key}",
+                    t_exc_values=t_exc_values,
+                    beta_matrix=beta_matrix,
+                    kept_species=kept_species,
+                    star_key=star_key,
+                    star=star,
+                    category="molecule",
+                    use_fixed_ncol=True,
+                    fixed_ncol_cm2=FIXED_NCOL_CM2,
+                )
+            else:
+                print(f"No valid molecule data produced for {star_key}.")
 
-        if SAVE_RAW_CSV and raw_rows:
-            import pandas as pd
-            pd.DataFrame(raw_rows).to_csv(OUTPUT_DIR / MOLECULES_RAW_NAME, index=False)
+            if SAVE_RAW_CSV and raw_rows:
+                import pandas as pd
+                pd.DataFrame(raw_rows).to_csv(OUTPUT_DIR / suffixed_output_name(MOLECULES_RAW_NAME, star_key), index=False)
 
     print(f"Saved outputs to {OUTPUT_DIR}")
 

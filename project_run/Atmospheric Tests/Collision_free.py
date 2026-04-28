@@ -10,16 +10,18 @@ from astropy import units as u
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 from project_classes.Planet import Planet
+from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
+from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 
 
 # -----------------------------------------------------------------------------
 # Exobase calculation for all template planets
 # -----------------------------------------------------------------------------
-# This script computes the exobase height for every neutral species that appears
-# in the planet-template compositions. The exobase is defined here in the same
-# way as in the older script: the height where the mean free path is comparable
-# to the local scale height,
+# This script computes the exobase height for every supported neutral atom and
+# molecule across the full template catalog, for every planet template. The
+# exobase is defined here in the same way as in the older script: the height
+# where the mean free path is comparable to the local scale height,
 #
 #     lambda_mfp(z) = H(z)
 #
@@ -48,17 +50,29 @@ Z_MAX_MIN = 1000.0 * u.km
 ATOMIC_PROPERTIES = {
     "H I": {"radius": 1.20 * u.AA, "mass_u": 1.008},
     "He I": {"radius": 1.43 * u.AA, "mass_u": 4.0026},
+    "Li I": {"radius": 1.82 * u.AA, "mass_u": 6.94},
+    "Be I": {"radius": 1.53 * u.AA, "mass_u": 9.0122},
+    "B I": {"radius": 1.92 * u.AA, "mass_u": 10.81},
     "C I": {"radius": 1.77 * u.AA, "mass_u": 12.011},
     "N I": {"radius": 1.66 * u.AA, "mass_u": 14.007},
     "O I": {"radius": 1.50 * u.AA, "mass_u": 15.999},
+    "F I": {"radius": 1.47 * u.AA, "mass_u": 18.998403},
+    "Ne I": {"radius": 1.54 * u.AA, "mass_u": 20.1797},
     "Na I": {"radius": 2.50 * u.AA, "mass_u": 22.989769},
     "Mg I": {"radius": 2.51 * u.AA, "mass_u": 24.305},
     "Al I": {"radius": 2.25 * u.AA, "mass_u": 26.981538},
     "Si I": {"radius": 2.19 * u.AA, "mass_u": 28.085},
     "P I": {"radius": 1.90 * u.AA, "mass_u": 30.973762},
     "S I": {"radius": 1.89 * u.AA, "mass_u": 32.06},
+    "Cl I": {"radius": 1.75 * u.AA, "mass_u": 35.45},
+    "Ar I": {"radius": 1.88 * u.AA, "mass_u": 39.948},
     "K I": {"radius": 2.73 * u.AA, "mass_u": 39.0983},
     "Ca I": {"radius": 2.62 * u.AA, "mass_u": 40.078},
+    "Sc I": {"radius": 2.58 * u.AA, "mass_u": 44.955908},
+    "Ti I": {"radius": 2.46 * u.AA, "mass_u": 47.867},
+    "V I": {"radius": 2.42 * u.AA, "mass_u": 50.9415},
+    "Cr I": {"radius": 2.45 * u.AA, "mass_u": 51.9961},
+    "Mn I": {"radius": 2.45 * u.AA, "mass_u": 54.938044},
     "Fe I": {"radius": 2.44 * u.AA, "mass_u": 55.845},
 }
 
@@ -71,7 +85,18 @@ MOLECULAR_PROPERTIES = {
     "CO": {"radius": 2.10 * u.AA, "mass_u": 28.0101},
     "CO2": {"radius": 2.30 * u.AA, "mass_u": 44.0095},
     "NO": {"radius": 2.15 * u.AA, "mass_u": 30.0061},
+    "SO": {"radius": 2.20 * u.AA, "mass_u": 48.059},
     "CH4": {"radius": 2.00 * u.AA, "mass_u": 16.04246},
+    "NH3": {"radius": 2.20 * u.AA, "mass_u": 17.031},
+    "TiO": {"radius": 2.30 * u.AA, "mass_u": 63.866},
+    "SiO": {"radius": 2.20 * u.AA, "mass_u": 44.084},
+    "NaCl": {"radius": 2.80 * u.AA, "mass_u": 58.443},
+    "PH3": {"radius": 2.35 * u.AA, "mass_u": 33.998},
+    "H2S": {"radius": 2.90 * u.AA, "mass_u": 34.081},
+    "SO2": {"radius": 2.65 * u.AA, "mass_u": 64.066},
+    "HCN": {"radius": 2.25 * u.AA, "mass_u": 27.026},
+    "C3": {"radius": 2.40 * u.AA, "mass_u": 36.033},
+    "OCS": {"radius": 2.55 * u.AA, "mass_u": 60.075},
 }
 
 
@@ -123,6 +148,27 @@ def neutral_species_only(composition: dict) -> dict:
     return selected
 
 
+def all_supported_target_species() -> list[str]:
+    """
+    Build the full target list for which exobase heights should be evaluated.
+
+    Neutral atoms are taken from the global atom catalog by selecting only stage I
+    species. Molecules are taken from the molecule template catalog. Every target
+    species must have hard-sphere properties defined in this script.
+    """
+    neutral_atoms = [species for species in ATOM_SPECIES if species.endswith(" I")]
+    molecule_species = list(MOLECULE_TEMPLATES.keys())
+    target_species = list(dict.fromkeys(neutral_atoms + molecule_species))
+
+    missing = [species for species in target_species if species not in SPECIES_PROPERTIES]
+    if missing:
+        raise KeyError(
+            "The following target species are missing hard-sphere radii/masses in "
+            f"Collision_free.py: {missing}"
+        )
+    return target_species
+
+
 # -----------------------------------------------------------------------------
 # Exobase calculation
 # -----------------------------------------------------------------------------
@@ -147,14 +193,11 @@ def calc_exobase_for_planet(template_name: str, n_z: int = N_Z):
     )
 
     composition = neutral_species_only(params["composition"])
-    missing_species = [species for species in params["composition"] if species not in SPECIES_PROPERTIES and species in neutral_species_only(params["composition"])]
-    if missing_species:
-        raise KeyError(
-            f"Planet template '{template_name}' contains neutral species without defined radii/masses: {missing_species}"
-        )
 
     if not composition:
         return []
+
+    target_species = all_supported_target_species()
 
     # Use a purely planetary search grid based on the atmospheric scale height.
     H0 = planet.scale_height(0 * u.km).to(u.km)
@@ -171,7 +214,7 @@ def calc_exobase_for_planet(template_name: str, n_z: int = N_Z):
 
     results = []
 
-    for species_i, _ in composition.items():
+    for species_i in target_species:
         collision_rate = np.zeros_like(n_total.value) / u.cm
 
         for species_j, frac_j in composition.items():

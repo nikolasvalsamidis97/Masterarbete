@@ -1,4 +1,3 @@
-import math
 import pathlib
 import sys
 from typing import Dict, Iterable, List, Tuple
@@ -48,15 +47,13 @@ TARGET_TEFFS_K = []
 # Example:
 STAR_SELECTION_MODE = "target_teff"
 TARGET_TEFFS_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
+EXCLUDED_TEFFS_K = {19000}
 
-SAVE_RAW_CSV = True
-SAVE_LATEX = True
+SAVE_RAW_TXT = True
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent
-RAW_ATOMS_NAME = "beta_bigtable_atoms.csv"
-RAW_MOLECULES_NAME = "beta_bigtable_molecules.csv"
-TEX_ATOMS_NAME = "beta_bigtable_atoms.tex"
-TEX_MOLECULES_NAME = "beta_bigtable_molecules.tex"
+RAW_ATOMS_NAME = "beta_bigtable_atoms.txt"
+RAW_MOLECULES_NAME = "beta_bigtable_molecules.txt"
 
 def active_run_suffix() -> str:
     parts = []
@@ -167,7 +164,10 @@ def build_selected_stars(n_select: int = N_SELECTED_STARS) -> List[dict]:
         star_keys = select_evenly_spaced_star_keys(n_select=n_select)
     selected = []
     for key in star_keys:
-        selected.append({"key": key, "teff_k": int(infer_teff_from_star_template(key)), "star": make_star(key)})
+        teff_k = int(infer_teff_from_star_template(key))
+        if teff_k in EXCLUDED_TEFFS_K:
+            continue
+        selected.append({"key": key, "teff_k": teff_k, "star": make_star(key)})
     return selected
 
 
@@ -327,48 +327,66 @@ def tau_check_molecule(species: str, b_kms: float, temp: u.Quantity, star: Star,
 # -----------------------------------------------------------------------------
 # Beta calculations
 # -----------------------------------------------------------------------------
-def beta_for_atom(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float]:
-    temp = GAS_TEMPERATURE
-    n_tau1 = tau_one_ncol_atom(species, b_kms, temp, star_info["star"])
-    if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
-        return np.nan, np.nan, np.nan, np.nan
+def beta_from_ncol(pp: PhotonPressure, star: Star, ncol: u.Quantity) -> Tuple[float, float]:
+    distance = DISTANCE_AU * u.AU
+    ncol_array = np.array([ncol.to_value(1 / u.cm**2)], dtype=float) / u.cm**2
+    F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(ncol_array, GAS_TEMPERATURE, distance)
+    beta, beta_err = pp.beta_Values(F_ph_tot, F_ph_tot_err, star.mass, distance.to(u.cm))
+    beta_value = float(np.ravel(beta.value)[0])
+    beta_err_value = float(np.ravel(beta_err.value)[0])
+    return beta_value, beta_err_value
 
+
+def beta_for_atom(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float, float, float, float]:
+    temp = GAS_TEMPERATURE
     profile = get_atom_profile(species, b_kms)
     pp = PhotonPressure(profile, star_info["star"])
-    distance = DISTANCE_AU * u.AU
-    n_tau1_array = np.array([n_tau1.to_value(1 / u.cm**2)], dtype=float) / u.cm**2
-    F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(n_tau1_array, temp, distance)
-    beta, beta_err = pp.beta_Values(F_ph_tot, F_ph_tot_err, star_info["star"].mass, distance.to(u.cm))
 
-    beta_value = float(np.ravel(beta.value)[0])
-    beta_err_value = float(np.ravel(beta_err.value)[0])
-    tau_check = tau_check_atom(species, b_kms, temp, star_info["star"], n_tau1)
-    return float(n_tau1.to_value(1 / u.cm**2)), beta_value, beta_err_value, tau_check
+    n_tau0 = 0.0 / u.cm**2
+    beta_tau0, beta_err_tau0 = beta_from_ncol(pp, star_info["star"], n_tau0)
 
-
-
-def beta_for_molecule(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float]:
-    temp = GAS_TEMPERATURE
-    n_tau1 = tau_one_ncol_molecule(species, b_kms, temp, star_info["star"])
+    n_tau1 = tau_one_ncol_atom(species, b_kms, temp, star_info["star"])
     if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
-        return np.nan, np.nan, np.nan, np.nan
+        return float(n_tau0.to_value(1 / u.cm**2)), beta_tau0, beta_err_tau0, np.nan, np.nan, np.nan, np.nan
 
+    beta_tau1, beta_err_tau1 = beta_from_ncol(pp, star_info["star"], n_tau1)
+    tau_check = tau_check_atom(species, b_kms, temp, star_info["star"], n_tau1)
+    return (
+        float(n_tau0.to_value(1 / u.cm**2)),
+        beta_tau0,
+        beta_err_tau0,
+        float(n_tau1.to_value(1 / u.cm**2)),
+        beta_tau1,
+        beta_err_tau1,
+        tau_check,
+    )
+
+
+
+def beta_for_molecule(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float, float, float, float]:
+    temp = GAS_TEMPERATURE
     profile = get_molecule_profile(species, b_kms)
     pp = PhotonPressure(profile, star_info["star"])
-    distance = DISTANCE_AU * u.AU
-    n_tau1_array = np.array([n_tau1.to_value(1 / u.cm**2)], dtype=float) / u.cm**2
-    F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(n_tau1_array, temp, distance)
-    beta, beta_err = pp.beta_Values(F_ph_tot, F_ph_tot_err, star_info["star"].mass, distance.to(u.cm))
+    n_tau0 = 0.0 / u.cm**2
+    beta_tau0, beta_err_tau0 = beta_from_ncol(pp, star_info["star"], n_tau0)
 
-    beta_value = float(np.ravel(beta.value)[0])
-    beta_err_value = float(np.ravel(beta_err.value)[0])
+    n_tau1 = tau_one_ncol_molecule(species, b_kms, temp, star_info["star"])
+    if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
+        return float(n_tau0.to_value(1 / u.cm**2)), beta_tau0, beta_err_tau0, np.nan, np.nan, np.nan, np.nan
+
+    beta_tau1, beta_err_tau1 = beta_from_ncol(pp, star_info["star"], n_tau1)
     tau_check = tau_check_molecule(species, b_kms, temp, star_info["star"], n_tau1)
-    return float(n_tau1.to_value(1 / u.cm**2)), beta_value, beta_err_value, tau_check
+    return (
+        float(n_tau0.to_value(1 / u.cm**2)),
+        beta_tau0,
+        beta_err_tau0,
+        float(n_tau1.to_value(1 / u.cm**2)),
+        beta_tau1,
+        beta_err_tau1,
+        tau_check,
+    )
 
 
-# -----------------------------------------------------------------------------
-# Formatting
-# -----------------------------------------------------------------------------
 def broadening_label(b_kms: float) -> str:
     if float(b_kms) == 0.0:
         return "0"
@@ -377,165 +395,6 @@ def broadening_label(b_kms: float) -> str:
     return f"{float(b_kms):g}"
 
 
-
-def latex_species_name(species: str) -> str:
-    return species.replace(" ", "~")
-
-
-
-def format_pm(value: float, err: float) -> str:
-    if not np.isfinite(value):
-        return "-"
-    if not np.isfinite(err):
-        err = 0.0
-
-    abs_value = abs(value)
-    abs_err = abs(err)
-
-    if abs_value == 0.0:
-        return "$0$"
-
-    if 1e-2 <= abs_value < 1e4:
-        if abs_value < 10:
-            value_fmt = f"{value:.2f}"
-            err_fmt = f"{abs_err:.2f}"
-        elif abs_value < 100:
-            value_fmt = f"{value:.1f}"
-            err_fmt = f"{abs_err:.1f}"
-        else:
-            value_fmt = f"{value:.0f}"
-            err_fmt = f"{abs_err:.0f}"
-        return f"${value_fmt} \\pm {err_fmt}$"
-
-    exponent = int(math.floor(math.log10(abs_value)))
-    scaled_value = value / (10 ** exponent)
-    scaled_err = abs_err / (10 ** exponent)
-    return f"$({scaled_value:.1f} \\pm {scaled_err:.1f})10^{{{exponent}}}$"
-
-
-def format_value_only(value: float) -> str:
-    if not np.isfinite(value):
-        return "-"
-
-    abs_value = abs(value)
-    if abs_value == 0.0:
-        return "$0$"
-
-    if 1e-2 <= abs_value < 1e4:
-        if abs_value < 10:
-            value_fmt = f"{value:.2f}"
-        elif abs_value < 100:
-            value_fmt = f"{value:.1f}"
-        else:
-            value_fmt = f"{value:.0f}"
-        return f"${value_fmt}$"
-
-    exponent = int(math.floor(math.log10(abs_value)))
-    scaled_value = value / (10 ** exponent)
-    return f"${scaled_value:.1f}10^{{{exponent}}}$"
-
-
-def make_longtable_block(
-    rows: List[str],
-    teff_headers: List[int],
-    block_title: str,
-    first_col_label: str = "Species",
-    caption: str | None = None,
-    label: str | None = None,
-) -> str:
-    n_cols = len(teff_headers) + 1
-    col_spec = "l" + "c" * len(teff_headers)
-    header_cells = " & ".join([first_col_label] + [f"{teff} K" for teff in teff_headers])
-
-    lines = [f"\\begin{{longtable}}{{{col_spec}}}"]
-    if caption is not None:
-        lines.append(f"\\caption{{{caption}}}")
-    if label is not None:
-        lines.append(f"\\label{{{label}}} \\\\")
-
-    lines.extend([
-        "\\toprule",
-        f"\\multicolumn{{{n_cols}}}{{c}}{{\\textbf{{{block_title}}}}} \\\\",
-        "\\midrule",
-        header_cells + " \\\\",
-        "\\midrule",
-        "\\endfirsthead",
-        "\\toprule",
-        header_cells + " \\\\",
-        "\\midrule",
-        "\\endhead",
-        "\\midrule",
-        f"\\multicolumn{{{n_cols}}}{{r}}{{Continued on next page}} \\\\",
-        "\\midrule",
-        "\\endfoot",
-        "\\bottomrule",
-        "\\endlastfoot",
-        *rows,
-        "\\end{longtable}",
-    ])
-
-    return "\n".join(lines)
-
-
-
-def build_latex_tables(df: pd.DataFrame, selected_stars: List[dict], category_label: str) -> str:
-    teff_headers = [star["teff_k"] for star in selected_stars]
-    if "species" not in df.columns or df.empty:
-        return ""
-    species_order = list(dict.fromkeys(df["species"].tolist()))
-    include_errors = category_label == "Atoms"
-
-    blocks: List[str] = []
-    for b_kms in B_VALUES_KMS:
-        b_label = broadening_label(b_kms)
-        rows = []
-        subset_b = df[df["b_label"] == b_label]
-
-        for species in species_order:
-            subset_species = subset_b[subset_b["species"] == species]
-            cell_text = []
-            for star in selected_stars:
-                row = subset_species[subset_species["star_key"] == star["key"]]
-                if row.empty:
-                    cell_text.append("-")
-                else:
-                    beta_value = float(row.iloc[0]["beta"])
-                    beta_err = float(row.iloc[0]["beta_err"])
-                    if include_errors:
-                        cell_text.append(format_pm(beta_value, beta_err))
-                    else:
-                        cell_text.append(format_value_only(beta_value))
-            rows.append("{} & {} \\\\".format(latex_species_name(species), " & ".join(cell_text)))
-
-        block_title = f"{category_label}: $b = {b_label}$ km s$^{{-1}}$ (species-wise $N_{{\\tau=1}}$)"
-        species_word = "Atomic" if category_label == "Atoms" else "Molecular"
-        caption = (
-            f"{species_word} $\\beta$-values for selected stellar temperatures "
-            f"at $b={b_label}\\ \\mathrm{{km\\,s^{{-1}}}}$."
-        )
-        label_prefix = "atoms" if category_label == "Atoms" else "molecules"
-        label = f"tab:beta_bigtable_{label_prefix}_b{b_label}"
-        blocks.append(
-            "\n".join([
-                "",
-                make_longtable_block(
-                    rows,
-                    teff_headers,
-                    block_title=block_title,
-                    first_col_label="Ion" if category_label == "Atoms" else "Molecule",
-                    caption=caption,
-                    label=label,
-                ),
-                "",
-            ])
-        )
-
-    return "\n".join(blocks)
-
-
-# -----------------------------------------------------------------------------
-# Runners
-# -----------------------------------------------------------------------------
 def calculate_category_rows(species_list: Iterable[str], selected_stars: List[dict], category: str) -> List[dict]:
     rows: List[dict] = []
 
@@ -546,12 +405,30 @@ def calculate_category_rows(species_list: Iterable[str], selected_stars: List[di
             for star_info in selected_stars:
                 try:
                     if category == "atom":
-                        n_tau1_cm2, beta, beta_err, tau_check = beta_for_atom(species, b_kms, star_info)
+                        (
+                            n_tau0_cm2,
+                            beta_tau0,
+                            beta_err_tau0,
+                            n_tau1_cm2,
+                            beta_tau1,
+                            beta_err_tau1,
+                            tau_check,
+                        ) = beta_for_atom(species, b_kms, star_info)
                     else:
-                        n_tau1_cm2, beta, beta_err, tau_check = beta_for_molecule(species, b_kms, star_info)
+                        (
+                            n_tau0_cm2,
+                            beta_tau0,
+                            beta_err_tau0,
+                            n_tau1_cm2,
+                            beta_tau1,
+                            beta_err_tau1,
+                            tau_check,
+                        ) = beta_for_molecule(species, b_kms, star_info)
                 except Exception as exc:
                     print(f"Skipping {category} species={species}, b={b_label}, star={star_info['key']}: {type(exc).__name__}: {exc}")
-                    n_tau1_cm2, beta, beta_err, tau_check = np.nan, np.nan, np.nan, np.nan
+                    n_tau0_cm2 = 0.0
+                    beta_tau0, beta_err_tau0 = np.nan, np.nan
+                    n_tau1_cm2, beta_tau1, beta_err_tau1, tau_check = np.nan, np.nan, np.nan, np.nan
 
                 rows.append(
                     {
@@ -560,10 +437,13 @@ def calculate_category_rows(species_list: Iterable[str], selected_stars: List[di
                         "b_effective_kms": float(effective_b_value(b_kms).to_value(u.km / u.s)),
                         "star_key": star_info["key"],
                         "teff_k": star_info["teff_k"],
+                        "n_tau0_cm2": n_tau0_cm2,
+                        "beta_tau0": beta_tau0,
+                        "beta_err_tau0": beta_err_tau0,
                         "n_tau1_cm2": n_tau1_cm2,
                         "tau_check": tau_check,
-                        "beta": beta,
-                        "beta_err": beta_err,
+                        "beta_tau1": beta_tau1,
+                        "beta_err_tau1": beta_err_tau1,
                     }
                 )
 
@@ -643,14 +523,10 @@ def main() -> None:
                     f"min={tau_summary.min():.3e}, median={tau_summary.median():.3e}, max={tau_summary.max():.3e}"
                 )
         if atom_df.empty:
-            print("No atom rows were produced. Skipping atom csv/latex output.")
+            print("No atom rows were produced. Skipping atom txt output.")
         else:
-            if SAVE_RAW_CSV:
-                atom_df.to_csv(OUTPUT_DIR / RAW_ATOMS_NAME, index=False)
-            if SAVE_LATEX:
-                atom_tex = build_latex_tables(atom_df, selected_stars, category_label="Atoms")
-                if atom_tex:
-                    (OUTPUT_DIR / TEX_ATOMS_NAME).write_text(atom_tex, encoding="utf-8")
+            if SAVE_RAW_TXT:
+                atom_df.to_csv(OUTPUT_DIR / RAW_ATOMS_NAME, index=False, sep="\t")
 
     if INCLUDE_MOLECULES:
         molecule_rows = calculate_category_rows(MOLECULE_SPECIES, selected_stars, category="molecule")
@@ -663,14 +539,10 @@ def main() -> None:
                     f"min={tau_summary.min():.3e}, median={tau_summary.median():.3e}, max={tau_summary.max():.3e}"
                 )
         if molecule_df.empty:
-            print("No molecule rows were produced. Skipping molecule csv/latex output.")
+            print("No molecule rows were produced. Skipping molecule txt output.")
         else:
-            if SAVE_RAW_CSV:
-                molecule_df.to_csv(OUTPUT_DIR / RAW_MOLECULES_NAME, index=False)
-            if SAVE_LATEX:
-                molecule_tex = build_latex_tables(molecule_df, selected_stars, category_label="Molecules")
-                if molecule_tex:
-                    (OUTPUT_DIR / TEX_MOLECULES_NAME).write_text(molecule_tex, encoding="utf-8")
+            if SAVE_RAW_TXT:
+                molecule_df.to_csv(OUTPUT_DIR / RAW_MOLECULES_NAME, index=False, sep="\t")
 
     print(f"Saved outputs to {OUTPUT_DIR}")
 

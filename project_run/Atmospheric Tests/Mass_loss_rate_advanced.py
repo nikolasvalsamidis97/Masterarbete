@@ -32,12 +32,21 @@ from project_classes.Molecule import Molecule
 # -----------------------------------------------------------------------------
 # Advanced run configuration
 # -----------------------------------------------------------------------------
-SKIP_ATOMS = True
+SKIP_ATOMS = False
 SKIP_MOLECULES = False
 SELECTED_ATOMIC_SPECIES = None
 SELECTED_MOLECULAR_SPECIES = None
 INCLUDE_STELLAR_GRAVITY = True
 USE_CHECKPOINT = True
+
+# Enable or disable each advanced test family independently.
+ENABLE_SOLAR_SYSTEM_FIXED = True
+ENABLE_ROCKY_EXOPLANETS_PLAUSIBLE = True
+ENABLE_GAS_PLANETS_PLAUSIBLE = True
+ENABLE_DISTANCE_SWEEPS = True
+ENABLE_P0_SWEEP = True
+ENABLE_MU_SWEEPS = True
+ENABLE_SURFACE_GRAVITY_SWEEP = True
 
 # Optional filter for running a subset of the predefined systems.
 # Use entries like:
@@ -89,6 +98,34 @@ EXOBASE_TABLE = (
 SOLAR_SYSTEM_STAR_KEY = "G1"
 HOT_SWEEP_STAR_KEY = "A0"
 HOT_SWEEP_DISTANCES_AU = [0.0239, 0.05, 0.1, 0.3, 1.0]
+STUDY_STAR_KEY = "A0"
+STUDY_DISTANCE_AU = 1.0
+
+# Dedicated P0 case study for one representative inflated hot Jupiter.
+# This uses the same plausible F8 / 0.0515 AU system already present in the
+# main advanced grid, but varies only P0.
+P0_SWEEP_PLANET_KEY = "inflated_hot_jupiter"
+P0_SWEEP_STAR_KEY = "F8"
+P0_SWEEP_DISTANCE_AU = 0.0515
+P0_SWEEP_VALUES_BAR = np.logspace(-8, 0, 10)
+P0_SWEEP_TEST_FAMILY = "P0_sweep_inflated_hot_jupiter"
+P0_SWEEP_OUTPUT_DIR = OUTPUT_DIR / base_mass_loss.safe_name(P0_SWEEP_TEST_FAMILY)
+P0_SWEEP_CHECKPOINT_PATH = P0_SWEEP_OUTPUT_DIR / "mass_loss_advanced_p0_checkpoint.csv"
+
+# Mean molecular mass sweeps for a 10000 K star at 0.1 AU.
+MU_SWEEP_VALUES_AMU = np.linspace(1.0, 30.0, 80)
+MU_SWEEP_HOT_JUPITER_FAMILY = "mu_sweep_inflated_hot_jupiter"
+MU_SWEEP_OUTPUT_DIR = OUTPUT_DIR / "mu_sweeps"
+MU_SWEEP_CHECKPOINT_PATH = MU_SWEEP_OUTPUT_DIR / "mass_loss_advanced_mu_checkpoint.csv"
+
+# Surface-gravity sweep for the rocky super-Earth. Gravity is varied by
+# changing mass while keeping the radius fixed.
+SURFACE_GRAVITY_MASS_SCALE_VALUES = np.logspace(np.log10(0.5), np.log10(4.0), 10)
+SURFACE_GRAVITY_SWEEP_FAMILY = "surface_gravity_sweep_super_earth_rocky"
+SURFACE_GRAVITY_SWEEP_OUTPUT_DIR = OUTPUT_DIR / "surface_gravity_sweeps"
+SURFACE_GRAVITY_SWEEP_CHECKPOINT_PATH = (
+    SURFACE_GRAVITY_SWEEP_OUTPUT_DIR / "mass_loss_advanced_surface_gravity_checkpoint.csv"
+)
 
 
 @dataclass(frozen=True)
@@ -99,35 +136,77 @@ class AdvancedSystem:
     distance_au: float
 
 
-def build_advanced_systems() -> List[AdvancedSystem]:
-    systems = [
-        AdvancedSystem("solar_system_fixed", "mercury_like", SOLAR_SYSTEM_STAR_KEY, 0.387),
-        AdvancedSystem("solar_system_fixed", "earth_like", SOLAR_SYSTEM_STAR_KEY, 1.0),
-        AdvancedSystem("solar_system_fixed", "mars_like", SOLAR_SYSTEM_STAR_KEY, 1.524),
-        AdvancedSystem("solar_system_fixed", "cold_jupiter", SOLAR_SYSTEM_STAR_KEY, 5.204),
+def build_p0_sweep_system() -> AdvancedSystem:
+    return AdvancedSystem(
+        P0_SWEEP_TEST_FAMILY,
+        P0_SWEEP_PLANET_KEY,
+        P0_SWEEP_STAR_KEY,
+        P0_SWEEP_DISTANCE_AU,
+    )
 
-        AdvancedSystem("rocky_exoplanets_plausible", "super_earth_rocky", "G1", 0.08),
-        AdvancedSystem("rocky_exoplanets_plausible", "lava_world", "F8", 0.02),
-        AdvancedSystem("rocky_exoplanets_plausible", "volatile_super_earth", "K1", 0.05),
-        AdvancedSystem("rocky_exoplanets_plausible", "alkali_exosphere_rocky", "F8", 0.03),
-        AdvancedSystem("rocky_exoplanets_plausible", "metal_rich_secondary", "F8", 0.05),
 
-        AdvancedSystem("gas_planets_plausible", "mini_neptune_cool", "K1", 0.20),
-        AdvancedSystem("gas_planets_plausible", "mini_neptune_warm", "G1", 0.10),
-        AdvancedSystem("gas_planets_plausible", "sub_neptune", "G1", 0.08),
-        AdvancedSystem("gas_planets_plausible", "warm_neptune", "K1", 0.05),
-        AdvancedSystem("gas_planets_plausible", "hot_neptune", "M1", 0.0291),
-        AdvancedSystem("gas_planets_plausible", "super_puff", "F8", 0.2514),
-        AdvancedSystem("gas_planets_plausible", "warm_jupiter", "G1", 0.0965),
-        AdvancedSystem("gas_planets_plausible", "hot_jupiter", "G1", 0.05042),
-        AdvancedSystem("gas_planets_plausible", "inflated_hot_jupiter", "F8", 0.0515),
-        AdvancedSystem("gas_planets_plausible", "ultra_hot_jupiter", "A0", 0.0239),
+def build_mu_sweep_systems() -> List[AdvancedSystem]:
+    return [
+        AdvancedSystem(MU_SWEEP_HOT_JUPITER_FAMILY, "inflated_hot_jupiter", STUDY_STAR_KEY, STUDY_DISTANCE_AU),
     ]
 
-    for distance_au in HOT_SWEEP_DISTANCES_AU:
-        systems.append(AdvancedSystem("distance_sweeps", "inflated_hot_jupiter", HOT_SWEEP_STAR_KEY, distance_au))
-    for distance_au in HOT_SWEEP_DISTANCES_AU:
-        systems.append(AdvancedSystem("distance_sweeps", "super_earth_rocky", HOT_SWEEP_STAR_KEY, distance_au))
+
+def build_surface_gravity_sweep_system() -> AdvancedSystem:
+    return AdvancedSystem(
+        SURFACE_GRAVITY_SWEEP_FAMILY,
+        "super_earth_rocky",
+        STUDY_STAR_KEY,
+        STUDY_DISTANCE_AU,
+    )
+
+
+def build_advanced_systems() -> List[AdvancedSystem]:
+    systems: List[AdvancedSystem] = []
+
+    if ENABLE_SOLAR_SYSTEM_FIXED:
+        systems.extend(
+            [
+                AdvancedSystem("solar_system_fixed", "mercury_like", SOLAR_SYSTEM_STAR_KEY, 0.387),
+                AdvancedSystem("solar_system_fixed", "earth_like", SOLAR_SYSTEM_STAR_KEY, 1.0),
+                AdvancedSystem("solar_system_fixed", "mars_like", SOLAR_SYSTEM_STAR_KEY, 1.524),
+                AdvancedSystem("solar_system_fixed", "cold_jupiter", SOLAR_SYSTEM_STAR_KEY, 5.204),
+            ]
+        )
+
+    if ENABLE_ROCKY_EXOPLANETS_PLAUSIBLE:
+        systems.extend(
+            [
+                AdvancedSystem("rocky_exoplanets_plausible", "super_earth_rocky", "G1", 0.08),
+                AdvancedSystem("rocky_exoplanets_plausible", "lava_world", "F8", 0.02),
+                AdvancedSystem("rocky_exoplanets_plausible", "volatile_super_earth", "K1", 0.05),
+                AdvancedSystem("rocky_exoplanets_plausible", "alkali_exosphere_rocky", "F8", 0.03),
+                AdvancedSystem("rocky_exoplanets_plausible", "metal_rich_secondary", "F8", 0.05),
+            ]
+        )
+
+    if ENABLE_GAS_PLANETS_PLAUSIBLE:
+        systems.extend(
+            [
+                AdvancedSystem("gas_planets_plausible", "mini_neptune_cool", "K1", 0.20),
+                AdvancedSystem("gas_planets_plausible", "mini_neptune_warm", "G1", 0.10),
+                AdvancedSystem("gas_planets_plausible", "sub_neptune", "G1", 0.08),
+                AdvancedSystem("gas_planets_plausible", "warm_neptune", "K1", 0.05),
+                AdvancedSystem("gas_planets_plausible", "hot_neptune", "M1", 0.0291),
+                AdvancedSystem("gas_planets_plausible", "super_puff", "F8", 0.2514),
+                AdvancedSystem("gas_planets_plausible", "warm_jupiter", "G1", 0.0965),
+                AdvancedSystem("gas_planets_plausible", "hot_jupiter", "G1", 0.05042),
+                AdvancedSystem("gas_planets_plausible", "inflated_hot_jupiter", "F8", 0.0515),
+                AdvancedSystem("gas_planets_plausible", "ultra_hot_jupiter", "A0", 0.0239),
+            ]
+        )
+
+    if ENABLE_DISTANCE_SWEEPS:
+        for distance_au in HOT_SWEEP_DISTANCES_AU:
+            systems.append(AdvancedSystem("distance_sweeps", "inflated_hot_jupiter", HOT_SWEEP_STAR_KEY, distance_au))
+        for distance_au in HOT_SWEEP_DISTANCES_AU:
+            systems.append(AdvancedSystem("distance_sweeps", "super_earth_rocky", HOT_SWEEP_STAR_KEY, distance_au))
+        for distance_au in HOT_SWEEP_DISTANCES_AU:
+            systems.append(AdvancedSystem("distance_sweeps", "mercury_like", HOT_SWEEP_STAR_KEY, distance_au))
 
     if SELECTED_SYSTEM_KEYS is None:
         return systems
@@ -461,6 +540,10 @@ def output_fieldnames() -> List[str]:
         "target_stellar_teff_K",
         "actual_stellar_teff_K",
         "distance_AU",
+        "P0_bar",
+        "mu_amu",
+        "surface_gravity_m_s2",
+        "mass_scale",
         "species",
         "mixing_ratio",
         "z_exobase_km",
@@ -622,6 +705,21 @@ def write_summary_txt(
     total_row = next((row for row in rows if is_total_species_label(row.get("species", ""))), None)
     atomic_rows = [row for row in rows if is_atomic_species(row.get("species", ""))]
     molecular_rows = [row for row in rows if is_molecular_species(row.get("species", ""))]
+    planet_case = base_mass_loss.get_planet_template(planet_key)
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+    mass_info = base_mass_loss.planet_reference_mass_info(
+        planet_key,
+        planet_case,
+        exobase_rows,
+    )
+    total_planet_mass_kg = planet_case["mass"].to_value(u.kg)
+    total_atmosphere_mass_g, atmosphere_top_km_q, atmosphere_top_source = base_mass_loss.integrated_atmosphere_mass(
+        planet_key,
+        planet_case,
+        exobase_rows,
+    )
+    total_atmosphere_mass_kg = total_atmosphere_mass_g.to_value(u.kg)
+    reference_kind_key = "whole_atmosphere" if mass_info["reference_mass_kind"] == "whole_atmosphere" else "whole_planet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
         f.write("Advanced Mass-Loss Run\n")
@@ -642,8 +740,48 @@ def write_summary_txt(
             f"trajectory: LOG_COLUMN_BIN_DEX={LOG_COLUMN_BIN_DEX}, DT_MIN_S={DT_MIN_S}, "
             f"DT_MAX_S={DT_MAX_S}, MAX_STEPS={MAX_STEPS}, MAX_TIME_S={MAX_TIME_S}\n"
         )
+        f.write(f"planet_category: {mass_info['planet_category']}\n")
+        f.write(f"reference_mass_kind: {mass_info['reference_mass_kind']}\n")
+        f.write(f"reference_mass_g: {mass_info['reference_mass_g']:.12e}\n")
+        f.write(f"reference_mass_unit_name: {mass_info['reference_mass_unit_name']}\n")
+        f.write(f"reference_mass_in_unit: {mass_info['reference_mass_in_unit']:.12e}\n")
+        f.write(f"total_planet_mass_kg: {total_planet_mass_kg:.12e}\n")
+        f.write(f"total_atmosphere_mass_kg: {total_atmosphere_mass_kg:.12e}\n")
+        f.write(f"{reference_kind_key}_mass_g: {mass_info['reference_mass_g']:.12e}\n")
+        f.write(
+            f"{reference_kind_key}_mass_{mass_info['reference_mass_unit_name']}: "
+            f"{mass_info['reference_mass_in_unit']:.12e}\n"
+        )
+        f.write(f"reference_atmosphere_mass_g: {total_atmosphere_mass_g.to_value(u.g):.12e}\n")
+        f.write(f"reference_atmosphere_mass_kg: {total_atmosphere_mass_kg:.12e}\n")
+        if mass_info["reference_top_km"] != "":
+            f.write(f"reference_atmosphere_top_km: {float(mass_info['reference_top_km']):.6f}\n")
+            f.write(f"reference_atmosphere_top_source: {mass_info['reference_top_source']}\n")
+        else:
+            f.write(f"reference_atmosphere_top_km: {atmosphere_top_km_q.to_value(u.km):.6f}\n")
+            f.write(f"reference_atmosphere_top_source: {atmosphere_top_source}\n")
         if total_row is not None:
+            total_mdot_g_s = float(total_row["mass_loss_rate_g_s"])
+            total_mdot_g_s_array = np.array([total_mdot_g_s], dtype=float)
+            total_rate_in_planet_unit_yr = base_mass_loss.mass_loss_in_planet_unit_per_year(total_mdot_g_s_array, planet_case)[0]
+            total_specific_rate_s_inv, _ = base_mass_loss.mass_loss_over_reference_mass_per_second(
+                total_mdot_g_s_array,
+                planet_key,
+                planet_case,
+                exobase_rows,
+            )
+            total_specific_rate_over_atmosphere_s_inv = total_mdot_g_s / total_atmosphere_mass_g.to_value(u.g)
             f.write(f"total_mass_loss_rate_g_s: {total_row['mass_loss_rate_g_s']:.12e}\n")
+            f.write(f"total_mass_loss_rate_{mass_info['reference_mass_unit_name']}_yr: {total_rate_in_planet_unit_yr:.12e}\n")
+            f.write(f"total_mass_loss_rate_over_reference_mass_s_inv: {float(total_specific_rate_s_inv[0]):.12e}\n")
+            f.write(
+                f"total_mass_loss_rate_over_{reference_kind_key}_s_inv: "
+                f"{float(total_specific_rate_s_inv[0]):.12e}\n"
+            )
+            f.write(
+                "total_mass_loss_rate_over_reference_atmosphere_s_inv: "
+                f"{total_specific_rate_over_atmosphere_s_inv:.12e}\n"
+            )
             f.write(f"total_escaping_shell_mass_g: {total_row['escaping_shell_mass_g']:.12e}\n")
             f.write(f"total_mean_escape_time_s: {total_row['mean_escape_time_s']:.12e}\n")
         if atomic_rows:
@@ -767,6 +905,10 @@ def total_row_from_species_rows(species_rows: List[dict]) -> dict | None:
     template.update(
         {
             "species": "TOTAL_INCLUDED_SPECIES",
+            "P0_bar": template.get("P0_bar", ""),
+            "mu_amu": template.get("mu_amu", ""),
+            "surface_gravity_m_s2": template.get("surface_gravity_m_s2", ""),
+            "mass_scale": template.get("mass_scale", ""),
             "mixing_ratio": "",
             "z_exobase_km": "",
             "r_exobase_over_Rp": "",
@@ -787,6 +929,865 @@ def total_row_from_species_rows(species_rows: List[dict]) -> dict | None:
         }
     )
     return template
+
+
+def p0_row_key_from_values(
+    test_family: str,
+    planet_key: str,
+    species: str,
+    actual_star_key: str,
+    distance_au: float,
+    p0_bar: float,
+) -> Tuple[str, str, str, str, str, str]:
+    return (
+        test_family,
+        planet_key,
+        species,
+        actual_star_key,
+        f"{float(distance_au):.12g}",
+        f"{float(p0_bar):.12g}",
+    )
+
+
+def p0_row_key_from_row(row: dict) -> Tuple[str, str, str, str, str, str]:
+    return p0_row_key_from_values(
+        row["test_family"],
+        row["planet"],
+        row["species"],
+        row["star"],
+        float(row["distance_AU"]),
+        float(row["P0_bar"]),
+    )
+
+
+def p0_completed_row_keys(rows: List[dict]) -> set[Tuple[str, str, str, str, str, str]]:
+    return {p0_row_key_from_row(row) for row in rows}
+
+
+def load_p0_checkpoint_rows(path: pathlib.Path) -> List[dict]:
+    if not path.exists():
+        return []
+
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = [
+            row
+            for row in reader
+            if row.get("species")
+            and not is_total_species_label(row.get("species", ""))
+            and row.get("P0_bar", "") != ""
+        ]
+
+    validate_checkpoint_rows(rows)
+    return rows
+
+
+def p0_system_rows(rows: List[dict], p0_bar: float) -> List[dict]:
+    matching = [
+        row
+        for row in rows
+        if row.get("test_family") == P0_SWEEP_TEST_FAMILY
+        and row.get("planet") == P0_SWEEP_PLANET_KEY
+        and row.get("star") == P0_SWEEP_STAR_KEY
+        and float(row.get("distance_AU", np.nan)) == float(P0_SWEEP_DISTANCE_AU)
+        and float(row.get("P0_bar", np.nan)) == float(p0_bar)
+        and not is_total_species_label(row.get("species", ""))
+    ]
+    matching.sort(key=lambda row: (row.get("species", ""),))
+    return matching
+
+
+def p0_sweep_output_slug() -> str:
+    return (
+        f"{base_mass_loss.safe_name(P0_SWEEP_PLANET_KEY)}_"
+        f"{base_mass_loss.safe_name(P0_SWEEP_STAR_KEY)}_"
+        f"{float(P0_SWEEP_DISTANCE_AU):g}AU"
+    )
+
+
+def write_p0_sweep_outputs(rows: List[dict]) -> None:
+    if not rows:
+        return
+
+    planet_case = base_mass_loss.get_planet_template(P0_SWEEP_PLANET_KEY)
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+    mass_info = base_mass_loss.planet_reference_mass_info(P0_SWEEP_PLANET_KEY, planet_case, exobase_rows)
+
+    p0_values_all = sorted({float(row["P0_bar"]) for row in rows})
+    totals = []
+    for p0_bar in p0_values_all:
+        total_row = total_row_from_species_rows(p0_system_rows(rows, p0_bar))
+        if total_row is None:
+            continue
+        total_row["P0_bar"] = p0_bar
+        totals.append(total_row)
+
+    if not totals:
+        return
+
+    p0_values = [float(row["P0_bar"]) for row in totals]
+    total_mdot_array = np.asarray([float(row["mass_loss_rate_g_s"]) for row in totals], dtype=float)
+    matrix_g_s = total_mdot_array.reshape(-1, 1)
+    unit_matrix = base_mass_loss.mass_loss_in_planet_unit_per_year(total_mdot_array, planet_case).reshape(-1, 1)
+    ratio_values, _ = base_mass_loss.mass_loss_over_reference_mass_per_second(
+        total_mdot_array,
+        P0_SWEEP_PLANET_KEY,
+        planet_case,
+        exobase_rows,
+    )
+    ratio_matrix = ratio_values.reshape(-1, 1)
+
+    P0_SWEEP_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    slug = p0_sweep_output_slug()
+    series_value = [f"{P0_SWEEP_STAR_KEY}_{float(P0_SWEEP_DISTANCE_AU):g}AU"]
+    column_name = [f"{base_mass_loss.safe_name(P0_SWEEP_STAR_KEY)}_{float(P0_SWEEP_DISTANCE_AU):g}AU"]
+    base_metadata = {
+        "planet": P0_SWEEP_PLANET_KEY,
+        "star": P0_SWEEP_STAR_KEY,
+        "distance_AU": float(P0_SWEEP_DISTANCE_AU),
+        "species": "TOTAL_INCLUDED_SPECIES",
+        "include_stellar_gravity": INCLUDE_STELLAR_GRAVITY,
+        "method": "advanced_trajectory_recomputed_acceleration",
+        "n_rho": N_RHO,
+        "n_x": N_X,
+        "column_steps": COLUMN_STEPS,
+        "rho_grid_power": RHO_GRID_POWER,
+        "log_column_bin_dex": LOG_COLUMN_BIN_DEX,
+        "dt_min_s": DT_MIN_S,
+        "dt_max_s": DT_MAX_S,
+        "max_steps": MAX_STEPS,
+        "max_time_s": MAX_TIME_S,
+        "planet_category": mass_info["planet_category"],
+        "reference_mass_kind": mass_info["reference_mass_kind"],
+        "reference_mass_g": mass_info["reference_mass_g"],
+        "reference_mass_unit_name": mass_info["reference_mass_unit_name"],
+        "reference_mass_in_unit": mass_info["reference_mass_in_unit"],
+        "reference_top_km": mass_info["reference_top_km"],
+        "reference_top_source": mass_info["reference_top_source"],
+        "note": "Advanced trajectory total mass-loss rate as a function of varying P0.",
+    }
+
+    g_s_path = P0_SWEEP_OUTPUT_DIR / f"{slug}_total_mass_loss_vs_P0.txt"
+    base_mass_loss.save_mass_loss_matrix_txt(
+        g_s_path,
+        dataset_name=f"{slug}_total_mass_loss_vs_P0",
+        x_label="P0",
+        x_unit="bar",
+        y_label="Total included-species mass-loss rate",
+        y_unit="g/s",
+        x_values=p0_values,
+        y_matrix=matrix_g_s,
+        series_values=series_value,
+        series_label="system",
+        series_unit="star_distance",
+        column_names=column_name,
+        extra_metadata=base_metadata,
+    )
+
+    unit_suffix = mass_info["reference_mass_unit_name"]
+    unit_path = P0_SWEEP_OUTPUT_DIR / f"{slug}_total_mass_loss_vs_P0_{unit_suffix}_yr.txt"
+    base_mass_loss.save_mass_loss_matrix_txt(
+        unit_path,
+        dataset_name=f"{slug}_total_mass_loss_vs_P0_{unit_suffix}_yr",
+        x_label="P0",
+        x_unit="bar",
+        y_label="Total included-species mass-loss rate",
+        y_unit=f"{unit_suffix}/yr",
+        x_values=p0_values,
+        y_matrix=unit_matrix,
+        series_values=series_value,
+        series_label="system",
+        series_unit="star_distance",
+        column_names=column_name,
+        extra_metadata={**base_metadata, "rate_unit_name": f"{unit_suffix}/yr"},
+    )
+
+    ratio_path = P0_SWEEP_OUTPUT_DIR / f"{slug}_total_mass_loss_ratio_vs_P0.txt"
+    base_mass_loss.save_mass_loss_matrix_txt(
+        ratio_path,
+        dataset_name=f"{slug}_total_mass_loss_ratio_vs_P0",
+        x_label="P0",
+        x_unit="bar",
+        y_label="Total included-species specific mass-loss rate",
+        y_unit="1/s",
+        x_values=p0_values,
+        y_matrix=ratio_matrix,
+        series_values=series_value,
+        series_label="system",
+        series_unit="star_distance",
+        column_names=column_name,
+        extra_metadata={**base_metadata, "ratio_definition": "Mdot / M_reference"},
+    )
+
+    reference_kind_key = "whole_atmosphere" if mass_info["reference_mass_kind"] == "whole_atmosphere" else "whole_planet"
+    summary_path = P0_SWEEP_OUTPUT_DIR / f"{slug}_P0_sweep_summary.txt"
+    with summary_path.open("w", encoding="utf-8") as f:
+        f.write("Advanced P0 Sweep Summary\n")
+        f.write("=========================\n")
+        f.write(f"test_family: {P0_SWEEP_TEST_FAMILY}\n")
+        f.write(f"planet: {P0_SWEEP_PLANET_KEY}\n")
+        f.write(f"star_template: {P0_SWEEP_STAR_KEY}\n")
+        f.write(f"actual_stellar_teff_K: {base_mass_loss.infer_teff_from_star_template(P0_SWEEP_STAR_KEY)}\n")
+        f.write(f"distance_AU: {float(P0_SWEEP_DISTANCE_AU)}\n")
+        f.write(f"P0_values_bar: {', '.join(f'{value:.6e}' for value in p0_values)}\n")
+        f.write(f"planet_category: {mass_info['planet_category']}\n")
+        f.write(f"reference_mass_kind: {mass_info['reference_mass_kind']}\n")
+        f.write(f"reference_mass_g: {mass_info['reference_mass_g']:.12e}\n")
+        f.write(f"{reference_kind_key}_mass_g: {mass_info['reference_mass_g']:.12e}\n")
+        f.write(
+            f"{reference_kind_key}_mass_{mass_info['reference_mass_unit_name']}: "
+            f"{mass_info['reference_mass_in_unit']:.12e}\n"
+        )
+        if mass_info["reference_top_km"] != "":
+            f.write(f"reference_atmosphere_top_km: {float(mass_info['reference_top_km']):.6f}\n")
+            f.write(f"reference_atmosphere_top_source: {mass_info['reference_top_source']}\n")
+        f.write(f"rate_unit_name: {mass_info['rate_unit_name']}\n")
+        f.write(f"g_s_file: {g_s_path.name}\n")
+        f.write(f"planet_unit_file: {unit_path.name}\n")
+        f.write(f"ratio_file: {ratio_path.name}\n")
+
+
+def run_p0_sweep() -> None:
+    configure_base_module()
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+    build_p0_sweep_system()
+    planet_base_case = base_mass_loss.get_planet_template(P0_SWEEP_PLANET_KEY)
+    species_template = selected_species_for_planet(planet_base_case)
+    if not species_template:
+        print(f"Skipping {P0_SWEEP_TEST_FAMILY}: no species selected")
+        return
+
+    all_rows = load_p0_checkpoint_rows(P0_SWEEP_CHECKPOINT_PATH) if USE_CHECKPOINT else []
+    completed_rows = p0_completed_row_keys(all_rows)
+    if all_rows:
+        print(f"Loaded advanced P0 checkpoint with {len(all_rows)} completed species rows")
+        write_p0_sweep_outputs(all_rows)
+
+    for p0_bar in P0_SWEEP_VALUES_BAR:
+        planet_case = dict(planet_base_case)
+        planet_case["P0"] = float(p0_bar) * u.bar
+        species_list = selected_species_for_planet(planet_case)
+        planet = base_mass_loss.build_planet(planet_case)
+        star = base_mass_loss.get_star(P0_SWEEP_STAR_KEY)
+        system = base_mass_loss.PlanetarySystem(planet, star, P0_SWEEP_DISTANCE_AU * u.AU)
+
+        existing = p0_system_rows(all_rows, p0_bar)
+        if existing:
+            print(
+                f"\n--- Advanced P0 sweep: {P0_SWEEP_PLANET_KEY} / {P0_SWEEP_STAR_KEY} / "
+                f"{float(P0_SWEEP_DISTANCE_AU):g} AU / P0={p0_bar:.1e} bar "
+                f"({len(existing)}/{len(species_list)} species already saved) ---"
+            )
+            write_p0_sweep_outputs(all_rows)
+        else:
+            print(
+                f"\n--- Advanced P0 sweep: {P0_SWEEP_PLANET_KEY}, star={P0_SWEEP_STAR_KEY} "
+                f"({base_mass_loss.infer_teff_from_star_template(P0_SWEEP_STAR_KEY)} K), "
+                f"distance={float(P0_SWEEP_DISTANCE_AU):g} AU, P0={p0_bar:.1e} bar ---"
+            )
+
+        for species in species_list:
+            current_key = p0_row_key_from_values(
+                P0_SWEEP_TEST_FAMILY,
+                P0_SWEEP_PLANET_KEY,
+                species,
+                P0_SWEEP_STAR_KEY,
+                P0_SWEEP_DISTANCE_AU,
+                p0_bar,
+            )
+            if current_key in completed_rows:
+                print(f"Skipping completed P0 species: {P0_SWEEP_PLANET_KEY} / {species} / P0={p0_bar:.1e}")
+                continue
+
+            species_start = time.perf_counter()
+            try:
+                row = mass_loss_for_species_advanced(
+                    P0_SWEEP_TEST_FAMILY,
+                    P0_SWEEP_PLANET_KEY,
+                    P0_SWEEP_STAR_KEY,
+                    P0_SWEEP_DISTANCE_AU,
+                    species,
+                    planet_case,
+                    system,
+                    exobase_rows,
+                )
+            except Exception as exc:
+                print(f"Skipping P0 sweep {P0_SWEEP_PLANET_KEY} {species}: {type(exc).__name__}: {exc}")
+                continue
+
+            row["P0_bar"] = float(p0_bar)
+            all_rows.append(row)
+            completed_rows.add(current_key)
+            if USE_CHECKPOINT:
+                save_checkpoint_rows(all_rows, P0_SWEEP_CHECKPOINT_PATH)
+            write_p0_sweep_outputs(all_rows)
+            print(
+                f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+                f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
+                f"mean_t={row['mean_escape_time_s']:.3e} s, "
+                f"cache_bins={row['photon_pressure_cache_bins']}, "
+                f"elapsed={time.perf_counter() - species_start:.1f} s"
+            )
+
+        total_row = total_row_from_species_rows(p0_system_rows(all_rows, p0_bar))
+        if total_row is not None:
+            print(
+                f"TOTAL_INCLUDED_SPECIES for {P0_SWEEP_PLANET_KEY} at P0={p0_bar:.1e} bar: "
+                f"Mdot={total_row['mass_loss_rate_g_s']:.3e} g/s, "
+                f"escaping_mass={total_row['escaping_shell_mass_g']:.3e} g"
+            )
+
+    if USE_CHECKPOINT and all_rows:
+        save_checkpoint_rows(all_rows, P0_SWEEP_CHECKPOINT_PATH)
+    write_p0_sweep_outputs(all_rows)
+
+
+def scalar_row_key_from_values(
+    test_family: str,
+    planet_key: str,
+    species: str,
+    actual_star_key: str,
+    distance_au: float,
+    value_field: str,
+    value: float,
+) -> Tuple[str, str, str, str, str, str, str]:
+    return (
+        test_family,
+        planet_key,
+        species,
+        actual_star_key,
+        f"{float(distance_au):.12g}",
+        value_field,
+        f"{float(value):.12g}",
+    )
+
+
+def scalar_row_key_from_row(row: dict, value_field: str) -> Tuple[str, str, str, str, str, str, str]:
+    return scalar_row_key_from_values(
+        row["test_family"],
+        row["planet"],
+        row["species"],
+        row["star"],
+        float(row["distance_AU"]),
+        value_field,
+        float(row[value_field]),
+    )
+
+
+def scalar_completed_row_keys(rows: List[dict], value_field: str) -> set[Tuple[str, str, str, str, str, str, str]]:
+    return {scalar_row_key_from_row(row, value_field) for row in rows}
+
+
+def load_scalar_checkpoint_rows(path: pathlib.Path, value_field: str) -> List[dict]:
+    if not path.exists():
+        return []
+
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = [
+            row
+            for row in reader
+            if row.get("species")
+            and not is_total_species_label(row.get("species", ""))
+            and row.get(value_field, "") != ""
+        ]
+
+    validate_checkpoint_rows(rows)
+    return rows
+
+
+def scalar_system_rows(
+    rows: List[dict],
+    system_def: AdvancedSystem,
+    value_field: str,
+    value: float,
+) -> List[dict]:
+    matching = [
+        row
+        for row in rows
+        if row.get("test_family") == system_def.test_family
+        and row.get("planet") == system_def.planet_key
+        and row.get("star") == system_def.star_key
+        and float(row.get("distance_AU", np.nan)) == float(system_def.distance_au)
+        and float(row.get(value_field, np.nan)) == float(value)
+        and not is_total_species_label(row.get("species", ""))
+    ]
+    matching.sort(key=lambda row: (row.get("species", ""),))
+    return matching
+
+
+def build_mu_sweep_planet_case(planet_key: str, mu_amu: float) -> dict:
+    planet_case = dict(base_mass_loss.get_planet_template(planet_key))
+    planet_case["mu"] = float(mu_amu) * u.dimensionless_unscaled
+    return planet_case
+
+
+def build_surface_gravity_sweep_planet_case(planet_key: str, mass_scale: float) -> dict:
+    planet_case = dict(base_mass_loss.get_planet_template(planet_key))
+    planet_case["mass"] = float(mass_scale) * planet_case["mass"]
+    return planet_case
+
+
+def surface_gravity_m_s2_for_planet_case(planet_case: dict) -> float:
+    return (const.G * planet_case["mass"] / planet_case["radius"] ** 2).to_value(u.m / u.s**2)
+
+
+def scalar_sweep_output_slug(system_def: AdvancedSystem) -> str:
+    return (
+        f"{base_mass_loss.safe_name(system_def.planet_key)}_"
+        f"{base_mass_loss.safe_name(system_def.star_key)}_"
+        f"{float(system_def.distance_au):g}AU"
+    )
+
+
+def write_scalar_sweep_outputs(
+    rows: List[dict],
+    systems: List[AdvancedSystem],
+    output_dir: pathlib.Path,
+    value_field: str,
+    file_stem: str,
+    x_label: str,
+    x_unit: str,
+    note: str,
+    planet_case_builder,
+) -> None:
+    if not rows:
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+
+    for system_def in systems:
+        system_rows_all = [
+            row
+            for row in rows
+            if row.get("test_family") == system_def.test_family
+            and row.get("planet") == system_def.planet_key
+            and row.get("star") == system_def.star_key
+            and float(row.get("distance_AU", np.nan)) == float(system_def.distance_au)
+        ]
+        if not system_rows_all:
+            continue
+
+        x_values_all = sorted({float(row[value_field]) for row in system_rows_all if row.get(value_field, "") != ""})
+        totals = []
+        x_values = []
+        unit_values = []
+        ratio_values = []
+        last_mass_info = None
+
+        for x_value in x_values_all:
+            total_row = total_row_from_species_rows(scalar_system_rows(rows, system_def, value_field, x_value))
+            if total_row is None:
+                continue
+
+            x_values.append(x_value)
+            total_row[value_field] = x_value
+            totals.append(total_row)
+
+            planet_case = planet_case_builder(system_def.planet_key, x_value)
+            last_mass_info = base_mass_loss.planet_reference_mass_info(system_def.planet_key, planet_case, exobase_rows)
+            mdot_array = np.asarray([float(total_row["mass_loss_rate_g_s"])], dtype=float)
+            unit_values.append(base_mass_loss.mass_loss_in_planet_unit_per_year(mdot_array, planet_case)[0])
+            ratio_values.append(
+                base_mass_loss.mass_loss_over_reference_mass_per_second(
+                    mdot_array,
+                    system_def.planet_key,
+                    planet_case,
+                    exobase_rows,
+                )[0][0]
+            )
+
+        if not totals or last_mass_info is None:
+            continue
+
+        g_s_matrix = np.asarray([float(row["mass_loss_rate_g_s"]) for row in totals], dtype=float).reshape(-1, 1)
+
+        slug = scalar_sweep_output_slug(system_def)
+        series_value = [f"{system_def.star_key}_{float(system_def.distance_au):g}AU"]
+        column_name = [f"{base_mass_loss.safe_name(system_def.star_key)}_{float(system_def.distance_au):g}AU"]
+        base_metadata = {
+            "planet": system_def.planet_key,
+            "star": system_def.star_key,
+            "distance_AU": float(system_def.distance_au),
+            "species": "TOTAL_INCLUDED_SPECIES",
+            "include_stellar_gravity": INCLUDE_STELLAR_GRAVITY,
+            "method": "advanced_trajectory_recomputed_acceleration",
+            "n_rho": N_RHO,
+            "n_x": N_X,
+            "column_steps": COLUMN_STEPS,
+            "rho_grid_power": RHO_GRID_POWER,
+            "log_column_bin_dex": LOG_COLUMN_BIN_DEX,
+            "dt_min_s": DT_MIN_S,
+            "dt_max_s": DT_MAX_S,
+            "max_steps": MAX_STEPS,
+            "max_time_s": MAX_TIME_S,
+            "planet_category": last_mass_info["planet_category"],
+            "reference_mass_kind": last_mass_info["reference_mass_kind"],
+            "reference_mass_unit_name": last_mass_info["reference_mass_unit_name"],
+            "reference_mass_note": "reference mass is recomputed for each sweep value",
+            "note": note,
+        }
+
+        g_s_path = output_dir / f"{slug}_total_mass_loss_vs_{file_stem}.txt"
+        base_mass_loss.save_mass_loss_matrix_txt(
+            g_s_path,
+            dataset_name=f"{slug}_total_mass_loss_vs_{file_stem}",
+            x_label=x_label,
+            x_unit=x_unit,
+            y_label="Total included-species mass-loss rate",
+            y_unit="g/s",
+            x_values=x_values,
+            y_matrix=g_s_matrix,
+            series_values=series_value,
+            series_label="system",
+            series_unit="star_distance",
+            column_names=column_name,
+            extra_metadata=base_metadata,
+        )
+
+        unit_suffix = last_mass_info["reference_mass_unit_name"]
+        unit_path = output_dir / f"{slug}_total_mass_loss_vs_{file_stem}_{unit_suffix}_yr.txt"
+        base_mass_loss.save_mass_loss_matrix_txt(
+            unit_path,
+            dataset_name=f"{slug}_total_mass_loss_vs_{file_stem}_{unit_suffix}_yr",
+            x_label=x_label,
+            x_unit=x_unit,
+            y_label="Total included-species mass-loss rate",
+            y_unit=f"{unit_suffix}/yr",
+            x_values=x_values,
+            y_matrix=np.asarray(unit_values, dtype=float).reshape(-1, 1),
+            series_values=series_value,
+            series_label="system",
+            series_unit="star_distance",
+            column_names=column_name,
+            extra_metadata={**base_metadata, "rate_unit_name": f"{unit_suffix}/yr"},
+        )
+
+        ratio_path = output_dir / f"{slug}_total_mass_loss_ratio_vs_{file_stem}.txt"
+        base_mass_loss.save_mass_loss_matrix_txt(
+            ratio_path,
+            dataset_name=f"{slug}_total_mass_loss_ratio_vs_{file_stem}",
+            x_label=x_label,
+            x_unit=x_unit,
+            y_label="Total included-species specific mass-loss rate",
+            y_unit="1/s",
+            x_values=x_values,
+            y_matrix=np.asarray(ratio_values, dtype=float).reshape(-1, 1),
+            series_values=series_value,
+            series_label="system",
+            series_unit="star_distance",
+            column_names=column_name,
+            extra_metadata={**base_metadata, "ratio_definition": "Mdot / M_reference(parameter)"},
+        )
+
+        reference_kind_key = (
+            "whole_atmosphere" if last_mass_info["reference_mass_kind"] == "whole_atmosphere" else "whole_planet"
+        )
+        summary_path = output_dir / f"{slug}_{file_stem}_sweep_summary.txt"
+        with summary_path.open("w", encoding="utf-8") as f:
+            f.write("Advanced Parameter Sweep Summary\n")
+            f.write("===============================\n")
+            f.write(f"test_family: {system_def.test_family}\n")
+            f.write(f"planet: {system_def.planet_key}\n")
+            f.write(f"star_template: {system_def.star_key}\n")
+            f.write(f"actual_stellar_teff_K: {base_mass_loss.infer_teff_from_star_template(system_def.star_key)}\n")
+            f.write(f"distance_AU: {float(system_def.distance_au)}\n")
+            f.write(f"x_label: {x_label}\n")
+            f.write(f"x_unit: {x_unit}\n")
+            f.write(f"x_values: {', '.join(f'{value:.6e}' for value in x_values)}\n")
+            f.write(f"planet_category: {last_mass_info['planet_category']}\n")
+            f.write(f"reference_mass_kind: {last_mass_info['reference_mass_kind']}\n")
+            f.write(
+                f"reference_mass_note: {reference_kind_key} mass is recomputed for each sweep value "
+                "when forming the ratio\n"
+            )
+            f.write(f"rate_unit_name: {last_mass_info['rate_unit_name']}\n")
+            f.write(f"g_s_file: {g_s_path.name}\n")
+            f.write(f"planet_unit_file: {unit_path.name}\n")
+            f.write(f"ratio_file: {ratio_path.name}\n")
+
+
+def run_mu_sweeps() -> None:
+    configure_base_module()
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+    systems = build_mu_sweep_systems()
+    all_rows = load_scalar_checkpoint_rows(MU_SWEEP_CHECKPOINT_PATH, "mu_amu") if USE_CHECKPOINT else []
+    completed_rows = scalar_completed_row_keys(all_rows, "mu_amu")
+    if all_rows:
+        print(f"Loaded advanced mu checkpoint with {len(all_rows)} completed species rows")
+        write_scalar_sweep_outputs(
+            all_rows,
+            systems,
+            MU_SWEEP_OUTPUT_DIR,
+            "mu_amu",
+            "mu",
+            "Mean molecular mass",
+            "amu",
+            "Advanced trajectory total mass-loss rate as a function of mean molecular mass.",
+            build_mu_sweep_planet_case,
+        )
+
+    for system_def in systems:
+        species_template = selected_species_for_planet(base_mass_loss.get_planet_template(system_def.planet_key))
+        if not species_template:
+            print(f"Skipping {system_def.test_family}: no species selected")
+            continue
+
+        for mu_amu in MU_SWEEP_VALUES_AMU:
+            planet_case = build_mu_sweep_planet_case(system_def.planet_key, mu_amu)
+            species_list = selected_species_for_planet(planet_case)
+            planet = base_mass_loss.build_planet(planet_case)
+            star = base_mass_loss.get_star(system_def.star_key)
+            system = base_mass_loss.PlanetarySystem(planet, star, system_def.distance_au * u.AU)
+            existing = scalar_system_rows(all_rows, system_def, "mu_amu", mu_amu)
+            if existing:
+                print(
+                    f"\n--- Advanced mu sweep: {system_def.planet_key} / {system_def.star_key} / "
+                    f"{float(system_def.distance_au):g} AU / mu={mu_amu:.1f} "
+                    f"({len(existing)}/{len(species_list)} species already saved) ---"
+                )
+                write_scalar_sweep_outputs(
+                    all_rows,
+                    systems,
+                    MU_SWEEP_OUTPUT_DIR,
+                    "mu_amu",
+                    "mu",
+                    "Mean molecular mass",
+                    "amu",
+                    "Advanced trajectory total mass-loss rate as a function of mean molecular mass.",
+                    build_mu_sweep_planet_case,
+                )
+            else:
+                print(
+                    f"\n--- Advanced mu sweep: {system_def.planet_key}, star={system_def.star_key} "
+                    f"({base_mass_loss.infer_teff_from_star_template(system_def.star_key)} K), "
+                    f"distance={float(system_def.distance_au):g} AU, mu={mu_amu:.1f} ---"
+                )
+
+            for species in species_list:
+                current_key = scalar_row_key_from_values(
+                    system_def.test_family,
+                    system_def.planet_key,
+                    species,
+                    system_def.star_key,
+                    system_def.distance_au,
+                    "mu_amu",
+                    mu_amu,
+                )
+                if current_key in completed_rows:
+                    print(f"Skipping completed mu species: {system_def.planet_key} / {species} / mu={mu_amu:.1f}")
+                    continue
+
+                species_start = time.perf_counter()
+                try:
+                    row = mass_loss_for_species_advanced(
+                        system_def.test_family,
+                        system_def.planet_key,
+                        system_def.star_key,
+                        system_def.distance_au,
+                        species,
+                        planet_case,
+                        system,
+                        exobase_rows,
+                    )
+                except Exception as exc:
+                    print(f"Skipping mu sweep {system_def.planet_key} {species}: {type(exc).__name__}: {exc}")
+                    continue
+
+                row["mu_amu"] = float(mu_amu)
+                all_rows.append(row)
+                completed_rows.add(current_key)
+                if USE_CHECKPOINT:
+                    save_checkpoint_rows(all_rows, MU_SWEEP_CHECKPOINT_PATH)
+                write_scalar_sweep_outputs(
+                    all_rows,
+                    systems,
+                    MU_SWEEP_OUTPUT_DIR,
+                    "mu_amu",
+                    "mu",
+                    "Mean molecular mass",
+                    "amu",
+                    "Advanced trajectory total mass-loss rate as a function of mean molecular mass.",
+                    build_mu_sweep_planet_case,
+                )
+                print(
+                    f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+                    f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
+                    f"mean_t={row['mean_escape_time_s']:.3e} s, "
+                    f"cache_bins={row['photon_pressure_cache_bins']}, "
+                    f"elapsed={time.perf_counter() - species_start:.1f} s"
+                )
+
+            total_row = total_row_from_species_rows(scalar_system_rows(all_rows, system_def, "mu_amu", mu_amu))
+            if total_row is not None:
+                print(
+                    f"TOTAL_INCLUDED_SPECIES for {system_def.planet_key} at mu={mu_amu:.1f}: "
+                    f"Mdot={total_row['mass_loss_rate_g_s']:.3e} g/s, "
+                    f"escaping_mass={total_row['escaping_shell_mass_g']:.3e} g"
+                )
+
+    if USE_CHECKPOINT and all_rows:
+        save_checkpoint_rows(all_rows, MU_SWEEP_CHECKPOINT_PATH)
+    write_scalar_sweep_outputs(
+        all_rows,
+        systems,
+        MU_SWEEP_OUTPUT_DIR,
+        "mu_amu",
+        "mu",
+        "Mean molecular mass",
+        "amu",
+        "Advanced trajectory total mass-loss rate as a function of mean molecular mass.",
+        build_mu_sweep_planet_case,
+    )
+
+
+def run_surface_gravity_sweep() -> None:
+    configure_base_module()
+    exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
+    system_def = build_surface_gravity_sweep_system()
+    all_rows = load_scalar_checkpoint_rows(SURFACE_GRAVITY_SWEEP_CHECKPOINT_PATH, "surface_gravity_m_s2") if USE_CHECKPOINT else []
+    completed_rows = scalar_completed_row_keys(all_rows, "surface_gravity_m_s2")
+    species_template = selected_species_for_planet(base_mass_loss.get_planet_template(system_def.planet_key))
+    if not species_template:
+        print(f"Skipping {system_def.test_family}: no species selected")
+        return
+
+    if all_rows:
+        print(f"Loaded advanced surface-gravity checkpoint with {len(all_rows)} completed species rows")
+        write_scalar_sweep_outputs(
+            all_rows,
+            [system_def],
+            SURFACE_GRAVITY_SWEEP_OUTPUT_DIR,
+            "surface_gravity_m_s2",
+            "surface_gravity",
+            "Surface gravity",
+            "m/s^2",
+            "Advanced trajectory total mass-loss rate as a function of surface gravity (varying mass at fixed radius).",
+            lambda planet_key, g_value: build_surface_gravity_sweep_planet_case(
+                planet_key,
+                float(g_value) / surface_gravity_m_s2_for_planet_case(base_mass_loss.get_planet_template(planet_key)),
+            ),
+        )
+
+    base_g = surface_gravity_m_s2_for_planet_case(base_mass_loss.get_planet_template(system_def.planet_key))
+    for mass_scale in SURFACE_GRAVITY_MASS_SCALE_VALUES:
+        planet_case = build_surface_gravity_sweep_planet_case(system_def.planet_key, mass_scale)
+        species_list = selected_species_for_planet(planet_case)
+        planet = base_mass_loss.build_planet(planet_case)
+        star = base_mass_loss.get_star(system_def.star_key)
+        system = base_mass_loss.PlanetarySystem(planet, star, system_def.distance_au * u.AU)
+        g_surface = surface_gravity_m_s2_for_planet_case(planet_case)
+        existing = scalar_system_rows(all_rows, system_def, "surface_gravity_m_s2", g_surface)
+        if existing:
+            print(
+                f"\n--- Advanced surface-gravity sweep: {system_def.planet_key} / {system_def.star_key} / "
+                f"{float(system_def.distance_au):g} AU / g={g_surface:.3f} m/s^2 "
+                f"({len(existing)}/{len(species_list)} species already saved) ---"
+            )
+            write_scalar_sweep_outputs(
+                all_rows,
+                [system_def],
+                SURFACE_GRAVITY_SWEEP_OUTPUT_DIR,
+                "surface_gravity_m_s2",
+                "surface_gravity",
+                "Surface gravity",
+                "m/s^2",
+                "Advanced trajectory total mass-loss rate as a function of surface gravity (varying mass at fixed radius).",
+                lambda planet_key, g_value: build_surface_gravity_sweep_planet_case(
+                    planet_key,
+                    float(g_value) / base_g,
+                ),
+            )
+        else:
+            print(
+                f"\n--- Advanced surface-gravity sweep: {system_def.planet_key}, star={system_def.star_key} "
+                f"({base_mass_loss.infer_teff_from_star_template(system_def.star_key)} K), "
+                f"distance={float(system_def.distance_au):g} AU, g={g_surface:.3f} m/s^2 ---"
+            )
+
+        for species in species_list:
+            current_key = scalar_row_key_from_values(
+                system_def.test_family,
+                system_def.planet_key,
+                species,
+                system_def.star_key,
+                system_def.distance_au,
+                "surface_gravity_m_s2",
+                g_surface,
+            )
+            if current_key in completed_rows:
+                print(f"Skipping completed surface-gravity species: {system_def.planet_key} / {species} / g={g_surface:.3f}")
+                continue
+
+            species_start = time.perf_counter()
+            try:
+                row = mass_loss_for_species_advanced(
+                    system_def.test_family,
+                    system_def.planet_key,
+                    system_def.star_key,
+                    system_def.distance_au,
+                    species,
+                    planet_case,
+                    system,
+                    exobase_rows,
+                )
+            except Exception as exc:
+                print(f"Skipping surface-gravity sweep {system_def.planet_key} {species}: {type(exc).__name__}: {exc}")
+                continue
+
+            row["surface_gravity_m_s2"] = float(g_surface)
+            row["mass_scale"] = float(mass_scale)
+            all_rows.append(row)
+            completed_rows.add(current_key)
+            if USE_CHECKPOINT:
+                save_checkpoint_rows(all_rows, SURFACE_GRAVITY_SWEEP_CHECKPOINT_PATH)
+            write_scalar_sweep_outputs(
+                all_rows,
+                [system_def],
+                SURFACE_GRAVITY_SWEEP_OUTPUT_DIR,
+                "surface_gravity_m_s2",
+                "surface_gravity",
+                "Surface gravity",
+                "m/s^2",
+                "Advanced trajectory total mass-loss rate as a function of surface gravity (varying mass at fixed radius).",
+                lambda planet_key, g_value: build_surface_gravity_sweep_planet_case(
+                    planet_key,
+                    float(g_value) / base_g,
+                ),
+            )
+            print(
+                f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+                f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
+                f"mean_t={row['mean_escape_time_s']:.3e} s, "
+                f"cache_bins={row['photon_pressure_cache_bins']}, "
+                f"elapsed={time.perf_counter() - species_start:.1f} s"
+            )
+
+        total_row = total_row_from_species_rows(scalar_system_rows(all_rows, system_def, "surface_gravity_m_s2", g_surface))
+        if total_row is not None:
+            print(
+                f"TOTAL_INCLUDED_SPECIES for {system_def.planet_key} at g={g_surface:.3f} m/s^2: "
+                f"Mdot={total_row['mass_loss_rate_g_s']:.3e} g/s, "
+                f"escaping_mass={total_row['escaping_shell_mass_g']:.3e} g"
+            )
+
+    if USE_CHECKPOINT and all_rows:
+        save_checkpoint_rows(all_rows, SURFACE_GRAVITY_SWEEP_CHECKPOINT_PATH)
+    write_scalar_sweep_outputs(
+        all_rows,
+        [system_def],
+        SURFACE_GRAVITY_SWEEP_OUTPUT_DIR,
+        "surface_gravity_m_s2",
+        "surface_gravity",
+        "Surface gravity",
+        "m/s^2",
+        "Advanced trajectory total mass-loss rate as a function of surface gravity (varying mass at fixed radius).",
+        lambda planet_key, g_value: build_surface_gravity_sweep_planet_case(
+            planet_key,
+            float(g_value) / base_g,
+        ),
+    )
 
 
 def mass_loss_for_species_advanced(
@@ -889,6 +1890,10 @@ def mass_loss_for_species_advanced(
         "target_stellar_teff_K": base_mass_loss.infer_teff_from_star_template(star_key),
         "actual_stellar_teff_K": base_mass_loss.infer_teff_from_star_template(star_key),
         "distance_AU": float(distance_au),
+        "P0_bar": "",
+        "mu_amu": "",
+        "surface_gravity_m_s2": "",
+        "mass_scale": "",
         "species": species,
         "mixing_ratio": abundance,
         "z_exobase_km": z_exobase.to_value(u.km),
@@ -922,7 +1927,7 @@ def mass_loss_for_species_advanced(
     }
 
 
-def main() -> None:
+def run_standard_systems() -> None:
     configure_base_module()
     start_time = time.perf_counter()
     exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
@@ -1018,6 +2023,24 @@ def main() -> None:
     if USE_CHECKPOINT and all_rows:
         save_checkpoint_rows(all_rows, CHECKPOINT_PATH)
     print(f"Total elapsed time: {time.perf_counter() - start_time:.1f} s")
+
+
+def main() -> None:
+    if any(
+        [
+            ENABLE_SOLAR_SYSTEM_FIXED,
+            ENABLE_ROCKY_EXOPLANETS_PLAUSIBLE,
+            ENABLE_GAS_PLANETS_PLAUSIBLE,
+            ENABLE_DISTANCE_SWEEPS,
+        ]
+    ):
+        run_standard_systems()
+    if ENABLE_P0_SWEEP:
+        run_p0_sweep()
+    if ENABLE_MU_SWEEPS:
+        run_mu_sweeps()
+    if ENABLE_SURFACE_GRAVITY_SWEEP:
+        run_surface_gravity_sweep()
 
 
 if __name__ == "__main__":
