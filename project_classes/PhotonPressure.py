@@ -12,6 +12,10 @@ import time
 
 class PhotonPressure:
     _molecule_flux_interp_cache = {}
+
+    @classmethod
+    def clear_molecule_flux_cache(cls):
+        cls._molecule_flux_interp_cache.clear()
     
     def __init__(self, broadening_profile: BroadeningProfile | BroadeningProfileMolecule, star: Star):
         """

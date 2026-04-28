@@ -699,6 +699,15 @@ class BroadeningProfileMolecule:
         self.sigma_total_err = self.sigmaArray_err
         return self.sigmaArray, self.sigmaArray_err
 
+    def clear_temperature_cache(self, keep_current: bool = False):
+        self._sigma_cache_by_temp.clear()
+        self.partition_function_cache.clear()
+        if not keep_current:
+            self.sigmaArray = None
+            self.sigmaArray_err = None
+            self.sigma_total = None
+            self.sigma_total_err = None
+
     def plot_total_crossection(self, xscale: str = 'linear', yscale: str = 'log', xlim: tuple = None):
         lam = self.lam_grid.to_value(u.AA)
         sig = self.sigmaArray.to_value(u.cm**2)

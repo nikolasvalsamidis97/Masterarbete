@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import gc
 from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
@@ -35,6 +36,11 @@ WAVEMAX = 50000 * u.AA
 NPTS_ATOM = 150
 B_VALUES_KMS = [0.0, 1.0, 10.0, 100.0]
 B_ZERO_EFFECTIVE = 1.0e-20 * u.km / u.s
+# Use a finite grid-construction velocity only to avoid the b=0 molecule case
+# collapsing to the hard dlam floor and creating a multi-billion-point grid.
+# This does not change the physical b used in the line profile itself.
+MOLECULE_ZERO_B_GRID_KMS = 0.1 * u.km / u.s
+CLEAR_MOLECULE_CACHES_AFTER_SPECIES = True
 
 N_SELECTED_STARS = 8
 PRINT_TAU_CHECK_SUMMARY = False
@@ -207,11 +213,29 @@ def get_molecule_profile(species: str, b_kms: float) -> BroadeningProfileMolecul
                 localdatabase=fetch_kwargs.get("localdatabase", "exomol_data"),
             )
 
-        profile = BroadeningProfileMolecule(molecule, effective_b_value(b_kms), profileType="Voigt")
+        profile_kwargs = {
+            "molecule": molecule,
+            "b": effective_b_value(b_kms),
+            "profileType": "Voigt",
+        }
+        if float(b_kms) == 0.0:
+            rep = 0.5 * (WAVEMIN + WAVEMAX)
+            doppler_sigma = (rep * (MOLECULE_ZERO_B_GRID_KMS / (299792.458 * u.km / u.s))).to(u.AA)
+            profile_kwargs["dlam"] = np.maximum((doppler_sigma / 3.0).to(u.AA), 1e-5 * u.AA)
+
+        profile = BroadeningProfileMolecule(**profile_kwargs)
         if hasattr(profile, "temp_strength_rel_cutoff"):
             profile.temp_strength_rel_cutoff = 1e-8
         molecule_profile_cache[cache_key] = profile
     return molecule_profile_cache[cache_key]
+
+
+def molecule_effective_sigma(profile: BroadeningProfileMolecule, temp: u.Quantity) -> u.Quantity:
+    profile.apply_boltzmann_weights(temp, verbose=False)
+    sigma_total = profile.sigmaArray.to(u.cm**2)
+    if sigma_total.ndim == 0:
+        return float(sigma_total.value) * u.cm**2
+    return np.nanmax(sigma_total)
 
 
 # -----------------------------------------------------------------------------
@@ -292,13 +316,7 @@ def tau_check_atom(species: str, b_kms: float, temp: u.Quantity, star: Star, nco
 
 def tau_one_ncol_molecule(species: str, b_kms: float, temp: u.Quantity, star: Star) -> u.Quantity:
     profile = get_molecule_profile(species, b_kms)
-    profile.apply_boltzmann_weights(temp, verbose=False)
-    sigma_total = profile.sigmaArray.to(u.cm**2)
-
-    if sigma_total.ndim == 0:
-        sigma_eff = (float(sigma_total.value)) * u.cm**2
-    else:
-        sigma_eff = np.nanmax(sigma_total)
+    sigma_eff = molecule_effective_sigma(profile, temp)
 
     if not np.isfinite(sigma_eff.value) or sigma_eff <= 0 * u.cm**2:
         return np.nan / u.cm**2
@@ -309,13 +327,7 @@ def tau_one_ncol_molecule(species: str, b_kms: float, temp: u.Quantity, star: St
 def tau_check_molecule(species: str, b_kms: float, temp: u.Quantity, star: Star, ncol: u.Quantity) -> float:
     """Control check: evaluate tau for the chosen Ncol using the same effective sigma."""
     profile = get_molecule_profile(species, b_kms)
-    profile.apply_boltzmann_weights(temp, verbose=False)
-    sigma_total = profile.sigmaArray.to(u.cm**2)
-
-    if sigma_total.ndim == 0:
-        sigma_eff = (float(sigma_total.value)) * u.cm**2
-    else:
-        sigma_eff = np.nanmax(sigma_total)
+    sigma_eff = molecule_effective_sigma(profile, temp)
 
     if not np.isfinite(sigma_eff.value) or sigma_eff <= 0 * u.cm**2:
         return np.nan
@@ -446,6 +458,14 @@ def calculate_category_rows(species_list: Iterable[str], selected_stars: List[di
                         "beta_err_tau1": beta_err_tau1,
                     }
                 )
+
+        if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
+            for profile in molecule_profile_cache.values():
+                if hasattr(profile, "clear_temperature_cache"):
+                    profile.clear_temperature_cache(keep_current=False)
+            molecule_profile_cache.clear()
+            PhotonPressure.clear_molecule_flux_cache()
+            gc.collect()
 
     return rows
 
