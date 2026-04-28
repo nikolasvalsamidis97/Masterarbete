@@ -123,7 +123,7 @@ def build_one_case(grid_b_kms: float, stars: Dict[str, Star]) -> List[dict]:
 
     sigma_eff = molecule_effective_sigma(profile)
     n_tau1 = (1.0 / sigma_eff).to(1 / u.cm**2)
-    sigma_area = np.trapz(
+    sigma_area = np.trapezoid(
         profile.sigmaArray.to_value(u.cm**2),
         profile.lam_grid.to_value(u.AA),
     )
