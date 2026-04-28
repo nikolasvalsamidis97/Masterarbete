@@ -61,6 +61,16 @@ OUTPUT_DIR = pathlib.Path(__file__).resolve().parent
 RAW_ATOMS_NAME = "beta_bigtable_atoms.txt"
 RAW_MOLECULES_NAME = "beta_bigtable_molecules.txt"
 
+
+def save_rows_atomic(rows: List[dict], output_path: pathlib.Path) -> None:
+    if not SAVE_RAW_TXT:
+        return
+    if not rows:
+        return
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    pd.DataFrame(rows).to_csv(tmp_path, index=False, sep="\t")
+    tmp_path.replace(output_path)
+
 def active_run_suffix() -> str:
     parts = []
     if INCLUDE_ATOMS:
@@ -407,7 +417,12 @@ def broadening_label(b_kms: float) -> str:
     return f"{float(b_kms):g}"
 
 
-def calculate_category_rows(species_list: Iterable[str], selected_stars: List[dict], category: str) -> List[dict]:
+def calculate_category_rows(
+    species_list: Iterable[str],
+    selected_stars: List[dict],
+    category: str,
+    progress_output_path: pathlib.Path | None = None,
+) -> List[dict]:
     rows: List[dict] = []
 
     for species in species_list:
@@ -458,6 +473,8 @@ def calculate_category_rows(species_list: Iterable[str], selected_stars: List[di
                         "beta_err_tau1": beta_err_tau1,
                     }
                 )
+                if progress_output_path is not None:
+                    save_rows_atomic(rows, progress_output_path)
 
         if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
             for profile in molecule_profile_cache.values():
@@ -533,7 +550,13 @@ def main() -> None:
     (OUTPUT_DIR / SELECTED_STARS_TEX_NAME).write_text(selected_stars_tex, encoding="utf-8")
 
     if INCLUDE_ATOMS:
-        atom_rows = calculate_category_rows(ATOM_SPECIES, selected_stars, category="atom")
+        atom_output_path = OUTPUT_DIR / RAW_ATOMS_NAME
+        atom_rows = calculate_category_rows(
+            ATOM_SPECIES,
+            selected_stars,
+            category="atom",
+            progress_output_path=atom_output_path,
+        )
         atom_df = rows_to_dataframe(atom_rows)
         if PRINT_TAU_CHECK_SUMMARY and (not atom_df.empty) and ("tau_check" in atom_df.columns):
             tau_summary = atom_df["tau_check"].dropna()
@@ -546,10 +569,16 @@ def main() -> None:
             print("No atom rows were produced. Skipping atom txt output.")
         else:
             if SAVE_RAW_TXT:
-                atom_df.to_csv(OUTPUT_DIR / RAW_ATOMS_NAME, index=False, sep="\t")
+                save_rows_atomic(atom_rows, atom_output_path)
 
     if INCLUDE_MOLECULES:
-        molecule_rows = calculate_category_rows(MOLECULE_SPECIES, selected_stars, category="molecule")
+        molecule_output_path = OUTPUT_DIR / RAW_MOLECULES_NAME
+        molecule_rows = calculate_category_rows(
+            MOLECULE_SPECIES,
+            selected_stars,
+            category="molecule",
+            progress_output_path=molecule_output_path,
+        )
         molecule_df = rows_to_dataframe(molecule_rows)
         if PRINT_TAU_CHECK_SUMMARY and (not molecule_df.empty) and ("tau_check" in molecule_df.columns):
             tau_summary = molecule_df["tau_check"].dropna()
@@ -562,7 +591,7 @@ def main() -> None:
             print("No molecule rows were produced. Skipping molecule txt output.")
         else:
             if SAVE_RAW_TXT:
-                molecule_df.to_csv(OUTPUT_DIR / RAW_MOLECULES_NAME, index=False, sep="\t")
+                save_rows_atomic(molecule_rows, molecule_output_path)
 
     print(f"Saved outputs to {OUTPUT_DIR}")
 
