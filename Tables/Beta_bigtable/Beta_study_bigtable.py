@@ -22,8 +22,8 @@ from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_t
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-INCLUDE_ATOMS = True
-INCLUDE_MOLECULES = False
+INCLUDE_ATOMS = False
+INCLUDE_MOLECULES = True
 
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
