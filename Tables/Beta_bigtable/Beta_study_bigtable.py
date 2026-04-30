@@ -22,8 +22,8 @@ from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_t
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-INCLUDE_ATOMS = False
-INCLUDE_MOLECULES = True
+INCLUDE_ATOMS = True
+INCLUDE_MOLECULES = False
 
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
@@ -41,9 +41,14 @@ B_ZERO_EFFECTIVE = 1.0e-20 * u.km / u.s
 # This does not change the physical b used in the line profile itself.
 MOLECULE_ZERO_B_GRID_KMS = 0.1 * u.km / u.s
 CLEAR_MOLECULE_CACHES_AFTER_SPECIES = True
+HALF_BETA_FRACTION = 0.5
+HALF_BETA_SEARCH_DECADES = 12
+HALF_BETA_REFINE_POINTS = 9
+BETA_SEARCH_CHUNK_SIZE = 8
+MIN_SEARCH_NCOL_CM2 = 1.0e-60
+MAX_SEARCH_NCOL_CM2 = 1.0e60
 
 N_SELECTED_STARS = 8
-PRINT_TAU_CHECK_SUMMARY = False
 
 # Star selection mode:
 #   "even_index"  -> evenly spaced through the template list
@@ -249,7 +254,7 @@ def molecule_effective_sigma(profile: BroadeningProfileMolecule, temp: u.Quantit
 
 
 # -----------------------------------------------------------------------------
-# Tau = 1 column densities
+# Reference column densities
 # -----------------------------------------------------------------------------
 def tau_one_ncol_atom(species: str, b_kms: float, temp: u.Quantity, star: Star) -> u.Quantity:
     profile = get_atom_profile(species, b_kms)
@@ -285,45 +290,6 @@ def tau_one_ncol_atom(species: str, b_kms: float, temp: u.Quantity, star: Star) 
     return (1.0 / sigma_eff).to(1 / u.cm**2)
 
 
-# -----------------------------------------------------------------------------
-# Tau checkers
-# -----------------------------------------------------------------------------
-
-def tau_check_atom(species: str, b_kms: float, temp: u.Quantity, star: Star, ncol: u.Quantity) -> float:
-    """Control check: evaluate tau for the chosen Ncol using the same effective sigma."""
-    profile = get_atom_profile(species, b_kms)
-    pp = PhotonPressure(profile, star)
-
-    weights_raw = np.asarray(pp.excitation_weights(temp), dtype=float)
-    sigma_raw = profile.sigmaArray.to(u.cm**2)
-
-    if weights_raw.ndim == 0:
-        weights_line = np.array([float(weights_raw)], dtype=float)
-    elif weights_raw.ndim == 1:
-        weights_line = weights_raw.astype(float)
-    else:
-        weights_line = np.asarray(weights_raw[:, 0], dtype=float)
-
-    if sigma_raw.ndim == 0:
-        sigma_line = np.array([float(sigma_raw.value)], dtype=float) * u.cm**2
-    elif sigma_raw.ndim == 1:
-        sigma_line = sigma_raw
-    else:
-        sigma_line = sigma_raw[:, 0]
-
-    n_common = min(len(weights_line), len(sigma_line))
-    if n_common == 0:
-        return np.nan
-
-    sigma_eff = np.nanmax(sigma_line[:n_common] * weights_line[:n_common]).to(u.cm**2)
-    if not np.isfinite(sigma_eff.value) or sigma_eff <= 0 * u.cm**2:
-        return np.nan
-
-    tau_value = (ncol * sigma_eff).decompose().value
-    return float(tau_value)
-
-
-
 def tau_one_ncol_molecule(species: str, b_kms: float, temp: u.Quantity, star: Star) -> u.Quantity:
     profile = get_molecule_profile(species, b_kms)
     sigma_eff = molecule_effective_sigma(profile, temp)
@@ -332,18 +298,6 @@ def tau_one_ncol_molecule(species: str, b_kms: float, temp: u.Quantity, star: St
         return np.nan / u.cm**2
 
     return (1.0 / sigma_eff).to(1 / u.cm**2)
-
-
-def tau_check_molecule(species: str, b_kms: float, temp: u.Quantity, star: Star, ncol: u.Quantity) -> float:
-    """Control check: evaluate tau for the chosen Ncol using the same effective sigma."""
-    profile = get_molecule_profile(species, b_kms)
-    sigma_eff = molecule_effective_sigma(profile, temp)
-
-    if not np.isfinite(sigma_eff.value) or sigma_eff <= 0 * u.cm**2:
-        return np.nan
-
-    tau_value = (ncol * sigma_eff).decompose().value
-    return float(tau_value)
 
 
 # -----------------------------------------------------------------------------
@@ -359,54 +313,170 @@ def beta_from_ncol(pp: PhotonPressure, star: Star, ncol: u.Quantity) -> Tuple[fl
     return beta_value, beta_err_value
 
 
-def beta_for_atom(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float, float, float, float]:
+def beta_curve_from_ncols(
+    pp: PhotonPressure,
+    star: Star,
+    ncols: np.ndarray,
+    chunk_size: int = BETA_SEARCH_CHUNK_SIZE,
+) -> Tuple[np.ndarray, np.ndarray]:
+    distance = DISTANCE_AU * u.AU
+    ncol_values = np.asarray(ncols, dtype=float).reshape(-1)
+    ncol_array = ncol_values / u.cm**2
+    F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(
+        ncol_array,
+        GAS_TEMPERATURE,
+        distance,
+        chunk_size=max(1, min(int(chunk_size), len(ncol_values))),
+    )
+    beta, beta_err = pp.beta_Values(F_ph_tot, F_ph_tot_err, star.mass, distance.to(u.cm))
+    return np.ravel(beta.value).astype(float), np.ravel(beta_err.value).astype(float)
+
+
+def clipped_reference_ncol_cm2(reference_ncol: u.Quantity | None) -> float:
+    if reference_ncol is None:
+        return 1.0
+
+    value = float(reference_ncol.to_value(1 / u.cm**2))
+    if not np.isfinite(value) or value <= 0.0:
+        return 1.0
+    return float(np.clip(value, MIN_SEARCH_NCOL_CM2, MAX_SEARCH_NCOL_CM2))
+
+
+def bracket_beta_half_crossing(
+    ncols_cm2: np.ndarray,
+    beta_values: np.ndarray,
+    target_beta: float,
+) -> Tuple[float, float, float, float] | None:
+    ncols = np.asarray(ncols_cm2, dtype=float).reshape(-1)
+    betas = np.asarray(beta_values, dtype=float).reshape(-1)
+
+    valid = np.isfinite(ncols) & (ncols > 0.0) & np.isfinite(betas)
+    ncols = ncols[valid]
+    betas = betas[valid]
+    if len(ncols) < 2:
+        return None
+
+    order = np.argsort(ncols)
+    ncols = ncols[order]
+    betas = betas[order]
+
+    for idx in range(1, len(ncols)):
+        beta_lo = betas[idx - 1]
+        beta_hi = betas[idx]
+        if beta_lo >= target_beta >= beta_hi:
+            return ncols[idx - 1], beta_lo, ncols[idx], beta_hi
+
+    return None
+
+
+def interpolate_half_beta_ncol(
+    ncol_lo_cm2: float,
+    beta_lo: float,
+    ncol_hi_cm2: float,
+    beta_hi: float,
+    target_beta: float,
+) -> float:
+    if not np.isfinite(beta_lo) or not np.isfinite(beta_hi):
+        return float(np.sqrt(ncol_lo_cm2 * ncol_hi_cm2))
+    if beta_lo == beta_hi:
+        return float(np.sqrt(ncol_lo_cm2 * ncol_hi_cm2))
+
+    x_lo = np.log10(ncol_lo_cm2)
+    x_hi = np.log10(ncol_hi_cm2)
+    frac = (target_beta - beta_lo) / (beta_hi - beta_lo)
+    frac = float(np.clip(frac, 0.0, 1.0))
+    return float(10 ** (x_lo + frac * (x_hi - x_lo)))
+
+
+def ncol_at_half_beta(
+    pp: PhotonPressure,
+    star: Star,
+    beta_zero: float,
+    reference_ncol: u.Quantity | None,
+    fraction: float = HALF_BETA_FRACTION,
+) -> u.Quantity:
+    if not np.isfinite(beta_zero) or beta_zero <= 0.0:
+        return np.nan / u.cm**2
+
+    target_beta = float(fraction) * float(beta_zero)
+    reference_cm2 = clipped_reference_ncol_cm2(reference_ncol)
+
+    min_exp = -HALF_BETA_SEARCH_DECADES
+    max_exp = HALF_BETA_SEARCH_DECADES
+    bracket = None
+
+    while bracket is None:
+        exponents = np.arange(min_exp, max_exp + 1, dtype=float)
+        ncol_grid = reference_cm2 * np.power(10.0, exponents)
+        ncol_grid = np.clip(ncol_grid, MIN_SEARCH_NCOL_CM2, MAX_SEARCH_NCOL_CM2)
+        ncol_grid = np.unique(ncol_grid)
+        beta_grid, _ = beta_curve_from_ncols(pp, star, ncol_grid)
+        bracket = bracket_beta_half_crossing(ncol_grid, beta_grid, target_beta)
+
+        if bracket is not None:
+            break
+
+        finite_mask = np.isfinite(beta_grid)
+        if not np.any(finite_mask):
+            return np.nan / u.cm**2
+
+        finite_betas = beta_grid[finite_mask]
+        if np.nanmin(finite_betas) > target_beta:
+            if np.max(ncol_grid) >= MAX_SEARCH_NCOL_CM2:
+                return np.nan / u.cm**2
+            min_exp += HALF_BETA_SEARCH_DECADES
+            max_exp += HALF_BETA_SEARCH_DECADES
+            continue
+
+        if np.nanmax(finite_betas) < target_beta:
+            if np.min(ncol_grid) <= MIN_SEARCH_NCOL_CM2:
+                return np.nan / u.cm**2
+            min_exp -= HALF_BETA_SEARCH_DECADES
+            max_exp -= HALF_BETA_SEARCH_DECADES
+            continue
+
+        return np.nan / u.cm**2
+
+    ncol_lo_cm2, beta_lo, ncol_hi_cm2, beta_hi = bracket
+    fine_grid = np.geomspace(ncol_lo_cm2, ncol_hi_cm2, HALF_BETA_REFINE_POINTS)
+    fine_betas, _ = beta_curve_from_ncols(pp, star, fine_grid)
+    refined_bracket = bracket_beta_half_crossing(fine_grid, fine_betas, target_beta)
+    if refined_bracket is not None:
+        ncol_lo_cm2, beta_lo, ncol_hi_cm2, beta_hi = refined_bracket
+
+    return interpolate_half_beta_ncol(ncol_lo_cm2, beta_lo, ncol_hi_cm2, beta_hi, target_beta) / u.cm**2
+
+
+def beta_for_atom(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float]:
     temp = GAS_TEMPERATURE
     profile = get_atom_profile(species, b_kms)
     pp = PhotonPressure(profile, star_info["star"])
 
-    n_tau0 = 0.0 / u.cm**2
-    beta_tau0, beta_err_tau0 = beta_from_ncol(pp, star_info["star"], n_tau0)
-
-    n_tau1 = tau_one_ncol_atom(species, b_kms, temp, star_info["star"])
-    if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
-        return float(n_tau0.to_value(1 / u.cm**2)), beta_tau0, beta_err_tau0, np.nan, np.nan, np.nan, np.nan
-
-    beta_tau1, beta_err_tau1 = beta_from_ncol(pp, star_info["star"], n_tau1)
-    tau_check = tau_check_atom(species, b_kms, temp, star_info["star"], n_tau1)
-    return (
-        float(n_tau0.to_value(1 / u.cm**2)),
-        beta_tau0,
-        beta_err_tau0,
-        float(n_tau1.to_value(1 / u.cm**2)),
-        beta_tau1,
-        beta_err_tau1,
-        tau_check,
+    beta_zero, beta_err_zero = beta_from_ncol(pp, star_info["star"], 0.0 / u.cm**2)
+    reference_ncol = tau_one_ncol_atom(species, b_kms, temp, star_info["star"])
+    n_half_beta = ncol_at_half_beta(pp, star_info["star"], beta_zero, reference_ncol)
+    n_half_beta_cm2 = (
+        float(n_half_beta.to_value(1 / u.cm**2))
+        if np.isfinite(n_half_beta.value) and n_half_beta > 0 / u.cm**2
+        else np.nan
     )
+    return beta_zero, beta_err_zero, n_half_beta_cm2
 
 
 
-def beta_for_molecule(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float, float, float, float, float]:
+def beta_for_molecule(species: str, b_kms: float, star_info: dict) -> Tuple[float, float, float]:
     temp = GAS_TEMPERATURE
     profile = get_molecule_profile(species, b_kms)
     pp = PhotonPressure(profile, star_info["star"])
-    n_tau0 = 0.0 / u.cm**2
-    beta_tau0, beta_err_tau0 = beta_from_ncol(pp, star_info["star"], n_tau0)
-
-    n_tau1 = tau_one_ncol_molecule(species, b_kms, temp, star_info["star"])
-    if not np.isfinite(n_tau1.value) or n_tau1 <= 0 / u.cm**2:
-        return float(n_tau0.to_value(1 / u.cm**2)), beta_tau0, beta_err_tau0, np.nan, np.nan, np.nan, np.nan
-
-    beta_tau1, beta_err_tau1 = beta_from_ncol(pp, star_info["star"], n_tau1)
-    tau_check = tau_check_molecule(species, b_kms, temp, star_info["star"], n_tau1)
-    return (
-        float(n_tau0.to_value(1 / u.cm**2)),
-        beta_tau0,
-        beta_err_tau0,
-        float(n_tau1.to_value(1 / u.cm**2)),
-        beta_tau1,
-        beta_err_tau1,
-        tau_check,
+    beta_zero, _ = beta_from_ncol(pp, star_info["star"], 0.0 / u.cm**2)
+    reference_ncol = tau_one_ncol_molecule(species, b_kms, temp, star_info["star"])
+    n_half_beta = ncol_at_half_beta(pp, star_info["star"], beta_zero, reference_ncol)
+    n_half_beta_cm2 = (
+        float(n_half_beta.to_value(1 / u.cm**2))
+        if np.isfinite(n_half_beta.value) and n_half_beta > 0 / u.cm**2
+        else np.nan
     )
+    return beta_zero, np.nan, n_half_beta_cm2
 
 
 def broadening_label(b_kms: float) -> str:
@@ -432,30 +502,12 @@ def calculate_category_rows(
             for star_info in selected_stars:
                 try:
                     if category == "atom":
-                        (
-                            n_tau0_cm2,
-                            beta_tau0,
-                            beta_err_tau0,
-                            n_tau1_cm2,
-                            beta_tau1,
-                            beta_err_tau1,
-                            tau_check,
-                        ) = beta_for_atom(species, b_kms, star_info)
+                        beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_atom(species, b_kms, star_info)
                     else:
-                        (
-                            n_tau0_cm2,
-                            beta_tau0,
-                            beta_err_tau0,
-                            n_tau1_cm2,
-                            beta_tau1,
-                            beta_err_tau1,
-                            tau_check,
-                        ) = beta_for_molecule(species, b_kms, star_info)
+                        beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_molecule(species, b_kms, star_info)
                 except Exception as exc:
                     print(f"Skipping {category} species={species}, b={b_label}, star={star_info['key']}: {type(exc).__name__}: {exc}")
-                    n_tau0_cm2 = 0.0
-                    beta_tau0, beta_err_tau0 = np.nan, np.nan
-                    n_tau1_cm2, beta_tau1, beta_err_tau1, tau_check = np.nan, np.nan, np.nan, np.nan
+                    beta_zero, beta_err_zero, n_half_beta_cm2 = np.nan, np.nan, np.nan
 
                 rows.append(
                     {
@@ -464,13 +516,9 @@ def calculate_category_rows(
                         "b_effective_kms": float(effective_b_value(b_kms).to_value(u.km / u.s)),
                         "star_key": star_info["key"],
                         "teff_k": star_info["teff_k"],
-                        "n_tau0_cm2": n_tau0_cm2,
-                        "beta_tau0": beta_tau0,
-                        "beta_err_tau0": beta_err_tau0,
-                        "n_tau1_cm2": n_tau1_cm2,
-                        "tau_check": tau_check,
-                        "beta_tau1": beta_tau1,
-                        "beta_err_tau1": beta_err_tau1,
+                        "beta": beta_zero,
+                        "beta_err": beta_err_zero,
+                        "n_half_beta_cm2": n_half_beta_cm2,
                     }
                 )
                 if progress_output_path is not None:
@@ -558,13 +606,6 @@ def main() -> None:
             progress_output_path=atom_output_path,
         )
         atom_df = rows_to_dataframe(atom_rows)
-        if PRINT_TAU_CHECK_SUMMARY and (not atom_df.empty) and ("tau_check" in atom_df.columns):
-            tau_summary = atom_df["tau_check"].dropna()
-            if not tau_summary.empty:
-                print(
-                    "Atom tau-check summary:",
-                    f"min={tau_summary.min():.3e}, median={tau_summary.median():.3e}, max={tau_summary.max():.3e}"
-                )
         if atom_df.empty:
             print("No atom rows were produced. Skipping atom txt output.")
         else:
@@ -580,13 +621,6 @@ def main() -> None:
             progress_output_path=molecule_output_path,
         )
         molecule_df = rows_to_dataframe(molecule_rows)
-        if PRINT_TAU_CHECK_SUMMARY and (not molecule_df.empty) and ("tau_check" in molecule_df.columns):
-            tau_summary = molecule_df["tau_check"].dropna()
-            if not tau_summary.empty:
-                print(
-                    "Molecule tau-check summary:",
-                    f"min={tau_summary.min():.3e}, median={tau_summary.median():.3e}, max={tau_summary.max():.3e}"
-                )
         if molecule_df.empty:
             print("No molecule rows were produced. Skipping molecule txt output.")
         else:

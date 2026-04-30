@@ -1,37 +1,33 @@
 import math
 import pathlib
-from typing import Iterable, List
+import re
+from typing import Callable, Iterable, List
 
 import numpy as np
 import pandas as pd
 
 
-RAW_FILE = pathlib.Path(__file__).resolve().parent / "beta_bigtable_atoms.txt"
-OUTPUT_TEX = pathlib.Path(__file__).resolve().parent / "beta_bigtable_atoms_to_log.tex"
+RAW_ATOMS_FILE = pathlib.Path(__file__).resolve().parent / "beta_bigtable_atoms.txt"
+RAW_MOLECULES_FILE = pathlib.Path(__file__).resolve().parent / "beta_bigtable_molecules.txt"
+OUTPUT_ATOMS_TEX = pathlib.Path(__file__).resolve().parent / "beta_bigtable_atoms_to_log.tex"
+OUTPUT_MOLECULES_TEX = pathlib.Path(__file__).resolve().parent / "beta_bigtable_molecules_to_log.tex"
 EXCLUDED_TEFFS_K = {19000}
-
-
-def broadening_label(b_kms: float) -> str:
-    if float(b_kms) == 0.0:
-        return "0"
-    if float(b_kms).is_integer():
-        return str(int(float(b_kms)))
-    return f"{float(b_kms):g}"
 
 
 def latex_species_name(species: str) -> str:
     parts = str(species).split()
-    if len(parts) != 2:
-        return str(species).replace("_", r"\_")
+    if len(parts) == 2:
+        element, stage = parts
+        if stage == "I":
+            return element
+        if stage == "II":
+            return rf"{element}$^+$"
+        if stage == "III":
+            return rf"{element}$^{{++}}$"
+        return species.replace(" ", "~")
 
-    element, stage = parts
-    if stage == "I":
-        return element
-    if stage == "II":
-        return rf"{element}$^+$"
-    if stage == "III":
-        return rf"{element}$^{{++}}$"
-    return species.replace(" ", "~")
+    text = str(species).replace("_", r"\_")
+    return re.sub(r"(\d+)", lambda match: rf"$_{{{match.group(1)}}}$", text)
 
 
 def safe_log10(value: float) -> float:
@@ -84,41 +80,44 @@ def format_value_and_error(value: float, err: float) -> tuple[str, str]:
     return format_fixed_or_dash(value, decimals), format_fixed_or_dash(err, decimals)
 
 
-def build_row_values_tau0(row: pd.Series) -> List[str]:
-    log_beta_tau0 = safe_log10(float(row["beta_tau0"]))
-    log_err_tau0 = symmetric_log10_error(float(row["beta_tau0"]), float(row["beta_err_tau0"]))
-    beta_tau0_text, err_tau0_text = format_value_and_error(log_beta_tau0, log_err_tau0)
-    return [beta_tau0_text, err_tau0_text, "0"]
+def build_atom_row_values(row: pd.Series) -> List[str]:
+    log_beta = safe_log10(float(row["beta"]))
+    log_beta_err = symmetric_log10_error(float(row["beta"]), float(row["beta_err"]))
+    log_n_half = safe_log10(float(row["n_half_beta_cm2"]))
+    beta_text, beta_err_text = format_value_and_error(log_beta, log_beta_err)
+    n_half_text = format_compact_or_dash(log_n_half, decimals=2)
+    return [beta_text, beta_err_text, n_half_text]
 
 
-def build_row_values_tau1(row: pd.Series) -> List[str]:
-    log_beta_tau1 = safe_log10(float(row["beta_tau1"]))
-    log_n_tau1 = safe_log10(float(row["n_tau1_cm2"]))
-    log_err_tau1 = symmetric_log10_error(float(row["beta_tau1"]), float(row["beta_err_tau1"]))
-    beta_tau1_text, err_tau1_text = format_value_and_error(log_beta_tau1, log_err_tau1)
-    n_tau1_text = format_compact_or_dash(log_n_tau1, decimals=2)
-    return [beta_tau1_text, err_tau1_text, n_tau1_text]
+def build_molecule_row_values(row: pd.Series) -> List[str]:
+    log_beta = safe_log10(float(row["beta"]))
+    log_n_half = safe_log10(float(row["n_half_beta_cm2"]))
+    return [
+        format_compact_or_dash(log_beta, decimals=2),
+        format_compact_or_dash(log_n_half, decimals=2),
+    ]
 
 
-def build_col_spec(n_teff: int) -> str:
-    return "l" + "".join(r"!{\vrule width 0.25pt}ccc" for _ in range(n_teff))
+def build_col_spec(n_teff: int, n_subcols: int) -> str:
+    return "l" + "".join(r"!{\vrule width 0.25pt}" + ("c" * n_subcols) for _ in range(n_teff))
 
 
 def make_longtable_block(
     rows: List[str],
     teff_headers: List[int],
+    species_header: str,
+    subheaders: List[str],
     block_title: str,
     caption: str,
     label: str,
 ) -> str:
-    n_cols = 1 + 3 * len(teff_headers)
-    col_spec = build_col_spec(len(teff_headers))
+    n_subcols = len(subheaders)
+    n_cols = 1 + n_subcols * len(teff_headers)
+    col_spec = build_col_spec(len(teff_headers), n_subcols)
     top_header = " & ".join(
-        ["Ion"] + [rf"\multicolumn{{3}}{{c}}{{{teff} K}}" for teff in teff_headers]
+        [species_header] + [rf"\multicolumn{{{n_subcols}}}{{c}}{{{teff} K}}" for teff in teff_headers]
     )
-    sub_header = " & ".join(
-        [""] + [r"$\log\beta$ & $\sigma_{\log\beta}$ & $N_{\rm col}$" for _ in teff_headers]
-    )
+    sub_header = " & ".join([""] + subheaders * len(teff_headers))
 
     lines = [
         f"\\begin{{longtable}}{{{col_spec}}}",
@@ -160,7 +159,34 @@ def split_in_halves(items: Iterable[int]) -> List[List[int]]:
     return [item_list[:mid], item_list[mid:]]
 
 
-def build_tex(df: pd.DataFrame) -> str:
+def load_raw_table(raw_file: pathlib.Path) -> pd.DataFrame:
+    if not raw_file.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(raw_file, sep="\t")
+    if df.empty:
+        return df
+
+    required_columns = {"species", "b_label", "teff_k", "beta", "n_half_beta_cm2"}
+    missing = required_columns.difference(df.columns)
+    if missing:
+        raise ValueError(f"Raw table {raw_file.name} is missing required columns: {sorted(missing)}")
+
+    df = df[df["teff_k"].notna()].copy()
+    df["teff_k"] = df["teff_k"].astype(int)
+    df = df[~df["teff_k"].isin(EXCLUDED_TEFFS_K)].copy()
+    return df
+
+
+def build_category_tex(
+    df: pd.DataFrame,
+    species_header: str,
+    subheaders: List[str],
+    row_builder: Callable[[pd.Series], List[str]],
+    block_title_builder: Callable[[str, int], str],
+    caption_builder: Callable[[str, int], str],
+    label_prefix: str,
+) -> str:
     if df.empty:
         return ""
 
@@ -169,6 +195,7 @@ def build_tex(df: pd.DataFrame) -> str:
     teff_chunks = [chunk for chunk in split_in_halves(teff_order) if chunk]
     species_order = list(dict.fromkeys(df["species"].tolist()))
     b_order = list(dict.fromkeys(df["b_label"].tolist()))
+    n_subcols = len(subheaders)
 
     blocks: List[str] = []
     for b_index, b_label in enumerate(b_order):
@@ -178,34 +205,22 @@ def build_tex(df: pd.DataFrame) -> str:
             rows = []
             for species in species_order:
                 subset_species = subset_b[subset_b["species"] == species]
-                row_tau0 = []
-                row_tau1 = []
+                row_values: List[str] = []
                 for teff_k in teff_chunk:
                     row = subset_species[subset_species["teff_k"] == teff_k]
                     if row.empty:
-                        row_tau0.extend(["-", "-", "-"])
-                        row_tau1.extend(["-", "-", "-"])
+                        row_values.extend(["-"] * n_subcols)
                     else:
-                        row_tau0.extend(build_row_values_tau0(row.iloc[0]))
-                        row_tau1.extend(build_row_values_tau1(row.iloc[0]))
-                rows.append("{} & {} \\\\".format(latex_species_name(species), " & ".join(row_tau0)))
-                rows.append("{} & {} \\\\".format("", " & ".join(row_tau1)))
-                rows.append(r"\specialrule{0.25pt}{0pt}{0pt}")
+                        row_values.extend(row_builder(row.iloc[0]))
 
-            block_title = (
-                f"Atoms: $b = {b_label}$ km s$^{{-1}}$ "
-                f"(first row: $N_{{\\tau=0}}$, second row: $\\log N_{{\\tau=1}}$; Part {part_index})"
-            )
-            caption = (
-                "Atomic $\\log\\beta$-values, logarithmic $\\beta$-errors, and "
-                f"species-wise column densities for selected stellar temperatures at "
-                f"$b={b_label}\\ \\mathrm{{km\\,s^{{-1}}}}$. "
-                "The logarithmic uncertainty is computed as "
-                "$\\sigma_{\\log\\beta} = \\frac{1}{2}\\left|\\log_{10}\\left(\\frac{\\beta + \\Delta\\beta}{\\beta - \\Delta\\beta}\\right)\\right|$. "
-                f"For each species, the first row gives the $\\tau=0$ values and the second row gives the "
-                f"$\\tau=1$ values with $N_{{\\rm col}}$ written as $\\log N_{{\\rm col}}$ (Part {part_index})."
-            )
-            label = f"tab: beta_bigtable_atoms_b{b_label}_part{part_index}"
+                if all(value == "-" for value in row_values):
+                    continue
+
+                rows.append("{} & {} \\\\".format(latex_species_name(species), " & ".join(row_values)))
+
+            if not rows:
+                continue
+
             b_blocks.append(
                 "\n".join(
                     [
@@ -213,34 +228,84 @@ def build_tex(df: pd.DataFrame) -> str:
                         make_longtable_block(
                             rows,
                             teff_chunk,
-                            block_title=block_title,
-                            caption=caption,
-                            label=label,
+                            species_header=species_header,
+                            subheaders=subheaders,
+                            block_title=block_title_builder(b_label, part_index),
+                            caption=caption_builder(b_label, part_index),
+                            label=f"{label_prefix}_b{b_label}_part{part_index}",
                         ),
                         "",
                     ]
                 )
             )
-        blocks.append("\n".join(b_blocks))
-        if b_index < len(b_order) - 1:
+
+        if b_blocks:
+            blocks.append("\n".join(b_blocks))
+        if b_index < len(b_order) - 1 and b_blocks:
             blocks.append("\n\\clearpage\n")
 
     return "\n".join(blocks)
 
 
+def build_atoms_tex(df: pd.DataFrame) -> str:
+    return build_category_tex(
+        df,
+        species_header="Ion",
+        subheaders=[r"$\log\beta$", r"$\sigma_{\log\beta}$", r"$\log N_{\beta/2}$"],
+        row_builder=build_atom_row_values,
+        block_title_builder=lambda b_label, part_index: (
+            f"Atoms: $b = {b_label}$ km s$^{{-1}}$ "
+            f"($\\beta$ at $N_{{\\rm col}}=0$; Part {part_index})"
+        ),
+        caption_builder=lambda b_label, part_index: (
+            "Atomic $\\log\\beta$-values at $N_{\\rm col}=0$, logarithmic "
+            "$\\beta$-errors, and the column density where "
+            "$\\beta = \\beta(N_{\\rm col}=0)/2$, written as "
+            "$\\log N_{\\beta/2}$, for selected stellar temperatures at "
+            f"$b={b_label}\\ \\mathrm{{km\\,s^{{-1}}}}$ (Part {part_index})."
+        ),
+        label_prefix="tab: beta_bigtable_atoms",
+    )
+
+
+def build_molecules_tex(df: pd.DataFrame) -> str:
+    return build_category_tex(
+        df,
+        species_header="Molecule",
+        subheaders=[r"$\log\beta$", r"$\log N_{\beta/2}$"],
+        row_builder=build_molecule_row_values,
+        block_title_builder=lambda b_label, part_index: (
+            f"Molecules: $b = {b_label}$ km s$^{{-1}}$ "
+            f"($\\beta$ at $N_{{\\rm col}}=0$; Part {part_index})"
+        ),
+        caption_builder=lambda b_label, part_index: (
+            "Molecular $\\log\\beta$-values at $N_{\\rm col}=0$ and the column "
+            "density where $\\beta = \\beta(N_{\\rm col}=0)/2$, written as "
+            "$\\log N_{\\beta/2}$, for selected stellar temperatures at "
+            f"$b={b_label}\\ \\mathrm{{km\\,s^{{-1}}}}$ (Part {part_index})."
+        ),
+        label_prefix="tab: beta_bigtable_molecules",
+    )
+
+
 def main() -> None:
-    if not RAW_FILE.exists():
-        raise FileNotFoundError(f"Raw atom table not found: {RAW_FILE}")
+    atoms_df = load_raw_table(RAW_ATOMS_FILE)
+    if not atoms_df.empty:
+        atoms_tex = build_atoms_tex(atoms_df)
+        OUTPUT_ATOMS_TEX.write_text(atoms_tex, encoding="utf-8")
+        print(f"Read raw atom table: {RAW_ATOMS_FILE}")
+        print(f"Saved atom TeX table: {OUTPUT_ATOMS_TEX}")
+    else:
+        print(f"Skipping atom TeX build: no usable raw table at {RAW_ATOMS_FILE}")
 
-    df = pd.read_csv(RAW_FILE, sep="\t")
-    df = df[df["teff_k"].notna()].copy()
-    df["teff_k"] = df["teff_k"].astype(int)
-    df = df[~df["teff_k"].isin(EXCLUDED_TEFFS_K)].copy()
-
-    tex = build_tex(df)
-    OUTPUT_TEX.write_text(tex, encoding="utf-8")
-    print(f"Read raw table: {RAW_FILE}")
-    print(f"Saved TeX table: {OUTPUT_TEX}")
+    molecules_df = load_raw_table(RAW_MOLECULES_FILE)
+    if not molecules_df.empty:
+        molecules_tex = build_molecules_tex(molecules_df)
+        OUTPUT_MOLECULES_TEX.write_text(molecules_tex, encoding="utf-8")
+        print(f"Read raw molecule table: {RAW_MOLECULES_FILE}")
+        print(f"Saved molecule TeX table: {OUTPUT_MOLECULES_TEX}")
+    else:
+        print(f"Skipping molecule TeX build: no usable raw table at {RAW_MOLECULES_FILE}")
 
 
 if __name__ == "__main__":

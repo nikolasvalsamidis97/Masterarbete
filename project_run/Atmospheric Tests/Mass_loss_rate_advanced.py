@@ -100,10 +100,10 @@ HOT_SWEEP_STAR_KEY = "A0"
 HOT_SWEEP_DISTANCES_AU = [0.0239, 0.05, 0.1, 0.3, 1.0]
 STUDY_STAR_KEY = "A0"
 STUDY_DISTANCE_AU = 1.0
+PLAUSIBLE_PLANET_DISTANCE_AU = 0.1
 
 # Dedicated P0 case study for one representative inflated hot Jupiter.
-# This uses the same plausible F8 / 0.0515 AU system already present in the
-# main advanced grid, but varies only P0.
+# This is kept as its own fixed study system and varies only P0.
 P0_SWEEP_PLANET_KEY = "inflated_hot_jupiter"
 P0_SWEEP_STAR_KEY = "F8"
 P0_SWEEP_DISTANCE_AU = 0.0515
@@ -176,27 +176,27 @@ def build_advanced_systems() -> List[AdvancedSystem]:
     if ENABLE_ROCKY_EXOPLANETS_PLAUSIBLE:
         systems.extend(
             [
-                AdvancedSystem("rocky_exoplanets_plausible", "super_earth_rocky", "G1", 0.08),
-                AdvancedSystem("rocky_exoplanets_plausible", "lava_world", "F8", 0.02),
-                AdvancedSystem("rocky_exoplanets_plausible", "volatile_super_earth", "K1", 0.05),
-                AdvancedSystem("rocky_exoplanets_plausible", "alkali_exosphere_rocky", "F8", 0.03),
-                AdvancedSystem("rocky_exoplanets_plausible", "metal_rich_secondary", "F8", 0.05),
+                AdvancedSystem("rocky_exoplanets_plausible", "super_earth_rocky", "G1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("rocky_exoplanets_plausible", "lava_world", "F8", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("rocky_exoplanets_plausible", "volatile_super_earth", "K1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("rocky_exoplanets_plausible", "alkali_exosphere_rocky", "F8", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("rocky_exoplanets_plausible", "metal_rich_secondary", "F8", PLAUSIBLE_PLANET_DISTANCE_AU),
             ]
         )
 
     if ENABLE_GAS_PLANETS_PLAUSIBLE:
         systems.extend(
             [
-                AdvancedSystem("gas_planets_plausible", "mini_neptune_cool", "K1", 0.20),
-                AdvancedSystem("gas_planets_plausible", "mini_neptune_warm", "G1", 0.10),
-                AdvancedSystem("gas_planets_plausible", "sub_neptune", "G1", 0.08),
-                AdvancedSystem("gas_planets_plausible", "warm_neptune", "K1", 0.05),
-                AdvancedSystem("gas_planets_plausible", "hot_neptune", "M1", 0.0291),
-                AdvancedSystem("gas_planets_plausible", "super_puff", "F8", 0.2514),
-                AdvancedSystem("gas_planets_plausible", "warm_jupiter", "G1", 0.0965),
-                AdvancedSystem("gas_planets_plausible", "hot_jupiter", "G1", 0.05042),
-                AdvancedSystem("gas_planets_plausible", "inflated_hot_jupiter", "F8", 0.0515),
-                AdvancedSystem("gas_planets_plausible", "ultra_hot_jupiter", "A0", 0.0239),
+                AdvancedSystem("gas_planets_plausible", "mini_neptune_cool", "K1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "mini_neptune_warm", "G1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "sub_neptune", "G1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "warm_neptune", "K1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "hot_neptune", "M1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "super_puff", "F8", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "warm_jupiter", "G1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "hot_jupiter", "G1", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "inflated_hot_jupiter", "F8", PLAUSIBLE_PLANET_DISTANCE_AU),
+                AdvancedSystem("gas_planets_plausible", "ultra_hot_jupiter", "A0", PLAUSIBLE_PLANET_DISTANCE_AU),
             ]
         )
 
@@ -694,6 +694,209 @@ def write_results_csv(rows: List[dict], output_path: pathlib.Path) -> None:
             writer.writerow({key: row.get(key, "") for key in output_fieldnames()})
 
 
+def write_text_atomic(text: str, output_path: pathlib.Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=output_path.stem + "_", suffix=".tmp", dir=output_path.parent)
+    os.close(fd)
+    tmp_path = pathlib.Path(tmp_name)
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(output_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+def format_numeric_list(values) -> str:
+    return ", ".join(f"{float(value):.12g}" for value in values)
+
+
+def format_selected_species(planet_case: dict) -> str:
+    species = selected_species_for_planet(planet_case)
+    if not species:
+        return "none"
+    return ", ".join(species)
+
+
+def format_composition(planet_case: dict) -> str:
+    composition = []
+    for species, value in planet_case["composition"].items():
+        if isinstance(value, u.Quantity):
+            numeric_value = value.to_value(u.dimensionless_unscaled)
+        else:
+            numeric_value = float(value)
+        composition.append(f"{species}={numeric_value:.12g}")
+    return ", ".join(composition)
+
+
+def common_run_parameter_lines() -> List[str]:
+    return [
+        f"skip_atoms: {SKIP_ATOMS}",
+        f"skip_molecules: {SKIP_MOLECULES}",
+        f"selected_atomic_species: {SELECTED_ATOMIC_SPECIES if SELECTED_ATOMIC_SPECIES is not None else 'all available'}",
+        f"selected_molecular_species: {SELECTED_MOLECULAR_SPECIES if SELECTED_MOLECULAR_SPECIES is not None else 'all available'}",
+        f"include_stellar_gravity: {INCLUDE_STELLAR_GRAVITY}",
+        f"use_checkpoint: {USE_CHECKPOINT}",
+        f"selected_system_keys: {SELECTED_SYSTEM_KEYS if SELECTED_SYSTEM_KEYS is not None else 'all enabled systems'}",
+        f"n_rho: {N_RHO}",
+        f"n_x: {N_X}",
+        f"rho_grid_power: {RHO_GRID_POWER}",
+        f"x_grid_power: {X_GRID_POWER}",
+        f"column_steps: {COLUMN_STEPS}",
+        f"column_grid_power: {COLUMN_GRID_POWER}",
+        f"log_column_bin_dex: {LOG_COLUMN_BIN_DEX}",
+        f"dt_fraction: {DT_FRACTION}",
+        f"dt_min_s: {DT_MIN_S}",
+        f"dt_max_s: {DT_MAX_S}",
+        f"dt_length_floor_cm: {DT_LENGTH_FLOOR_CM}",
+        f"max_step_length_fraction: {MAX_STEP_LENGTH_FRACTION}",
+        f"max_steps: {MAX_STEPS}",
+        f"max_time_s: {MAX_TIME_S}",
+        f"wavemin_AA: {WAVEMIN.to_value(u.AA):.12g}",
+        f"wavemax_AA: {WAVEMAX.to_value(u.AA):.12g}",
+        f"atom_b_kms: {base_mass_loss.B_ATOM.to_value(u.km / u.s):.12g}",
+        f"atom_npts: {base_mass_loss.NPTS_ATOM}",
+        f"output_dir: {OUTPUT_DIR}",
+    ]
+
+
+def star_parameter_lines(star_key: str) -> List[str]:
+    star_case = base_mass_loss.STAR_TEMPLATES[star_key]
+    return [
+        f"star_template: {star_key}",
+        f"star_label: {star_case.get('label', '')}",
+        f"star_category: {star_case.get('category', '')}",
+        f"stellar_teff_K: {base_mass_loss.infer_teff_from_star_template(star_key)}",
+        f"stellar_radius_Rsun: {star_case['radius'].to_value(const.R_sun):.12g}",
+        f"stellar_mass_Msun: {star_case['mass'].to_value(const.M_sun):.12g}",
+        f"stellar_vsini_kms: {star_case['vsini'].to_value(u.km / u.s):.12g}",
+        f"stellar_epsilon: {star_case['epsilon'].to_value(u.dimensionless_unscaled):.12g}",
+        f"stellar_spectrum_path: {star_case['path']}",
+    ]
+
+
+def planet_parameter_lines(planet_key: str, planet_case: dict | None = None) -> List[str]:
+    active_planet_case = dict(base_mass_loss.get_planet_template(planet_key) if planet_case is None else planet_case)
+    return [
+        f"planet_template: {planet_key}",
+        f"planet_label: {active_planet_case.get('label', '')}",
+        f"planet_category: {active_planet_case.get('category', '')}",
+        f"planet_radius_Rearth: {active_planet_case['radius'].to_value(const.R_earth):.12g}",
+        f"planet_mass_Mearth: {active_planet_case['mass'].to_value(const.M_earth):.12g}",
+        f"planet_temperature_K: {active_planet_case['T'].to_value(u.K):.12g}",
+        f"planet_mu_amu: {active_planet_case['mu'].to_value(u.dimensionless_unscaled):.12g}",
+        f"planet_P0_bar: {active_planet_case['P0'].to_value(u.bar):.12g}",
+        f"planet_surface_gravity_m_s2: {surface_gravity_m_s2_for_planet_case(active_planet_case):.12g}",
+        f"selected_species: {format_selected_species(active_planet_case)}",
+        f"composition: {format_composition(active_planet_case)}",
+        f"planet_notes: {active_planet_case.get('notes', '')}",
+    ]
+
+
+def standard_family_parameter_path(test_family: str) -> pathlib.Path:
+    family_dir = OUTPUT_DIR / base_mass_loss.safe_name(test_family)
+    return family_dir / f"{base_mass_loss.safe_name(test_family)}_run_parameters.txt"
+
+
+def write_standard_family_run_parameters(test_family: str, systems: List[AdvancedSystem]) -> pathlib.Path:
+    lines = [
+        "Advanced Mass-Loss Standard Family Parameters",
+        "============================================",
+        f"test_family: {test_family}",
+        f"n_systems: {len(systems)}",
+    ]
+    if test_family == "distance_sweeps":
+        lines.append(f"distance_sweep_values_AU: {format_numeric_list(HOT_SWEEP_DISTANCES_AU)}")
+    if test_family in {"rocky_exoplanets_plausible", "gas_planets_plausible"}:
+        lines.append(f"plausible_planet_distance_AU: {PLAUSIBLE_PLANET_DISTANCE_AU:.12g}")
+    lines.extend(common_run_parameter_lines())
+
+    for idx, system in enumerate(systems, start=1):
+        lines.extend(
+            [
+                "",
+                f"[system_{idx}]",
+                f"distance_AU: {float(system.distance_au):.12g}",
+            ]
+        )
+        lines.extend(star_parameter_lines(system.star_key))
+        lines.extend(planet_parameter_lines(system.planet_key))
+
+    output_path = standard_family_parameter_path(test_family)
+    write_text_atomic("\n".join(lines) + "\n", output_path)
+    return output_path
+
+
+def write_p0_sweep_run_parameters() -> pathlib.Path:
+    lines = [
+        "Advanced P0 Sweep Run Parameters",
+        "================================",
+        f"test_family: {P0_SWEEP_TEST_FAMILY}",
+        "sweep_parameter: P0_bar",
+        f"sweep_values_bar: {format_numeric_list(P0_SWEEP_VALUES_BAR)}",
+        f"distance_AU: {float(P0_SWEEP_DISTANCE_AU):.12g}",
+    ]
+    lines.extend(common_run_parameter_lines())
+    lines.extend(["", "[base_system]"])
+    lines.extend(star_parameter_lines(P0_SWEEP_STAR_KEY))
+    lines.extend(planet_parameter_lines(P0_SWEEP_PLANET_KEY))
+
+    output_path = P0_SWEEP_OUTPUT_DIR / f"{base_mass_loss.safe_name(P0_SWEEP_TEST_FAMILY)}_run_parameters.txt"
+    write_text_atomic("\n".join(lines) + "\n", output_path)
+    return output_path
+
+
+def write_mu_sweep_run_parameters(systems: List[AdvancedSystem]) -> pathlib.Path:
+    lines = [
+        "Advanced Mu Sweep Run Parameters",
+        "================================",
+        f"test_family: {MU_SWEEP_HOT_JUPITER_FAMILY}",
+        "sweep_parameter: mu_amu",
+        f"sweep_values_amu: {format_numeric_list(MU_SWEEP_VALUES_AMU)}",
+        f"n_systems: {len(systems)}",
+    ]
+    lines.extend(common_run_parameter_lines())
+
+    for idx, system in enumerate(systems, start=1):
+        lines.extend(
+            [
+                "",
+                f"[system_{idx}]",
+                f"distance_AU: {float(system.distance_au):.12g}",
+            ]
+        )
+        lines.extend(star_parameter_lines(system.star_key))
+        lines.extend(planet_parameter_lines(system.planet_key))
+
+    output_path = MU_SWEEP_OUTPUT_DIR / "mu_sweeps_run_parameters.txt"
+    write_text_atomic("\n".join(lines) + "\n", output_path)
+    return output_path
+
+
+def write_surface_gravity_sweep_run_parameters(system_def: AdvancedSystem) -> pathlib.Path:
+    surface_gravity_values = [
+        surface_gravity_m_s2_for_planet_case(build_surface_gravity_sweep_planet_case(system_def.planet_key, mass_scale))
+        for mass_scale in SURFACE_GRAVITY_MASS_SCALE_VALUES
+    ]
+    lines = [
+        "Advanced Surface-Gravity Sweep Run Parameters",
+        "=============================================",
+        f"test_family: {SURFACE_GRAVITY_SWEEP_FAMILY}",
+        "sweep_parameter: surface_gravity_m_s2",
+        f"mass_scale_values: {format_numeric_list(SURFACE_GRAVITY_MASS_SCALE_VALUES)}",
+        f"surface_gravity_values_m_s2: {format_numeric_list(surface_gravity_values)}",
+        f"distance_AU: {float(system_def.distance_au):.12g}",
+    ]
+    lines.extend(common_run_parameter_lines())
+    lines.extend(["", "[base_system]"])
+    lines.extend(star_parameter_lines(system_def.star_key))
+    lines.extend(planet_parameter_lines(system_def.planet_key))
+
+    output_path = SURFACE_GRAVITY_SWEEP_OUTPUT_DIR / "surface_gravity_sweeps_run_parameters.txt"
+    write_text_atomic("\n".join(lines) + "\n", output_path)
+    return output_path
+
+
 def write_summary_txt(
     rows: List[dict],
     output_path: pathlib.Path,
@@ -1151,6 +1354,7 @@ def run_p0_sweep() -> None:
     configure_base_module()
     exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
     build_p0_sweep_system()
+    write_p0_sweep_run_parameters()
     planet_base_case = base_mass_loss.get_planet_template(P0_SWEEP_PLANET_KEY)
     species_template = selected_species_for_planet(planet_base_case)
     if not species_template:
@@ -1512,6 +1716,7 @@ def run_mu_sweeps() -> None:
     configure_base_module()
     exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
     systems = build_mu_sweep_systems()
+    write_mu_sweep_run_parameters(systems)
     all_rows = load_scalar_checkpoint_rows(MU_SWEEP_CHECKPOINT_PATH, "mu_amu") if USE_CHECKPOINT else []
     completed_rows = scalar_completed_row_keys(all_rows, "mu_amu")
     if all_rows:
@@ -1646,6 +1851,7 @@ def run_surface_gravity_sweep() -> None:
     configure_base_module()
     exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
     system_def = build_surface_gravity_sweep_system()
+    write_surface_gravity_sweep_run_parameters(system_def)
     all_rows = load_scalar_checkpoint_rows(SURFACE_GRAVITY_SWEEP_CHECKPOINT_PATH, "surface_gravity_m_s2") if USE_CHECKPOINT else []
     completed_rows = scalar_completed_row_keys(all_rows, "surface_gravity_m_s2")
     species_template = selected_species_for_planet(base_mass_loss.get_planet_template(system_def.planet_key))
@@ -1933,6 +2139,11 @@ def run_standard_systems() -> None:
     exobase_rows = base_mass_loss.load_exobase_table(EXOBASE_TABLE)
 
     systems = build_advanced_systems()
+    systems_by_family: Dict[str, List[AdvancedSystem]] = {}
+    for system in systems:
+        systems_by_family.setdefault(system.test_family, []).append(system)
+    for test_family, family_systems in systems_by_family.items():
+        write_standard_family_run_parameters(test_family, family_systems)
     all_rows = load_checkpoint_rows(CHECKPOINT_PATH) if USE_CHECKPOINT else []
     all_rows = import_existing_output_rows(systems, all_rows)
     completed_rows = completed_row_keys(all_rows)
