@@ -2,6 +2,7 @@
 
 import pathlib
 import sys
+import gc
 from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
@@ -42,6 +43,7 @@ NPTS_ATOM = 150
 T_EXC_VALUES_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
 # Use the same optically thin reference column as the tau=0 big-table study.
 FIXED_NCOL_CM2 = 1e-20
+CLEAR_MOLECULE_CACHES_AFTER_SPECIES = True
 
 SAVE_TXT = True
 SAVE_RAW_CSV = False
@@ -117,6 +119,15 @@ def suffixed_output_name(base_name: str, star_key: str) -> str:
 
 def effective_b_value(b_kms: float) -> u.Quantity:
     return float(b_kms) * u.km / u.s
+
+
+def clear_molecule_runtime_caches() -> None:
+    for profile in molecule_profile_cache.values():
+        if hasattr(profile, "clear_temperature_cache"):
+            profile.clear_temperature_cache(keep_current=False)
+    molecule_profile_cache.clear()
+    PhotonPressure.clear_molecule_flux_cache()
+    gc.collect()
 
 
 
@@ -334,6 +345,9 @@ def build_category_matrices(
             beta_columns.append(beta_series)
             n_tau1_columns.append(n_tau1_series)
 
+        if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
+            clear_molecule_runtime_caches()
+
     if beta_columns:
         beta_matrix = np.array(beta_columns, dtype=float).T
         n_tau1_matrix = np.array(n_tau1_columns, dtype=float).T
@@ -462,6 +476,8 @@ def main() -> None:
             if SAVE_RAW_CSV and raw_rows:
                 import pandas as pd
                 pd.DataFrame(raw_rows).to_csv(OUTPUT_DIR / suffixed_output_name(MOLECULES_RAW_NAME, star_key), index=False)
+
+            clear_molecule_runtime_caches()
 
     print(f"Saved outputs to {OUTPUT_DIR}")
 

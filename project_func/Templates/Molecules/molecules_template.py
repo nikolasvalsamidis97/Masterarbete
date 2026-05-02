@@ -134,14 +134,14 @@ MOLECULE_TEMPLATES = {
             "localdatabase": "exomol_data",
         },
     },
-    "C3": {
-        "source": "exomol",
-        "fetch_kwargs": {
-            "path": "C3/12C3/AtLast",
-            "database": "AtLast",
-            "localdatabase": "exomol_data",
-        },
-    },
+    # "C3": {
+    #     "source": "exomol",
+    #     "fetch_kwargs": {
+    #         "path": "C3/12C3/AtLast",
+    #         "database": "AtLast",
+    #         "localdatabase": "exomol_data",
+    #     },
+    # },
     "OCS": {
         "source": "exomol",
         "fetch_kwargs": {
