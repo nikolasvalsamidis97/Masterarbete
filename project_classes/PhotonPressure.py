@@ -268,6 +268,9 @@ class PhotonPressure:
         lam = np.asarray(lam.value, dtype=np.float64)
 
         weights = np.asarray(weights, dtype=np.float64)
+        sigma_weighted = sig[:, :, None] * weights[:, None, :]
+        sigma_weighted_q = sigma_weighted * sig_unit
+        N_col_val = N_col.to_value(1 / u.cm**2)
         ##### 
 
         # Chunk loop over N_col
@@ -280,9 +283,6 @@ class PhotonPressure:
             # Transmission for this chunk only, now using weighted cross sections
             # Apply excitation weights inside the opacity.
             # sigma_weighted has shape (lines, lam, Temp)
-            sigma_weighted = sig[:, :, None] * weights[:, None, :]
-            sigma_weighted_q = sigma_weighted * sig_unit
-
             # Transmission for this chunk only, now using weighted cross sections.
             # Trans has shape (lines, lam, Temp, chunk)
             Trans, Trans_err = self.transmission(N_chunk, sigma_override=sigma_weighted_q)
@@ -309,7 +309,6 @@ class PhotonPressure:
             ########
 
             ######## Comment this for old calculations with units
-            N_col_val = N_col.to_value(1 / u.cm**2)
             N_chunk_val = N_col_val[j0:j1]
             factor = (1.0 - (sigma_weighted[:, :, :, None] * N_chunk_val[None, None, None, :]))
 

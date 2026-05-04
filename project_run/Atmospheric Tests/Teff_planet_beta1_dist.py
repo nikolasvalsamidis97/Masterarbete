@@ -1,6 +1,9 @@
 import csv
+import gc
+import json
 import sys
 import pathlib
+import shutil
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import freeze_support
@@ -33,6 +36,10 @@ SELECTED_ATOMIC_SPECIES = None
 SELECTED_MOLECULAR_SPECIES = None
 SKIP_ATOMS = False
 SKIP_MOLECULES = False
+RUN_ALL_ABSORBERS_IF_UNSPECIFIED = True
+START_FRESH_RUN = True
+FRESH_RUN_LABEL = "fresh_run_1"
+USE_COMPOSITION_MIXING_RATIOS = False
 
 
 # Use global templates for stellar models
@@ -53,19 +60,19 @@ SELECTED_PLANET_SPECIES = {
     if planet_key in PLANET_TEMPLATES
 }
 
-# DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0] * u.AU
-DISTANCE_LIST = [0.05, 0.1, 1, 10, 100] * u.AU
+DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 100.0] * u.AU
+# DISTANCE_LIST = [0.05, 0.1, 1, 10, 100] * u.AU
 SELECTED_STARS = None
 # SELECTED_STARS = ["O0", "B0", "A0"]
 TARGET_TEFFS_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
 STAR_STRIDE = 5
-DISTANCE_MAX_WORKERS = 4
-STAR_MAX_WORKERS = 15
+DISTANCE_MAX_WORKERS = 1
+STAR_MAX_WORKERS = 1
 # Choose outer parallelization strategy:
 # "distance"      -> one worker per distance (reuses stars serially inside each worker)
 # "distance_star" -> one worker per (distance, star) pair (more workers, less reuse)
 # "serial"        -> no outer parallelism
-PARALLEL_TASK_MODE = "distance"
+PARALLEL_TASK_MODE = "serial"
 N_HEIGHT_POINTS = 150
 COARSE_HEIGHT_POINTS = 30
 REFINE_HEIGHT_POINTS = 30
@@ -77,6 +84,7 @@ COARSE_GRID_POWER = 3.0
 PRINT_TRACEBACKS = False
 SAVE_OUTPUT_TXT = True
 USE_CHECKPOINT = True
+ATOMIC_COLUMN_CHUNK_SIZE = 8
 
 wavemin = 150 * u.AA
 wavemax = 50000 * u.AA
@@ -95,6 +103,7 @@ ROOT_OUTPUT_DIR = (
     / "r_at_beta1"
 )
 CHECKPOINT_PATH = ROOT_OUTPUT_DIR / "teff_planet_beta1_dist_checkpoint.csv"
+FRESH_RUN_MARKER_PATH = ROOT_OUTPUT_DIR / "teff_planet_beta1_dist_fresh_run.json"
 
 
 
@@ -121,36 +130,42 @@ def checkpoint_fieldnames():
         "coarse_height_points",
         "refine_height_points",
         "coarse_grid_power",
+        "run_signature",
     ]
 
 
-def current_checkpoint_config():
-    return {
-        "coarse_height_points": int(COARSE_HEIGHT_POINTS),
-        "refine_height_points": int(REFINE_HEIGHT_POINTS),
-        "coarse_grid_power": float(COARSE_GRID_POWER),
-    }
+def current_run_signature(star_keys_sorted, distance_values_au):
+    return json.dumps(
+        {
+            "coarse_height_points": int(COARSE_HEIGHT_POINTS),
+            "refine_height_points": int(REFINE_HEIGHT_POINTS),
+            "coarse_grid_power": float(COARSE_GRID_POWER),
+            "distance_grid_au": [f"{float(value):.12g}" for value in distance_values_au],
+            "star_keys_sorted": list(star_keys_sorted),
+            "selected_atomic_species": SELECTED_ATOMIC_SPECIES,
+            "selected_molecular_species": SELECTED_MOLECULAR_SPECIES,
+            "skip_atoms": bool(SKIP_ATOMS),
+            "skip_molecules": bool(SKIP_MOLECULES),
+            "run_all_absorbers_if_unspecified": bool(RUN_ALL_ABSORBERS_IF_UNSPECIFIED),
+            "use_composition_mixing_ratios": bool(USE_COMPOSITION_MIXING_RATIOS),
+        },
+        sort_keys=True,
+    )
 
 
-def validate_checkpoint_rows(rows):
+def validate_checkpoint_rows(rows, expected_run_signature):
     if not rows:
         return
 
-    expected = current_checkpoint_config()
     for row in rows:
-        actual = {
-            "coarse_height_points": int(float(row.get("coarse_height_points", np.nan))),
-            "refine_height_points": int(float(row.get("refine_height_points", np.nan))),
-            "coarse_grid_power": float(row.get("coarse_grid_power", np.nan)),
-        }
-        if actual != expected:
+        if row.get("run_signature") != expected_run_signature:
             raise ValueError(
-                "Existing Teff checkpoint was created with different grid settings. "
+                "Existing Teff checkpoint was created with different run settings. "
                 f"Delete {CHECKPOINT_PATH} or restore the old settings before resuming."
             )
 
 
-def load_checkpoint_rows(path):
+def load_checkpoint_rows(path, expected_run_signature):
     if not path.exists():
         return []
 
@@ -158,7 +173,7 @@ def load_checkpoint_rows(path):
         reader = csv.DictReader(f)
         rows = list(reader)
 
-    validate_checkpoint_rows(rows)
+    validate_checkpoint_rows(rows, expected_run_signature)
     return rows
 
 
@@ -184,7 +199,7 @@ def completed_checkpoint_keys(rows):
     }
 
 
-def make_checkpoint_row(planet_key, species, star_key, distance_au, rbeta_value):
+def make_checkpoint_row(planet_key, species, star_key, distance_au, rbeta_value, run_signature):
     return {
         "planet": planet_key,
         "species": species,
@@ -195,6 +210,7 @@ def make_checkpoint_row(planet_key, species, star_key, distance_au, rbeta_value)
         "coarse_height_points": COARSE_HEIGHT_POINTS,
         "refine_height_points": REFINE_HEIGHT_POINTS,
         "coarse_grid_power": COARSE_GRID_POWER,
+        "run_signature": run_signature,
     }
 
 
@@ -364,7 +380,22 @@ def species_matches_run_filters(species):
     return False
 
 
+def ordered_all_absorber_species():
+    atomic_species = sorted(
+        species for species in ATOM_SPECIES
+        if species_matches_run_filters(species)
+    )
+    molecular_species = sorted(
+        species for species in MOLECULE_TEMPLATES
+        if species_matches_run_filters(species)
+    )
+    return atomic_species + molecular_species
+
+
 def species_mixing_ratio(planet_case, species):
+    if not USE_COMPOSITION_MIXING_RATIOS:
+        return 1.0
+
     ratio = planet_case.get("composition", {}).get(species, 1.0)
     if isinstance(ratio, u.Quantity):
         ratio = ratio.to_value(u.dimensionless_unscaled)
@@ -384,6 +415,118 @@ def get_total_slant_column(system_obj, z, ncol_cache=None, ncol_key=None):
     if ncol_cache is not None:
         ncol_cache[ncol_key] = ncol_total
     return ncol_total
+
+
+def build_species_column_grid(system_obj, z_grid, abundance, ncol_cache=None):
+    z_cm_values = np.asarray([float(z.to_value(u.cm)) for z in z_grid], dtype=float)
+    ncol_values = np.empty(len(z_grid), dtype=float)
+    missing_indices = []
+
+    for i, z_cm_value in enumerate(z_cm_values):
+        if ncol_cache is not None and z_cm_value in ncol_cache:
+            ncol_values[i] = float(
+                np.squeeze((abundance * ncol_cache[z_cm_value]).to_value(1 / u.cm**2))
+            )
+        else:
+            missing_indices.append(i)
+
+    for i in missing_indices:
+        z = z_grid[i]
+        ncol_total = get_total_slant_column(system_obj, z, ncol_cache, z_cm_values[i])
+        ncol_values[i] = float(
+            np.squeeze((abundance * ncol_total).to_value(1 / u.cm**2))
+        )
+
+    return z_cm_values, ncol_values / u.cm**2
+
+
+def evaluate_beta_grid(pp, ncol_grid, temp_atm, distance, planet_mass, r_grid, chunk_size=1):
+    F_ph_tot_grid, F_ph_tot_err_grid, _, _ = pp.calc_PhotonPressure(
+        ncol_grid,
+        temp_atm,
+        distance,
+        chunk_size=max(1, int(chunk_size)),
+    )
+    beta_species_grid, _ = pp.beta_Values(
+        F_ph_tot_grid,
+        F_ph_tot_err_grid,
+        planet_mass,
+        r_grid,
+    )
+    return np.asarray(beta_species_grid.value, dtype=float).reshape(-1)
+
+
+def persist_species_progress(
+    all_results,
+    selected_planet,
+    selected_species,
+    planet_case,
+    star_keys_sorted,
+    distance_values_au,
+):
+    if USE_CHECKPOINT:
+        save_checkpoint_rows(all_results, CHECKPOINT_PATH)
+    save_species_table_from_rows(
+        all_results,
+        selected_planet,
+        selected_species,
+        planet_case,
+        star_keys_sorted,
+        distance_values_au,
+    )
+
+
+def clear_species_runtime_caches(species):
+    profile = profile_cache.pop(species, None)
+    if profile is not None and hasattr(profile, "clear_temperature_cache"):
+        profile.clear_temperature_cache()
+    PhotonPressure.clear_molecule_flux_cache()
+    gc.collect()
+
+
+def reset_selected_planet_outputs():
+    if CHECKPOINT_PATH.exists():
+        print(f"Removing old checkpoint: {CHECKPOINT_PATH}")
+        CHECKPOINT_PATH.unlink()
+
+    if FRESH_RUN_MARKER_PATH.exists():
+        FRESH_RUN_MARKER_PATH.unlink()
+
+    for planet_key in SELECTED_PLANET_SPECIES:
+        output_dir = ROOT_OUTPUT_DIR / f"{safe_name(planet_key)}_r_beta1"
+        if output_dir.exists():
+            print(f"Removing old output directory: {output_dir}")
+            shutil.rmtree(output_dir)
+
+
+def fresh_run_marker_matches(run_signature):
+    if not FRESH_RUN_MARKER_PATH.exists():
+        return False
+
+    try:
+        marker_payload = json.loads(FRESH_RUN_MARKER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    return (
+        marker_payload.get("run_signature") == run_signature
+        and marker_payload.get("fresh_run_label") == FRESH_RUN_LABEL
+    )
+
+
+def write_fresh_run_marker(run_signature):
+    FRESH_RUN_MARKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FRESH_RUN_MARKER_PATH.write_text(
+        json.dumps(
+            {
+                "run_signature": run_signature,
+                "fresh_run_label": FRESH_RUN_LABEL,
+            },
+            sort_keys=True,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 def r_beta1_over_R(
@@ -437,38 +580,19 @@ def r_beta1_over_R(
     abundance = species_mixing_ratio(planet_case, species)
 
     if is_molecular_species(species):
-        z_cm_values = np.asarray([float(z.to_value(u.cm)) for z in z_grid], dtype=float)
-        ncol_values = np.empty(len(z_grid), dtype=float)
-        missing_indices = []
-
-        for i, z_cm_value in enumerate(z_cm_values):
-            ncol_key = z_cm_value
-            if ncol_cache is not None and ncol_key in ncol_cache:
-                ncol_values[i] = float(np.squeeze((abundance * ncol_cache[ncol_key]).to_value(1 / u.cm**2)))
-            else:
-                missing_indices.append(i)
-
-        for i in missing_indices:
-            z = z_grid[i]
-            ncol_total = get_total_slant_column(system_obj, z, ncol_cache, z_cm_values[i])
-            ncol_values[i] = float(np.squeeze((abundance * ncol_total).to_value(1 / u.cm**2)))
-
-        ncol_grid = ncol_values / u.cm**2
+        _, ncol_grid = build_species_column_grid(system_obj, z_grid, abundance, ncol_cache)
         r_grid = planet_radius + z_grid
 
         try:
-            F_ph_tot_grid, F_ph_tot_err_grid, _, _ = pp.calc_PhotonPressure(
+            beta_values_grid = evaluate_beta_grid(
+                pp,
                 ncol_grid,
                 planet_case["T"],
                 system_obj.distance,
-            )
-            beta_species_grid, _ = pp.beta_Values(
-                F_ph_tot_grid,
-                F_ph_tot_err_grid,
                 system_obj.planet.mass,
                 r_grid,
+                chunk_size=1,
             )
-            beta_values_grid = np.asarray(beta_species_grid.value, dtype=float).reshape(-1)
         except Exception as exc:
             print(f"Skipping {species} for {star_key} in coarse molecular grid: {exc}")
             maybe_print_traceback()
@@ -500,38 +624,24 @@ def r_beta1_over_R(
                 r_beta1_cm = r1 + (1.0 - b1) * (r2 - r1) / (b2 - b1)
 
             z_refine_grid = np.linspace(z1.to_value(u.cm), z2.to_value(u.cm), refine_points) * u.cm
-            z_refine_cm_values = np.asarray([float(z.to_value(u.cm)) for z in z_refine_grid], dtype=float)
-            ncol_refine_values = np.empty(len(z_refine_grid), dtype=float)
-            missing_refine_indices = []
-
-            for j, z_refine_cm_value in enumerate(z_refine_cm_values):
-                ncol_refine_key = z_refine_cm_value
-                if ncol_cache is not None and ncol_refine_key in ncol_cache:
-                    ncol_refine_values[j] = float(np.squeeze((abundance * ncol_cache[ncol_refine_key]).to_value(1 / u.cm**2)))
-                else:
-                    missing_refine_indices.append(j)
-
-            for j in missing_refine_indices:
-                z_refine = z_refine_grid[j]
-                ncol_total_refine = get_total_slant_column(system_obj, z_refine, ncol_cache, z_refine_cm_values[j])
-                ncol_refine_values[j] = float(np.squeeze((abundance * ncol_total_refine).to_value(1 / u.cm**2)))
-
-            ncol_refine_grid = ncol_refine_values / u.cm**2
+            _, ncol_refine_grid = build_species_column_grid(
+                system_obj,
+                z_refine_grid,
+                abundance,
+                ncol_cache,
+            )
             r_refine_grid = planet_radius + z_refine_grid
 
             try:
-                F_ph_tot_refine, F_ph_tot_err_refine, _, _ = pp.calc_PhotonPressure(
+                beta_values_refine = evaluate_beta_grid(
+                    pp,
                     ncol_refine_grid,
                     planet_case["T"],
                     system_obj.distance,
-                )
-                beta_species_refine, _ = pp.beta_Values(
-                    F_ph_tot_refine,
-                    F_ph_tot_err_refine,
                     system_obj.planet.mass,
                     r_refine_grid,
+                    chunk_size=1,
                 )
-                beta_values_refine = np.asarray(beta_species_refine.value, dtype=float).reshape(-1)
             except Exception as exc:
                 print(f"Skipping {species} for {star_key} in refined molecular grid: {exc}")
                 maybe_print_traceback()
@@ -562,90 +672,97 @@ def r_beta1_over_R(
 
         return np.nan
 
-    prev_r_local = None
-    prev_beta_value = None
-    prev_z = None
+    _, ncol_grid = build_species_column_grid(system_obj, z_grid, abundance, ncol_cache)
+    r_grid = planet_radius + z_grid
+    atomic_chunk_size = min(ATOMIC_COLUMN_CHUNK_SIZE, max(1, coarse_points))
 
-    for z in z_grid:
-        r_local = planet_radius + z
-        z_cm_value = float(z.to_value(u.cm))
-        ncol_key = z_cm_value
+    try:
+        beta_values_grid = evaluate_beta_grid(
+            pp,
+            ncol_grid,
+            planet_case["T"],
+            system_obj.distance,
+            system_obj.planet.mass,
+            r_grid,
+            chunk_size=atomic_chunk_size,
+        )
+    except Exception as exc:
+        print(f"Skipping {species} for {star_key} in coarse atomic grid: {exc}")
+        maybe_print_traceback()
+        return np.nan
 
-        ncol_local = abundance * get_total_slant_column(system_obj, z, ncol_cache, ncol_key)
+    exact_matches = np.where(np.isclose(beta_values_grid, 1.0, atol=1e-6))[0]
+    if len(exact_matches) > 0:
+        idx = int(exact_matches[0])
+        return float((r_grid[idx] / planet_radius).decompose().value)
+
+    for i in range(1, len(beta_values_grid)):
+        b1 = beta_values_grid[i - 1]
+        b2 = beta_values_grid[i]
+        if not np.isfinite(b1) or not np.isfinite(b2):
+            continue
+
+        crossed = ((b1 < 1.0 and b2 > 1.0) or (b1 > 1.0 and b2 < 1.0))
+        if not crossed:
+            continue
+
+        z1 = z_grid[i - 1]
+        z2 = z_grid[i]
+        r1 = (planet_radius + z1).to_value(u.cm)
+        r2 = (planet_radius + z2).to_value(u.cm)
+
+        if np.isclose(b2, b1):
+            r_beta1_cm = r1
+        else:
+            r_beta1_cm = r1 + (1.0 - b1) * (r2 - r1) / (b2 - b1)
+
+        z_refine_grid = np.linspace(z1.to_value(u.cm), z2.to_value(u.cm), refine_points) * u.cm
+        _, ncol_refine_grid = build_species_column_grid(
+            system_obj,
+            z_refine_grid,
+            abundance,
+            ncol_cache,
+        )
+        r_refine_grid = planet_radius + z_refine_grid
+        refine_chunk_size = min(ATOMIC_COLUMN_CHUNK_SIZE, max(1, refine_points))
 
         try:
-            F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(
-                ncol_local,
+            beta_values_refine = evaluate_beta_grid(
+                pp,
+                ncol_refine_grid,
                 planet_case["T"],
                 system_obj.distance,
-            )
-            beta_species, _ = pp.beta_Values(
-                F_ph_tot,
-                F_ph_tot_err,
                 system_obj.planet.mass,
-                r_local,
+                r_refine_grid,
+                chunk_size=refine_chunk_size,
             )
-            beta_value = float(np.squeeze(beta_species.value))
         except Exception as exc:
-            print(f"Skipping {species} for {star_key} at z={z.to_value(u.km):.3f} km: {exc}")
+            print(f"Skipping {species} for {star_key} in refined atomic grid: {exc}")
             maybe_print_traceback()
             return np.nan
 
-        if np.isclose(beta_value, 1.0, atol=1e-6):
-            return float((r_local / planet_radius).decompose().value)
+        exact_matches_refine = np.where(np.isclose(beta_values_refine, 1.0, atol=1e-6))[0]
+        if len(exact_matches_refine) > 0:
+            j = int(exact_matches_refine[0])
+            return float((r_refine_grid[j] / planet_radius).decompose().value)
 
-        if prev_beta_value is not None:
-            crossed = ((prev_beta_value < 1.0 and beta_value > 1.0) or
-                       (prev_beta_value > 1.0 and beta_value < 1.0))
-            if crossed:
-                r1 = prev_r_local.to_value(u.cm)
-                r2 = r_local.to_value(u.cm)
-                b1 = prev_beta_value
-                b2 = beta_value
+        for j in range(1, len(beta_values_refine)):
+            br1 = beta_values_refine[j - 1]
+            br2 = beta_values_refine[j]
+            if not np.isfinite(br1) or not np.isfinite(br2):
+                continue
 
-                if np.isclose(b2, b1):
-                    r_beta1_cm = r1
+            crossed_refine = ((br1 < 1.0 and br2 > 1.0) or (br1 > 1.0 and br2 < 1.0))
+            if crossed_refine:
+                rr1 = r_refine_grid[j - 1].to_value(u.cm)
+                rr2 = r_refine_grid[j].to_value(u.cm)
+                if np.isclose(br2, br1):
+                    r_beta1_refine_cm = rr1
                 else:
-                    r_beta1_cm = r1 + (1.0 - b1) * (r2 - r1) / (b2 - b1)
+                    r_beta1_refine_cm = rr1 + (1.0 - br1) * (rr2 - rr1) / (br2 - br1)
+                return float(((r_beta1_refine_cm * u.cm) / planet_radius).decompose().value)
 
-                r_beta1 = r_beta1_cm * u.cm
-
-                z_refine_grid = np.linspace(prev_z.to_value(u.cm), z.to_value(u.cm), refine_points) * u.cm
-                for z_refine in z_refine_grid:
-                    r_local_refine = planet_radius + z_refine
-                    z_refine_cm_value = float(z_refine.to_value(u.cm))
-                    ncol_refine_key = z_refine_cm_value
-
-                    if ncol_cache is not None and ncol_refine_key in ncol_cache:
-                        ncol_local_refine = abundance * ncol_cache[ncol_refine_key]
-                    else:
-                        ncol_local_refine = abundance * get_total_slant_column(system_obj, z_refine, ncol_cache, ncol_refine_key)
-                    try:
-                        F_ph_tot_refine, F_ph_tot_err_refine, _, _ = pp.calc_PhotonPressure(
-                            ncol_local_refine,
-                            planet_case["T"],
-                            system_obj.distance,
-                        )
-                        beta_species_refine, _ = pp.beta_Values(
-                            F_ph_tot_refine,
-                            F_ph_tot_err_refine,
-                            system_obj.planet.mass,
-                            r_local_refine,
-                        )
-                        beta_value_refine = float(np.squeeze(beta_species_refine.value))
-                    except Exception as exc:
-                        print(f"Skipping {species} for {star_key} at refined z={z_refine.to_value(u.km):.3f} km: {exc}")
-                        maybe_print_traceback()
-                        return np.nan
-
-                    if np.isclose(beta_value_refine, 1.0, atol=1e-6):
-                        return float((r_local_refine / planet_radius).decompose().value)
-
-                return float((r_beta1 / planet_radius).decompose().value)
-
-        prev_r_local = r_local
-        prev_beta_value = beta_value
-        prev_z = z
+        return float(((r_beta1_cm * u.cm) / planet_radius).decompose().value)
 
     return np.nan
 
@@ -719,8 +836,16 @@ def main():
             )
         star_keys_sorted = sorted(SELECTED_STARS, key=infer_teff_from_star_template)
 
-    if USE_CHECKPOINT:
-        all_results = load_checkpoint_rows(CHECKPOINT_PATH)
+    distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
+    run_signature = current_run_signature(star_keys_sorted, distance_values_au)
+
+    if START_FRESH_RUN and not fresh_run_marker_matches(run_signature):
+        reset_selected_planet_outputs()
+        write_fresh_run_marker(run_signature)
+        all_results = []
+        completed_keys = set()
+    elif USE_CHECKPOINT:
+        all_results = load_checkpoint_rows(CHECKPOINT_PATH, run_signature)
         completed_keys = completed_checkpoint_keys(all_results)
         if all_results:
             print(f"Loaded {len(all_results)} saved Teff beta1 checkpoint rows from {CHECKPOINT_PATH}")
@@ -742,15 +867,21 @@ def main():
         ncol_cache = {}
 
         if requested_species is None:
-            composition_species = list(planet_case["composition"].keys())
-            requested_species = [
-                species
-                for species in composition_species
-                if species_matches_run_filters(species) and species not in {"O2", "OH"}
-            ]
-            print(
-                f"No species specified for {selected_planet}; using filtered planet composition species: {requested_species}"
-            )
+            if RUN_ALL_ABSORBERS_IF_UNSPECIFIED:
+                requested_species = ordered_all_absorber_species()
+                print(
+                    f"No species specified for {selected_planet}; using all filtered absorbers: {requested_species}"
+                )
+            else:
+                composition_species = list(planet_case["composition"].keys())
+                requested_species = [
+                    species
+                    for species in composition_species
+                    if species_matches_run_filters(species) and species not in {"O2", "OH"}
+                ]
+                print(
+                    f"No species specified for {selected_planet}; using filtered planet composition species: {requested_species}"
+                )
         else:
             requested_species = [
                 species for species in requested_species
@@ -781,7 +912,6 @@ def main():
             output_dir = ROOT_OUTPUT_DIR / f"{planet_save_name}_r_beta1"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            distance_values_au = [dist.to_value(u.AU) for dist in DISTANCE_LIST]
             teff_labels = [f"{infer_teff_from_star_template(star_key):.0f}" for star_key in star_keys_sorted]
             total_systems = len(distance_values_au) * len(star_keys_sorted)
             existing_species_rows = [
@@ -855,15 +985,14 @@ def main():
                                         star_key,
                                         dist_value_au,
                                         rbeta_value,
+                                        run_signature,
                                     )
                                 )
                                 completed_keys.add(row_key)
 
                             if new_rows:
                                 all_results.extend(new_rows)
-                                if USE_CHECKPOINT:
-                                    save_checkpoint_rows(all_results, CHECKPOINT_PATH)
-                                save_species_table_from_rows(
+                                persist_species_progress(
                                     all_results,
                                     selected_planet,
                                     selected_species,
@@ -916,12 +1045,11 @@ def main():
                                     star_key,
                                     dist_value_au,
                                     rbeta_value,
+                                    run_signature,
                                 )
                             )
                             completed_keys.add(row_key)
-                            if USE_CHECKPOINT:
-                                save_checkpoint_rows(all_results, CHECKPOINT_PATH)
-                            save_species_table_from_rows(
+                            persist_species_progress(
                                 all_results,
                                 selected_planet,
                                 selected_species,
@@ -932,6 +1060,7 @@ def main():
             else:
                 for dist in DISTANCE_LIST:
                     dist_value_au = float(dist.to_value(u.AU))
+                    new_rows = []
                     print(
                         f"species={selected_species}, "
                         f"temp_atm={planet_case['T'].to_value(u.K):.0f} K, "
@@ -953,19 +1082,21 @@ def main():
                             geometry_cache=geometry_cache,
                             ncol_cache=ncol_cache,
                         )
-                        all_results.append(
+                        new_rows.append(
                             make_checkpoint_row(
                                 selected_planet,
                                 selected_species,
                                 star_key,
                                 dist_value_au,
                                 value,
+                                run_signature,
                             )
                         )
                         completed_keys.add(row_key)
-                        if USE_CHECKPOINT:
-                            save_checkpoint_rows(all_results, CHECKPOINT_PATH)
-                        save_species_table_from_rows(
+
+                    if new_rows:
+                        all_results.extend(new_rows)
+                        persist_species_progress(
                             all_results,
                             selected_planet,
                             selected_species,
@@ -982,7 +1113,7 @@ def main():
             if not species_rows:
                 raise ValueError(f"No data were computed for planet={selected_planet}, species={selected_species}")
 
-            table_path = save_species_table_from_rows(
+            persist_species_progress(
                 all_results,
                 selected_planet,
                 selected_species,
@@ -990,6 +1121,7 @@ def main():
                 star_keys_sorted,
                 distance_values_au,
             )
+            table_path = output_dir / f"{species_save_name}_r_beta1.txt"
             species_elapsed_s = time.perf_counter() - species_start_time
             print(f"Used species: {selected_species}")
             if SAVE_OUTPUT_TXT:
@@ -997,6 +1129,7 @@ def main():
             else:
                 print("SAVE_OUTPUT_TXT=False, skipping table save")
             print(f"Total time for {selected_species}: {species_elapsed_s:.2f} s")
+            clear_species_runtime_caches(selected_species)
 
 
 if __name__ == "__main__":
