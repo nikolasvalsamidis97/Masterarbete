@@ -35,10 +35,10 @@ import traceback
 SELECTED_ATOMIC_SPECIES = None
 SELECTED_MOLECULAR_SPECIES = None
 SKIP_ATOMS = False
-SKIP_MOLECULES = False
+SKIP_MOLECULES = True
 RUN_ALL_ABSORBERS_IF_UNSPECIFIED = True
 START_FRESH_RUN = True
-FRESH_RUN_LABEL = "fresh_run_1"
+FRESH_RUN_LABEL = "fresh_run_atoms_only"
 USE_COMPOSITION_MIXING_RATIOS = False
 
 
@@ -68,6 +68,7 @@ TARGET_TEFFS_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
 STAR_STRIDE = 5
 DISTANCE_MAX_WORKERS = 1
 STAR_MAX_WORKERS = 1
+OUTPUT_ROOT_NAME = None
 # Choose outer parallelization strategy:
 # "distance"      -> one worker per distance (reuses stars serially inside each worker)
 # "distance_star" -> one worker per (distance, star) pair (more workers, less reuse)
@@ -95,13 +96,23 @@ b_molecule = 1 * u.km / u.s
 star_cache = {}
 profile_cache = {}
 
-ROOT_OUTPUT_DIR = (
+TEFF_STUDY_OUTPUT_DIR = (
     pathlib.Path(__file__).resolve().parents[2]
     / "Plots"
     / "Atmospheric test"
     / "Teff_study"
-    / "r_at_beta1"
 )
+
+
+def default_output_root_name() -> str:
+    if SKIP_ATOMS and not SKIP_MOLECULES:
+        return "r_at_beta1_molecules"
+    if SKIP_MOLECULES and not SKIP_ATOMS:
+        return "r_at_beta1_atoms"
+    return "r_at_beta1"
+
+
+ROOT_OUTPUT_DIR = TEFF_STUDY_OUTPUT_DIR / (OUTPUT_ROOT_NAME or default_output_root_name())
 CHECKPOINT_PATH = ROOT_OUTPUT_DIR / "teff_planet_beta1_dist_checkpoint.csv"
 FRESH_RUN_MARKER_PATH = ROOT_OUTPUT_DIR / "teff_planet_beta1_dist_fresh_run.json"
 
@@ -456,6 +467,17 @@ def evaluate_beta_grid(pp, ncol_grid, temp_atm, distance, planet_mass, r_grid, c
     return np.asarray(beta_species_grid.value, dtype=float).reshape(-1)
 
 
+def fallback_lowest_height_success_ratio(beta_values: np.ndarray, r_grid, planet_radius) -> float:
+    finite_indices = np.flatnonzero(np.isfinite(beta_values))
+    if finite_indices.size == 0:
+        return np.nan
+
+    first_index = int(finite_indices[0])
+    if beta_values[first_index] >= 1.0:
+        return float((r_grid[first_index] / planet_radius).decompose().value)
+    return np.nan
+
+
 def persist_species_progress(
     all_results,
     selected_planet,
@@ -670,6 +692,9 @@ def r_beta1_over_R(
 
             return float(((r_beta1_cm * u.cm) / planet_radius).decompose().value)
 
+        fallback_ratio = fallback_lowest_height_success_ratio(beta_values_grid, r_grid, planet_radius)
+        if np.isfinite(fallback_ratio):
+            return fallback_ratio
         return np.nan
 
     _, ncol_grid = build_species_column_grid(system_obj, z_grid, abundance, ncol_cache)
@@ -764,6 +789,9 @@ def r_beta1_over_R(
 
         return float(((r_beta1_cm * u.cm) / planet_radius).decompose().value)
 
+    fallback_ratio = fallback_lowest_height_success_ratio(beta_values_grid, r_grid, planet_radius)
+    if np.isfinite(fallback_ratio):
+        return fallback_ratio
     return np.nan
 
 

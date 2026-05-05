@@ -67,6 +67,16 @@ class Atom:
         # Ion identification
         spec = df.get('Spectrum')
 
+        def text_series(column_name: str) -> pd.Series:
+            series = df.get(column_name)
+            if series is None:
+                return pd.Series([""] * len(df), index=df.index, dtype="object")
+            return series.fillna("").astype(str)
+
+        def split_two_columns(series: pd.Series, delimiter: str) -> pd.DataFrame:
+            parts = series.str.split(delimiter, n=1, expand=True)
+            return parts.reindex(columns=[0, 1], fill_value="")
+
         # Wavelength in nm. If observed wavelength is missing i will use Ritz
         lam_obs = pd.to_numeric(df['Observed'], errors='coerce').astype(float)
         lam_ritz = pd.to_numeric(df['Ritz'], errors='coerce').astype(float)
@@ -91,20 +101,24 @@ class Atom:
         Acc = (Acc.map(ACC_FRAC) * A_ul).fillna(0.0)
         
 
-        eiek = df['Ei           Ek'].str.split('-', n=1, expand=True)
+        eiek = split_two_columns(text_series('Ei           Ek'), '-')
         ei = eiek[0].str.strip(' []?') # lower energy (Ei)
         ek = eiek[1].str.strip(' []?') # upper energy (Ek)
         Ei = pd.to_numeric(ei, errors='coerce')
         Ek = pd.to_numeric(ek, errors='coerce')
 
-        gigk = df['gi   gk'].str.split('-', n=1, expand=True)
+        gigk = split_two_columns(text_series('gi   gk'), '-')
         gi = gigk[0].str.strip()
         gk = gigk[1].str.strip()
         Gi = pd.to_numeric(gi, errors='coerce')
         Gk = pd.to_numeric(gk, errors='coerce')
 
-        ji = df['Lower level'].str.split('|',n=2 , expand=True)[2].str.strip()
-        jk = df['Upper level'].str.split('|',n=2 , expand=True)[2].str.strip()
+        lower_parts = text_series('Lower level').str.split('|', n=2, expand=True)
+        lower_parts = lower_parts.reindex(columns=[0, 1, 2], fill_value="")
+        upper_parts = text_series('Upper level').str.split('|', n=2, expand=True)
+        upper_parts = upper_parts.reindex(columns=[0, 1, 2], fill_value="")
+        ji = lower_parts[2].str.strip()
+        jk = upper_parts[2].str.strip()
 
         fik = pd.to_numeric(df['fik'], errors='coerce')
 
