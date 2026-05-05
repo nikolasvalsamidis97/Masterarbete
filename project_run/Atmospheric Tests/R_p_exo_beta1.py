@@ -29,11 +29,11 @@ from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_t
 
 SELECTED_ATOMIC_SPECIES = None
 SELECTED_MOLECULAR_SPECIES = None
-SKIP_ATOMS = False
-SKIP_MOLECULES = True
+SKIP_ATOMS = True
+SKIP_MOLECULES = False
 RUN_ALL_ABSORBERS_IF_UNSPECIFIED = True
 START_FRESH_RUN = True
-FRESH_RUN_LABEL = "fresh_run_atoms_only_3"
+FRESH_RUN_LABEL = "fresh_run_molecules_only_1"
 USE_COMPOSITION_MIXING_RATIOS = False
 
 
@@ -55,7 +55,7 @@ EVALUATION_MODE = "rexo_only"
 ATOMIC_COLUMN_CHUNK_SIZE = 8
 # Set to "serial" to disable parallelism completely.
 # Set to "star" to compute different stellar templates in parallel.
-PARALLEL_TASK_MODE = "star"
+PARALLEL_TASK_MODE = "serial"
 STAR_MAX_WORKERS = 2
 # If True, evaluate distances from smallest to largest and stop after the
 # first fail for a given (planet, species, star), marking all larger
