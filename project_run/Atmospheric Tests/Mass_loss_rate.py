@@ -22,6 +22,7 @@ from project_classes.Planet import Planet
 from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
+from project_func.exobase_table_path import resolve_exobase_table_path
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
 from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_teff_from_star_template
@@ -78,11 +79,7 @@ P0_SWEEP_OUTPUT_DIR = OUTPUT_DIR / "P0_sweeps" / P0_SWEEP_PLANET_KEY
 USE_CHECKPOINT = True
 CHECKPOINT_PATH = OUTPUT_DIR / "mass_loss_checkpoint.csv"
 EXOBASE_TABLE = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "Plots"
-    / "Atmospheric test"
-    / "Exobase"
-    / "exobase_table_planets.csv"
+    resolve_exobase_table_path(pathlib.Path(__file__).resolve().parents[2])
 )
 
 M_NEPTUNE = 17.147 * u.M_earth

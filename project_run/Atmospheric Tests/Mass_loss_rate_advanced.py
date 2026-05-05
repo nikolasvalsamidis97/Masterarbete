@@ -27,6 +27,7 @@ BASE_SPEC.loader.exec_module(base_mass_loss)
 
 from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
 from project_classes.Molecule import Molecule
+from project_func.exobase_table_path import resolve_exobase_table_path
 
 
 # -----------------------------------------------------------------------------
@@ -88,11 +89,7 @@ OUTPUT_DIR = (
 )
 CHECKPOINT_PATH = OUTPUT_DIR / "mass_loss_advanced_checkpoint.csv"
 EXOBASE_TABLE = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "Plots"
-    / "Atmospheric test"
-    / "Exobase"
-    / "exobase_table_planets.csv"
+    resolve_exobase_table_path(pathlib.Path(__file__).resolve().parents[2])
 )
 
 SOLAR_SYSTEM_STAR_KEY = "G1"

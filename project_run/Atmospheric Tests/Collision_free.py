@@ -10,6 +10,10 @@ from astropy import units as u
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 from project_classes.Planet import Planet
+from project_func.exobase_table_path import (
+    canonical_exobase_table_path,
+    legacy_exobase_table_path,
+)
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
@@ -35,8 +39,9 @@ from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, ge
 #
 # The search domain is Hill-limited, as in the older script.
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Plots" / "Atmospheric test" / "Exobase"
-OUTPUT_NAME = "exobase_table_planets.csv"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+OUTPUT_PATH = canonical_exobase_table_path(REPO_ROOT)
+LEGACY_OUTPUT_PATH = legacy_exobase_table_path(REPO_ROOT)
 N_Z = 10000
 Z_MAX_SCALE_HEIGHTS = 100.0
 Z_MAX_MIN = 1000.0 * u.km
@@ -278,10 +283,13 @@ def main() -> None:
     df["z_max_km"] = df["z_max_km"].round(0).astype(int)
     df["H0_km"] = df["H0_km"].round(1)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    output_path = OUTPUT_DIR / OUTPUT_NAME
-    df.to_csv(output_path, index=False)
-    print(f"Saved exobase table to: {output_path}")
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUTPUT_PATH, index=False)
+    print(f"Saved exobase table to: {OUTPUT_PATH}")
+
+    LEGACY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(LEGACY_OUTPUT_PATH, index=False)
+    print(f"Saved legacy exobase table to: {LEGACY_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

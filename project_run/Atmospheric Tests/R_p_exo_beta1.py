@@ -21,6 +21,7 @@ from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Planet import Planet
 from project_classes.PlanetarySystem import PlanetarySystem
 from project_classes.Star import Star
+from project_func.exobase_table_path import resolve_exobase_table_path
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
@@ -82,11 +83,7 @@ TEFF_STUDY_OUTPUT_DIR = (
 )
 OUTPUT_DIR = TEFF_STUDY_OUTPUT_DIR / "R_p_exo_beta1"
 EXOBASE_TABLE = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "Plots"
-    / "Atmospheric test"
-    / "Exobase"
-    / "exobase_table_planets.csv"
+    resolve_exobase_table_path(pathlib.Path(__file__).resolve().parents[2])
 )
 
 
