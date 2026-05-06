@@ -1,32 +1,53 @@
-\begin{longtable}{llccccc}
-\caption{Updated planet template bulk properties.}
-\label{tab:planet_template_properties} \\
+\begin{longtable}{llcccccl}
+\caption{Planet templates used in this work, grouped by atmospheric or structural category. The table lists the adopted radius, mass, atmospheric temperature, mean molecular weight, reference pressure, and a short description for each template.}
+\label{tab:planet_templates_properties} \\
 \toprule
-Template & Category & Radius & Mass & $T$ (K) & $\mu$ & $P_0$ (bar) \\
+Template & Category & $R$ & $M$ & $T$ [K] & $\mu$ & $P_0$ [bar] & Notes \\
 \midrule
 \endfirsthead
+
 \toprule
-Template & Category & Radius & Mass & $T$ (K) & $\mu$ & $P_0$ (bar) \\
+Template & Category & $R$ & $M$ & $T$ [K] & $\mu$ & $P_0$ [bar] & Notes \\
 \midrule
 \endhead
-mercury\_like & rocky & 0.383 $R_\oplus$ & 0.055 $M_\oplus$ & 440 & 23 & 1e-09 \\
-earth\_like & rocky & 1 $R_\oplus$ & 1 $M_\oplus$ & 288 & 28.97 & 1 \\
-mars\_like & rocky & 0.532 $R_\oplus$ & 0.107 $M_\oplus$ & 210 & 43 & 0.006 \\
-super\_earth\_rocky & rocky & 2 $R_\oplus$ & 4 $M_\oplus$ & 300 & 25 & 1 \\
-lava\_world & rocky & 2 $R_\oplus$ & 8 $M_\oplus$ & 2000 & 35 & 0.001 \\
-volatile\_super\_earth & rocky & 2 $R_\oplus$ & 6.5 $M_\oplus$ & 900 & 6 & 5e-04 \\
-mini\_neptune\_cool & mini\_neptune & 2.5 $R_\oplus$ & 7 $M_\oplus$ & 400 & 2.5 & 1e-04 \\
-mini\_neptune\_warm & mini\_neptune & 2.5 $R_\oplus$ & 9 $M_\oplus$ & 700 & 2.5 & 1e-04 \\
-sub\_neptune & sub\_neptune & 3.5 $R_\oplus$ & 12 $M_\oplus$ & 900 & 2.5 & 1e-04 \\
-warm\_neptune & neptune & 4 $R_\oplus$ & 17 $M_\oplus$ & 900 & 2.5 & 1e-04 \\
-hot\_neptune & neptune & 4.5 $R_\oplus$ & 20 $M_\oplus$ & 1000 & 2.5 & 1e-04 \\
-super\_puff & sub\_neptune & 6.5 $R_\oplus$ & 4.5 $M_\oplus$ & 700 & 2.5 & 1e-04 \\
-cold\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 200 & 2.5 & 0.001 \\
-warm\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 600 & 2.5 & 0.001 \\
-hot\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 1500 & 2.5 & 0.001 \\
-inflated\_hot\_jupiter & gas\_giant & 1.5 $R_\mathrm{J}$ & 0.5 $M_\mathrm{J}$ & 1500 & 2.5 & 0.001 \\
-ultra\_hot\_jupiter & gas\_giant & 2 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 2500 & 2.5 & 0.001 \\
-alkali\_exosphere\_rocky & rocky & 0.8 $R_\oplus$ & 0.4 $M_\oplus$ & 1000 & 25 & 1e-08 \\
-metal\_rich\_secondary & rocky & 2 $R_\oplus$ & 6 $M_\oplus$ & 1000 & 35 & 0.01 \\
+
+\midrule
+\multicolumn{8}{r}{Continued on next page} \\
+\midrule
+\endfoot
+
 \bottomrule
+\endlastfoot
+
+\multicolumn{8}{l}{\textbf{Rocky / terrestrial templates}} \\
+\midrule
+mercury\_like & rocky & 0.383 $R_\oplus$ & 0.055 $M_\oplus$ & 440 & 23 & $10^{-9}$ & Na-rich, tenuous rocky exosphere inspired by Mercury. \\
+earth\_like & rocky & 1 $R_\oplus$ & 1 $M_\oplus$ & 288 & 28.97 & 1 & Secondary atmosphere, Earth-like reference case. \\
+mars\_like & rocky & 0.532 $R_\oplus$ & 0.107 $M_\oplus$ & 210 & 43 & $6\times10^{-3}$ & Thin CO$_{2}$-dominated secondary atmosphere approximated by large mean molecular weight. \\
+super\_earth\_rocky & rocky & 2 $R_\oplus$ & 4 $M_\oplus$ & 300 & 25 & 1 & Generic rocky super-Earth \\
+lava\_world & rocky & 2 $R_\oplus$ & 8 $M_\oplus$ & 2000 & 35 & $10^{-3}$ & Generic silicate-vapor / alkali-rich ultra-hot rocky planet. \\
+volatile\_super\_earth & rocky & 2 $R_\oplus$ & 6.5 $M_\oplus$ & 900 & 6 & $10^{-3}$ & Transitional hot super-Earth with a volatile-rich, partially retained light envelope. \\
+alkali\_exosphere\_rocky & rocky & 0.8 $R_\oplus$ & 0.4 $M_\oplus$ & 1000 & 25 & $10^{-8}$ & Useful for emphasizing Na/K radiation-pressure signatures. \\
+metal\_rich\_secondary & rocky & 2 $R_\oplus$ & 6 $M_\oplus$ & 1000 & 35 & 0.01 & Heavy secondary atmosphere for parameter studies beyond H/He envelopes. \\
+\midrule
+
+\multicolumn{8}{l}{\textbf{Sub-Neptunes / mini-Neptunes / Neptunes}} \\
+\midrule
+mini\_neptune\_cool & mini\_neptune & 2.5 $R_\oplus$ & 7 $M_\oplus$ & 400 & 2.5 & $10^{-4}$ & H/He-dominated mini-Neptune with trace heavy species. \\
+mini\_neptune\_warm & mini\_neptune & 2.5 $R_\oplus$ & 9 $M_\oplus$ & 700 & 2.5 & $10^{-4}$ & Warm mini-Neptune appropriate for irradiation studies. \\
+sub\_neptune & sub\_neptune & 3.5 $R_\oplus$ & 12 $M_\oplus$ & 900 & 2.5 & $10^{-4}$ & Generic irradiated sub-Neptune with H/He envelope. \\
+warm\_neptune & neptune & 4 $R_\oplus$ & 17 $M_\oplus$ & 900 & 2.5 & $10^{-4}$ & Representative warm Neptune atmosphere. \\
+hot\_neptune & neptune & 4.5 $R_\oplus$ & 20 $M_\oplus$ & 1000 & 2.5 & $10^{-4}$ & Hot Neptune with stronger heavy-species signature. \\
+super\_puff & sub\_neptune & 6.5 $R_\oplus$ & 4.5 $M_\oplus$ & 700 & 2.5 & $10^{-4}$ & Very low-gravity inflated sub-Neptune / super-puff for escape sensitivity tests. \\
+\midrule
+
+\multicolumn{8}{l}{\textbf{Gas giants}} \\
+\midrule
+cold\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 200 & 2.5 & $10^{-3}$ & Cold giant baseline with weak irradiation and molecule-rich atmosphere. \\
+warm\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 600 & 2.5 & $10^{-3}$ & Generic warm Jupiter. \\
+hot\_jupiter & gas\_giant & 1 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 1500 & 2.5 & $10^{-3}$ & Representative hot Jupiter for irradiation studies. \\
+inflated\_hot\_jupiter & gas\_giant & 1.5 $R_\mathrm{J}$ & 0.5 $M_\mathrm{J}$ & 1500 & 2.5 & $10^{-3}$ & Low-gravity inflated hot Jupiter. \\
+ultra\_hot\_jupiter & gas\_giant & 2 $R_\mathrm{J}$ & 1 $M_\mathrm{J}$ & 2500 & 2.5 & $10^{-3}$ & Ultra-hot giant with partial ionization and strong heavy-species signatures. \\
+\midrule
+
 \end{longtable}

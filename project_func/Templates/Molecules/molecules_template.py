@@ -21,14 +21,6 @@ MOLECULE_TEMPLATES = {
             "localdatabase": "exomol_data",
         },
     },
-    "CH4": {
-        "source": "exomol",
-        "fetch_kwargs": {
-            "path": "CH4/12C-1H4/MM",
-            "database": "MM",
-            "localdatabase": "exomol_data",
-        },
-    },
     "NH3": {
         "source": "exomol",
         "fetch_kwargs": {
@@ -142,22 +134,5 @@ MOLECULE_TEMPLATES = {
     #         "localdatabase": "exomol_data",
     #     },
     # },
-    "OCS": {
-        "source": "exomol",
-        "fetch_kwargs": {
-            "path": "OCS/16O-12C-32S/OYT8",
-            "database": "OYT8",
-            "localdatabase": "exomol_data",
-        },
-    },
-    "PH3": {
-        "source": "exomol",
-        "fetch_kwargs": {
-            "path": "PH3/31P-1H3/SAlTY",
-            "database": "SAlTY",
-            "localdatabase": "exomol_data",
-        },
-    },
-
 }
   
