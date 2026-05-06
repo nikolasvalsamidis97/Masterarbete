@@ -17,13 +17,31 @@ from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Star import Star
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
-from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_teff_from_star_template
+from project_func.Templates.Stars.stars_templates_updated import (
+    STAR_TEMPLATES,
+    infer_teff_from_star_template,
+)
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-INCLUDE_ATOMS = False
-INCLUDE_MOLECULES = True
+# Remote-friendly mode switch:
+#   "atoms"     -> write beta_bigtable_atoms.txt
+#   "molecules" -> write beta_bigtable_molecules.txt
+#   "both"      -> do both in one run
+RUN_MODE = "atoms"
+
+if RUN_MODE == "atoms":
+    INCLUDE_ATOMS = True
+    INCLUDE_MOLECULES = False
+elif RUN_MODE == "molecules":
+    INCLUDE_ATOMS = False
+    INCLUDE_MOLECULES = True
+elif RUN_MODE == "both":
+    INCLUDE_ATOMS = True
+    INCLUDE_MOLECULES = True
+else:
+    raise ValueError(f"Unsupported RUN_MODE={RUN_MODE!r}. Use 'atoms', 'molecules', or 'both'.")
 
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
@@ -541,10 +559,12 @@ def rows_to_dataframe(rows: List[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_selected_stars_table(selected_stars: List[dict]) -> str:
+def build_selected_stars_table(selected_stars: List[dict], caption: str, label: str) -> str:
     lines = [
         r"\begin{table}[ht]",
         r"\centering",
+        rf"\caption{{{caption}}}",
+        rf"\label{{{label}}}",
         r"\begin{tabular}{ccccc}",
         r"\toprule",
         r"Teff (K) & Radius ($R_\odot$) & Mass ($M_\odot$) & vsini (km/s) & epsilon \\",
@@ -584,17 +604,21 @@ def main() -> None:
             {
                 "star_key": s["key"],
                 "teff_k": s["teff_k"],
-                "radius_rsun": s["star"].radius.to_value(u.R_sun),
-                "mass_msun": s["star"].mass.to_value(u.M_sun),
-                "vsini_kms": s["star"].vsini.to_value(u.km / u.s),
-                "epsilon": s["star"].epsilon.to_value(u.dimensionless_unscaled),
+                "radius_rsun": round(s["star"].radius.to_value(u.R_sun), 2),
+                "mass_msun": round(s["star"].mass.to_value(u.M_sun), 1),
+                "vsini_kms": round(s["star"].vsini.to_value(u.km / u.s), 0),
+                "epsilon": round(s["star"].epsilon.to_value(u.dimensionless_unscaled), 1),
             }
             for s in selected_stars
         ]
     )
     selected_stars_df.to_csv(OUTPUT_DIR / SELECTED_STARS_NAME, index=False)
 
-    selected_stars_tex = build_selected_stars_table(selected_stars)
+    selected_stars_tex = build_selected_stars_table(
+        selected_stars,
+        caption=f"Selected stellar templates used in the {RUN_SUFFIX.replace('_', ' ')} beta bigtable.",
+        label=f"tab:beta_bigtable_selected_stars_{RUN_SUFFIX}",
+    )
     (OUTPUT_DIR / SELECTED_STARS_TEX_NAME).write_text(selected_stars_tex, encoding="utf-8")
 
     if INCLUDE_ATOMS:

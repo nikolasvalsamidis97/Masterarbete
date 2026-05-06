@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import astropy.units as u
 from astropy import constants as const
+from scipy.integrate import trapezoid
 
 # Avoid RADIS/numba cache issues when PhotonPressure imports the molecule stack.
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
@@ -279,7 +280,7 @@ def integrated_atmosphere_mass(
     n_grid = planet.number_density(z_grid)
     rho_grid = (planet.mu * const.u).to(u.g) * n_grid
     integrand = (4.0 * np.pi * r_grid**2 * rho_grid).to(u.g / u.cm)
-    mass_g = np.trapz(integrand.to_value(u.g / u.cm), z_grid.to_value(u.cm)) * u.g
+    mass_g = trapezoid(integrand.to_value(u.g / u.cm), z_grid.to_value(u.cm)) * u.g
     return mass_g.to(u.g), z_top, source
 
 
@@ -492,7 +493,7 @@ def integrate_density_segment(
     n_species_cm3 = np.zeros_like(x_cm)
     z_cm = (r_cm[shell_mask] - planet.radius.to_value(u.cm)) * u.cm
     n_species_cm3[shell_mask] = abundance * planet.number_density(z_cm).to_value(1 / u.cm**3)
-    return float(np.trapz(n_species_cm3, x_cm))
+    return float(trapezoid(n_species_cm3, x_cm))
 
 
 def integrate_density_segment_closest(
