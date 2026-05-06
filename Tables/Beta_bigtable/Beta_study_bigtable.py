@@ -1,6 +1,8 @@
 import pathlib
 import sys
 import gc
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
@@ -29,7 +31,7 @@ from project_func.Templates.Stars.stars_templates_updated import (
 #   "atoms"     -> write beta_bigtable_atoms.txt
 #   "molecules" -> write beta_bigtable_molecules.txt
 #   "both"      -> do both in one run
-RUN_MODE = "atoms"
+RUN_MODE = os.environ.get("BETA_BIGTABLE_RUN_MODE", "atoms").strip().lower()
 
 if RUN_MODE == "atoms":
     INCLUDE_ATOMS = True
@@ -42,6 +44,12 @@ elif RUN_MODE == "both":
     INCLUDE_MOLECULES = True
 else:
     raise ValueError(f"Unsupported RUN_MODE={RUN_MODE!r}. Use 'atoms', 'molecules', or 'both'.")
+
+# Parallelism:
+# - atoms default to one worker per atom species (set 0 for "all species")
+# - molecules default to 2 worker processes
+ATOM_MAX_WORKERS = int(os.environ.get("BETA_BIGTABLE_ATOM_MAX_WORKERS", "0"))
+MOLECULE_MAX_WORKERS = int(os.environ.get("BETA_BIGTABLE_MOLECULE_MAX_WORKERS", "2"))
 
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
@@ -208,6 +216,10 @@ def build_selected_stars(n_select: int = N_SELECTED_STARS) -> List[dict]:
             continue
         selected.append({"key": key, "teff_k": teff_k, "star": make_star(key)})
     return selected
+
+
+def selected_star_metadata(selected_stars: List[dict]) -> List[dict]:
+    return [{"key": s["key"], "teff_k": s["teff_k"]} for s in selected_stars]
 
 
 # -----------------------------------------------------------------------------
@@ -505,52 +517,117 @@ def broadening_label(b_kms: float) -> str:
     return f"{float(b_kms):g}"
 
 
+def row_sort_key(row: dict) -> tuple:
+    return (
+        str(row.get("species", "")),
+        str(row.get("b_label", "")),
+        int(row.get("teff_k", 0)),
+        str(row.get("star_key", "")),
+    )
+
+
+def worker_count_for_category(category: str, species_count: int) -> int:
+    if species_count <= 1:
+        return 1
+    if category == "atom":
+        if ATOM_MAX_WORKERS <= 0:
+            return species_count
+        return min(species_count, ATOM_MAX_WORKERS)
+    return min(species_count, max(1, MOLECULE_MAX_WORKERS))
+
+
+def calculate_species_rows_worker(
+    category: str,
+    species: str,
+    star_entries: List[dict],
+) -> List[dict]:
+    rows: List[dict] = []
+    local_selected_stars = [
+        {"key": entry["key"], "teff_k": entry["teff_k"], "star": make_star(entry["key"])}
+        for entry in star_entries
+    ]
+
+    for b_kms in B_VALUES_KMS:
+        b_label = broadening_label(b_kms)
+        for star_info in local_selected_stars:
+            try:
+                if category == "atom":
+                    beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_atom(species, b_kms, star_info)
+                else:
+                    beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_molecule(species, b_kms, star_info)
+            except Exception as exc:
+                print(
+                    f"Skipping {category} species={species}, b={b_label}, star={star_info['key']}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                beta_zero, beta_err_zero, n_half_beta_cm2 = np.nan, np.nan, np.nan
+
+            rows.append(
+                {
+                    "species": species,
+                    "b_label": b_label,
+                    "b_effective_kms": float(effective_b_value(b_kms).to_value(u.km / u.s)),
+                    "star_key": star_info["key"],
+                    "teff_k": star_info["teff_k"],
+                    "beta": beta_zero,
+                    "beta_err": beta_err_zero,
+                    "n_half_beta_cm2": n_half_beta_cm2,
+                }
+            )
+
+    if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
+        for profile in molecule_profile_cache.values():
+            if hasattr(profile, "clear_temperature_cache"):
+                profile.clear_temperature_cache(keep_current=False)
+        molecule_profile_cache.clear()
+        PhotonPressure.clear_molecule_flux_cache()
+        gc.collect()
+
+    return rows
+
+
 def calculate_category_rows(
     species_list: Iterable[str],
     selected_stars: List[dict],
     category: str,
     progress_output_path: pathlib.Path | None = None,
 ) -> List[dict]:
+    species_sequence = list(species_list)
     rows: List[dict] = []
+    star_entries = selected_star_metadata(selected_stars)
+    max_workers = worker_count_for_category(category, len(species_sequence))
 
-    for species in species_list:
-        print(f"Calculating {category}: {species}")
-        for b_kms in B_VALUES_KMS:
-            b_label = broadening_label(b_kms)
-            for star_info in selected_stars:
-                try:
-                    if category == "atom":
-                        beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_atom(species, b_kms, star_info)
-                    else:
-                        beta_zero, beta_err_zero, n_half_beta_cm2 = beta_for_molecule(species, b_kms, star_info)
-                except Exception as exc:
-                    print(f"Skipping {category} species={species}, b={b_label}, star={star_info['key']}: {type(exc).__name__}: {exc}")
-                    beta_zero, beta_err_zero, n_half_beta_cm2 = np.nan, np.nan, np.nan
+    if max_workers <= 1:
+        for species in species_sequence:
+            print(f"Calculating {category}: {species}")
+            species_rows = calculate_species_rows_worker(category, species, star_entries)
+            rows.extend(species_rows)
+            if progress_output_path is not None:
+                save_rows_atomic(sorted(rows, key=row_sort_key), progress_output_path)
+        return sorted(rows, key=row_sort_key)
 
-                rows.append(
-                    {
-                        "species": species,
-                        "b_label": b_label,
-                        "b_effective_kms": float(effective_b_value(b_kms).to_value(u.km / u.s)),
-                        "star_key": star_info["key"],
-                        "teff_k": star_info["teff_k"],
-                        "beta": beta_zero,
-                        "beta_err": beta_err_zero,
-                        "n_half_beta_cm2": n_half_beta_cm2,
-                    }
-                )
-                if progress_output_path is not None:
-                    save_rows_atomic(rows, progress_output_path)
+    print(
+        f"Calculating {category} in parallel with {max_workers} workers "
+        f"across {len(species_sequence)} species"
+    )
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(calculate_species_rows_worker, category, species, star_entries): species
+            for species in species_sequence
+        }
+        for future in as_completed(futures):
+            species = futures[future]
+            try:
+                species_rows = future.result()
+            except Exception as exc:
+                print(f"Failed {category} species={species}: {type(exc).__name__}: {exc}")
+                continue
+            rows.extend(species_rows)
+            if progress_output_path is not None:
+                save_rows_atomic(sorted(rows, key=row_sort_key), progress_output_path)
+            print(f"Finished {category}: {species}")
 
-        if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
-            for profile in molecule_profile_cache.values():
-                if hasattr(profile, "clear_temperature_cache"):
-                    profile.clear_temperature_cache(keep_current=False)
-            molecule_profile_cache.clear()
-            PhotonPressure.clear_molecule_flux_cache()
-            gc.collect()
-
-    return rows
+    return sorted(rows, key=row_sort_key)
 
 
 
