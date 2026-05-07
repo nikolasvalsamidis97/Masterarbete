@@ -3,6 +3,8 @@
 import pathlib
 import sys
 import gc
+import json
+import os
 from typing import Dict, Iterable, List, Tuple
 
 import numpy as np
@@ -18,7 +20,7 @@ from project_classes.PhotonPressure import PhotonPressure
 from project_classes.Star import Star
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
-from project_func.Templates.Stars.stars_templates import STAR_TEMPLATES, infer_teff_from_star_template
+from project_func.Templates.Stars.stars_templates_updated import STAR_TEMPLATES, infer_teff_from_star_template
 from project_func.plotdata_to_txt import save_plotdata_txt
 
 
@@ -31,6 +33,7 @@ INCLUDE_MOLECULES = True
 # Leave empty to use all atoms from the template. Fill with e.g.
 # ["H I", "Na I", "Fe I"] to do a small test run.
 SELECTED_ATOM_SPECIES = []
+SELECTED_MOLECULE_SPECIES = []
 
 TARGET_STELLAR_TEFFS_K = [2600.0, 10000.0, 50000.0]
 DISTANCE_AU = 1.0
@@ -48,11 +51,55 @@ CLEAR_MOLECULE_CACHES_AFTER_SPECIES = True
 SAVE_TXT = True
 SAVE_RAW_CSV = False
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parent
+_DEFAULT_EXTERNAL_OUTPUT_DIR = pathlib.Path.home() / "DATA" / "results" / "Beta_Tgas"
+_DEFAULT_OUTPUT_DIR = (
+    _DEFAULT_EXTERNAL_OUTPUT_DIR
+    if (pathlib.Path.home() / "DATA").exists()
+    else pathlib.Path(__file__).resolve().parent
+)
+OUTPUT_DIR = pathlib.Path(os.environ.get("BETA_TGAS_OUTPUT_DIR", str(_DEFAULT_OUTPUT_DIR))).expanduser()
+CHECKPOINT_DIR = OUTPUT_DIR / "_checkpoints"
+SAVE_PROGRESS_PER_SPECIES = True
+RESUME_FROM_CHECKPOINTS = True
 ATOMS_TXT_NAME = "beta_vs_Texc_atoms.txt"
 MOLECULES_TXT_NAME = "beta_vs_Texc_molecules.txt"
 ATOMS_RAW_NAME = "beta_vs_Texc_atoms_raw.csv"
 MOLECULES_RAW_NAME = "beta_vs_Texc_molecules_raw.csv"
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float_list(name: str, default: List[float]) -> List[float]:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return default
+    return [float(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def _env_str_list(name: str) -> List[str]:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+INCLUDE_ATOMS = _env_flag("BETA_TGAS_INCLUDE_ATOMS", INCLUDE_ATOMS)
+INCLUDE_MOLECULES = _env_flag("BETA_TGAS_INCLUDE_MOLECULES", INCLUDE_MOLECULES)
+TARGET_STELLAR_TEFFS_K = _env_float_list("BETA_TGAS_TARGET_TEFFS_K", TARGET_STELLAR_TEFFS_K)
+SELECTED_STAR_KEYS = _env_str_list("BETA_TGAS_STAR_KEYS")
+SELECTED_ATOM_SPECIES = _env_str_list("BETA_TGAS_SELECTED_ATOM_SPECIES") or SELECTED_ATOM_SPECIES
+SELECTED_MOLECULE_SPECIES = _env_str_list("BETA_TGAS_SELECTED_MOLECULE_SPECIES") or SELECTED_MOLECULE_SPECIES
+SAVE_PROGRESS_PER_SPECIES = _env_flag("BETA_TGAS_SAVE_PROGRESS_PER_SPECIES", SAVE_PROGRESS_PER_SPECIES)
+RESUME_FROM_CHECKPOINTS = _env_flag("BETA_TGAS_RESUME_FROM_CHECKPOINTS", RESUME_FROM_CHECKPOINTS)
+CLEAR_MOLECULE_CACHES_AFTER_SPECIES = _env_flag(
+    "BETA_TGAS_CLEAR_MOLECULE_CACHES_AFTER_SPECIES",
+    CLEAR_MOLECULE_CACHES_AFTER_SPECIES,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -63,6 +110,8 @@ MOLECULE_SPECIES = [species for species in MOLECULE_SPECIES if species != "O2"]
 
 if SELECTED_ATOM_SPECIES:
     ATOM_SPECIES = [species for species in ATOM_SPECIES if species in SELECTED_ATOM_SPECIES]
+if SELECTED_MOLECULE_SPECIES:
+    MOLECULE_SPECIES = [species for species in MOLECULE_SPECIES if species in SELECTED_MOLECULE_SPECIES]
 
 
 # -----------------------------------------------------------------------------
@@ -71,6 +120,8 @@ if SELECTED_ATOM_SPECIES:
 star_cache: Dict[str, Star] = {}
 atom_profile_cache: Dict[Tuple[str, float], BroadeningProfile] = {}
 molecule_profile_cache: Dict[Tuple[str, float], BroadeningProfileMolecule] = {}
+atom_pp_cache: Dict[Tuple[str, float, int], PhotonPressure] = {}
+molecule_pp_cache: Dict[Tuple[str, float, int], PhotonPressure] = {}
 
 
 # -----------------------------------------------------------------------------
@@ -90,6 +141,13 @@ def make_star(star_key: str) -> Star:
 
 
 def select_star_keys(target_teffs_k: Iterable[float | None]) -> List[str]:
+    if SELECTED_STAR_KEYS:
+        invalid = [key for key in SELECTED_STAR_KEYS if key not in STAR_TEMPLATES]
+        if invalid:
+            available = ", ".join(sorted(STAR_TEMPLATES))
+            raise KeyError(f"Unknown BETA_TGAS_STAR_KEYS entries: {invalid}. Available: {available}")
+        return list(dict.fromkeys(SELECTED_STAR_KEYS))
+
     teff_by_key = {key: float(infer_teff_from_star_template(key)) for key in STAR_TEMPLATES}
     selected_keys: List[str] = []
 
@@ -122,6 +180,7 @@ def effective_b_value(b_kms: float) -> u.Quantity:
 
 
 def clear_molecule_runtime_caches() -> None:
+    molecule_pp_cache.clear()
     for profile in molecule_profile_cache.values():
         if hasattr(profile, "clear_temperature_cache"):
             profile.clear_temperature_cache(keep_current=False)
@@ -139,6 +198,13 @@ def get_atom_profile(species: str, b_kms: float) -> BroadeningProfile:
     return atom_profile_cache[cache_key]
 
 
+def get_atom_photon_pressure(species: str, b_kms: float, star: Star) -> PhotonPressure:
+    cache_key = (species, float(b_kms), id(star))
+    if cache_key not in atom_pp_cache:
+        atom_pp_cache[cache_key] = PhotonPressure(get_atom_profile(species, b_kms), star)
+    return atom_pp_cache[cache_key]
+
+
 
 def get_molecule_profile(species: str, b_kms: float) -> BroadeningProfileMolecule:
     cache_key = (species, float(b_kms))
@@ -154,7 +220,10 @@ def get_molecule_profile(species: str, b_kms: float) -> BroadeningProfileMolecul
             molecule.fetch_exomol(
                 path=fetch_kwargs["path"],
                 database=fetch_kwargs["database"],
-                localdatabase=fetch_kwargs.get("localdatabase", "exomol_data"),
+                localdatabase=os.environ.get(
+                    "EXOMOL_LOCALDATABASE",
+                    fetch_kwargs.get("localdatabase", "exomol_data"),
+                ),
             )
 
         profile = BroadeningProfileMolecule(molecule, effective_b_value(b_kms), profileType="Voigt")
@@ -164,12 +233,93 @@ def get_molecule_profile(species: str, b_kms: float) -> BroadeningProfileMolecul
     return molecule_profile_cache[cache_key]
 
 
+def get_molecule_photon_pressure(species: str, b_kms: float, star: Star) -> PhotonPressure:
+    cache_key = (species, float(b_kms), id(star))
+    if cache_key not in molecule_pp_cache:
+        molecule_pp_cache[cache_key] = PhotonPressure(get_molecule_profile(species, b_kms), star)
+    return molecule_pp_cache[cache_key]
+
+
+def checkpoint_path(category: str, star_key: str) -> pathlib.Path:
+    return CHECKPOINT_DIR / f"beta_vs_Texc_{category}_{star_key}_checkpoint.json"
+
+
+def load_species_checkpoint(category: str, star_key: str, t_exc_values: np.ndarray) -> dict:
+    path = checkpoint_path(category, star_key)
+    if not RESUME_FROM_CHECKPOINTS or not path.exists():
+        return {
+            "processed_species": [],
+            "kept_species": [],
+            "beta_columns": [],
+            "n_tau1_columns": [],
+            "raw_rows": [],
+            "completed": False,
+        }
+
+    try:
+        data = json.loads(path.read_text())
+    except Exception as exc:
+        print(f"Ignoring unreadable checkpoint {path}: {type(exc).__name__}: {exc}")
+        return {
+            "processed_species": [],
+            "kept_species": [],
+            "beta_columns": [],
+            "n_tau1_columns": [],
+            "raw_rows": [],
+            "completed": False,
+        }
+
+    if list(map(float, data.get("t_exc_values", []))) != list(map(float, t_exc_values)):
+        print(f"Ignoring checkpoint with mismatched T_exc grid: {path}")
+        return {
+            "processed_species": [],
+            "kept_species": [],
+            "beta_columns": [],
+            "n_tau1_columns": [],
+            "raw_rows": [],
+            "completed": False,
+        }
+
+    return {
+        "processed_species": list(data.get("processed_species", [])),
+        "kept_species": list(data.get("kept_species", [])),
+        "beta_columns": [list(col) for col in data.get("beta_columns", [])],
+        "n_tau1_columns": [list(col) for col in data.get("n_tau1_columns", [])],
+        "raw_rows": list(data.get("raw_rows", [])),
+        "completed": bool(data.get("completed", False)),
+    }
+
+
+def save_species_checkpoint(
+    category: str,
+    star_key: str,
+    t_exc_values: np.ndarray,
+    processed_species: List[str],
+    kept_species: List[str],
+    beta_columns: List[List[float]],
+    n_tau1_columns: List[List[float]],
+    raw_rows: List[dict],
+    completed: bool = False,
+) -> None:
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "t_exc_values": [float(value) for value in t_exc_values],
+        "processed_species": processed_species,
+        "kept_species": kept_species,
+        "beta_columns": beta_columns,
+        "n_tau1_columns": n_tau1_columns,
+        "raw_rows": raw_rows,
+        "completed": completed,
+    }
+    checkpoint_path(category, star_key).write_text(json.dumps(payload))
+
+
 # -----------------------------------------------------------------------------
 # N(tau = 1)
 # -----------------------------------------------------------------------------
 def tau_one_ncol_atom(species: str, b_kms: float, t_exc: u.Quantity, star: Star) -> u.Quantity:
     profile = get_atom_profile(species, b_kms)
-    pp = PhotonPressure(profile, star)
+    pp = get_atom_photon_pressure(species, b_kms, star)
 
     weights_raw = np.asarray(pp.excitation_weights(t_exc), dtype=float)
     sigma_raw = profile.sigmaArray.to(u.cm**2)
@@ -236,8 +386,7 @@ def beta_for_atom_with_ncol(
     star: Star,
     n_col: u.Quantity,
 ) -> Tuple[float, float, float]:
-    profile = get_atom_profile(species, b_kms)
-    pp = PhotonPressure(profile, star)
+    pp = get_atom_photon_pressure(species, b_kms, star)
     distance = DISTANCE_AU * u.AU
     n_col_array = np.array([n_col.to_value(1 / u.cm**2)], dtype=float) / u.cm**2
     F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(n_col_array, t_exc, distance)
@@ -263,8 +412,7 @@ def beta_for_molecule_with_ncol(
     star: Star,
     n_col: u.Quantity,
 ) -> Tuple[float, float, float]:
-    profile = get_molecule_profile(species, b_kms)
-    pp = PhotonPressure(profile, star)
+    pp = get_molecule_photon_pressure(species, b_kms, star)
     distance = DISTANCE_AU * u.AU
     n_col_array = np.array([n_col.to_value(1 / u.cm**2)], dtype=float) / u.cm**2
     F_ph_tot, F_ph_tot_err, _, _ = pp.calc_PhotonPressure(n_col_array, t_exc, distance)
@@ -281,17 +429,35 @@ def beta_for_molecule_with_ncol(
 def build_category_matrices(
     species_list: Iterable[str],
     category: str,
+    star_key: str,
     star: Star,
     use_fixed_ncol: bool = False,
     fixed_ncol_cm2: float = FIXED_NCOL_CM2,
+    progress_callback=None,
 ):
     t_exc_values = np.array(T_EXC_VALUES_K, dtype=float)
-    beta_columns = []
-    n_tau1_columns = []
-    kept_species = []
-    raw_rows = []
+    checkpoint = load_species_checkpoint(category, star_key, t_exc_values)
+    processed_species = list(checkpoint["processed_species"])
+    beta_columns = list(checkpoint["beta_columns"])
+    n_tau1_columns = list(checkpoint["n_tau1_columns"])
+    kept_species = list(checkpoint["kept_species"])
+    raw_rows = list(checkpoint["raw_rows"])
+
+    if checkpoint["completed"]:
+        print(f"Resuming from completed checkpoint for {category} / {star_key}; no recomputation needed.")
+        if beta_columns:
+            beta_matrix = np.array(beta_columns, dtype=float).T
+            n_tau1_matrix = np.array(n_tau1_columns, dtype=float).T
+        else:
+            beta_matrix = np.empty((len(t_exc_values), 0), dtype=float)
+            n_tau1_matrix = np.empty((len(t_exc_values), 0), dtype=float)
+        return t_exc_values, beta_matrix, n_tau1_matrix, kept_species, raw_rows
 
     for species in species_list:
+        if species in processed_species:
+            print(f"Skipping already checkpointed {category}: {species}")
+            continue
+
         print(f"Calculating {category}: {species}")
         beta_series = []
         n_tau1_series = []
@@ -345,6 +511,27 @@ def build_category_matrices(
             beta_columns.append(beta_series)
             n_tau1_columns.append(n_tau1_series)
 
+        processed_species.append(species)
+
+        if SAVE_PROGRESS_PER_SPECIES:
+            save_species_checkpoint(
+                category,
+                star_key,
+                t_exc_values,
+                processed_species,
+                kept_species,
+                beta_columns,
+                n_tau1_columns,
+                raw_rows,
+                completed=False,
+            )
+            if progress_callback is not None and kept_species:
+                progress_callback(
+                    t_exc_values,
+                    np.array(beta_columns, dtype=float).T,
+                    kept_species,
+                )
+
         if category == "molecule" and CLEAR_MOLECULE_CACHES_AFTER_SPECIES:
             clear_molecule_runtime_caches()
 
@@ -354,6 +541,19 @@ def build_category_matrices(
     else:
         beta_matrix = np.empty((len(t_exc_values), 0), dtype=float)
         n_tau1_matrix = np.empty((len(t_exc_values), 0), dtype=float)
+
+    if SAVE_PROGRESS_PER_SPECIES:
+        save_species_checkpoint(
+            category,
+            star_key,
+            t_exc_values,
+            processed_species,
+            kept_species,
+            beta_columns,
+            n_tau1_columns,
+            raw_rows,
+            completed=True,
+        )
 
     return t_exc_values, beta_matrix, n_tau1_matrix, kept_species, raw_rows
 
@@ -414,8 +614,10 @@ def save_category_txt(
 # -----------------------------------------------------------------------------
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     star_keys = select_star_keys(TARGET_STELLAR_TEFFS_K)
     print(f"Selected star keys: {', '.join(star_keys)}")
+    print(f"Output directory: {OUTPUT_DIR}")
 
     if INCLUDE_ATOMS:
         for star_key in star_keys:
@@ -423,9 +625,22 @@ def main() -> None:
             t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
                 ATOM_SPECIES,
                 "atom",
+                star_key,
                 star,
                 use_fixed_ncol=True,
                 fixed_ncol_cm2=FIXED_NCOL_CM2,
+                progress_callback=lambda partial_t_exc, partial_beta, partial_species, star_key=star_key, star=star: save_category_txt(
+                    suffixed_output_name(ATOMS_TXT_NAME, star_key),
+                    dataset_name=f"beta_vs_Texc_atoms_{star_key}",
+                    t_exc_values=partial_t_exc,
+                    beta_matrix=partial_beta,
+                    kept_species=partial_species,
+                    star_key=star_key,
+                    star=star,
+                    category="atom",
+                    use_fixed_ncol=True,
+                    fixed_ncol_cm2=FIXED_NCOL_CM2,
+                ),
             )
             if kept_species and SAVE_TXT:
                 save_category_txt(
@@ -453,9 +668,22 @@ def main() -> None:
             t_exc_values, beta_matrix, _, kept_species, raw_rows = build_category_matrices(
                 MOLECULE_SPECIES,
                 "molecule",
+                star_key,
                 star,
                 use_fixed_ncol=True,
                 fixed_ncol_cm2=FIXED_NCOL_CM2,
+                progress_callback=lambda partial_t_exc, partial_beta, partial_species, star_key=star_key, star=star: save_category_txt(
+                    suffixed_output_name(MOLECULES_TXT_NAME, star_key),
+                    dataset_name=f"beta_vs_Texc_molecules_{star_key}",
+                    t_exc_values=partial_t_exc,
+                    beta_matrix=partial_beta,
+                    kept_species=partial_species,
+                    star_key=star_key,
+                    star=star,
+                    category="molecule",
+                    use_fixed_ncol=True,
+                    fixed_ncol_cm2=FIXED_NCOL_CM2,
+                ),
             )
             if kept_species and SAVE_TXT:
                 save_category_txt(
