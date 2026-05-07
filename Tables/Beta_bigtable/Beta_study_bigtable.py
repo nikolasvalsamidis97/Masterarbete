@@ -88,7 +88,13 @@ EXCLUDED_TEFFS_K = {19000}
 
 SAVE_RAW_TXT = True
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parent
+_DEFAULT_EXTERNAL_OUTPUT_DIR = pathlib.Path.home() / "DATA" / "results" / "Beta_bigtable"
+_DEFAULT_OUTPUT_DIR = (
+    _DEFAULT_EXTERNAL_OUTPUT_DIR
+    if (pathlib.Path.home() / "DATA").exists()
+    else pathlib.Path(__file__).resolve().parent
+)
+OUTPUT_DIR = pathlib.Path(os.environ.get("BETA_BIGTABLE_OUTPUT_DIR", str(_DEFAULT_OUTPUT_DIR))).expanduser()
 RAW_ATOMS_NAME = "beta_bigtable_atoms.txt"
 RAW_MOLECULES_NAME = "beta_bigtable_molecules.txt"
 
@@ -101,6 +107,59 @@ def save_rows_atomic(rows: List[dict], output_path: pathlib.Path) -> None:
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     pd.DataFrame(rows).to_csv(tmp_path, index=False, sep="\t")
     tmp_path.replace(output_path)
+
+
+def normalize_b_label(value) -> str:
+    try:
+        return broadening_label(float(value))
+    except Exception:
+        return str(value).strip()
+
+
+def row_key_from_values(species: str, b_label, star_key: str, teff_k) -> tuple:
+    return (
+        str(species).strip(),
+        normalize_b_label(b_label),
+        str(star_key).strip(),
+        int(float(teff_k)),
+    )
+
+
+def row_key_from_row(row: dict) -> tuple:
+    return row_key_from_values(
+        row.get("species", ""),
+        row.get("b_label", ""),
+        row.get("star_key", ""),
+        row.get("teff_k", 0),
+    )
+
+
+def load_existing_rows(output_path: pathlib.Path) -> List[dict]:
+    if not output_path.exists():
+        return []
+    try:
+        df = pd.read_csv(output_path, sep="\t")
+    except Exception as exc:
+        print(f"Ignoring unreadable progress file {output_path}: {type(exc).__name__}: {exc}")
+        return []
+    if df.empty:
+        return []
+    records = df.to_dict(orient="records")
+    normalized = []
+    for row in records:
+        normalized.append(
+            {
+                "species": str(row.get("species", "")).strip(),
+                "b_label": normalize_b_label(row.get("b_label", "")),
+                "b_effective_kms": float(row.get("b_effective_kms", np.nan)),
+                "star_key": str(row.get("star_key", "")).strip(),
+                "teff_k": int(float(row.get("teff_k", 0))),
+                "beta": float(row.get("beta", np.nan)),
+                "beta_err": float(row.get("beta_err", np.nan)),
+                "n_half_beta_cm2": float(row.get("n_half_beta_cm2", np.nan)),
+            }
+        )
+    return normalized
 
 def active_run_suffix() -> str:
     parts = []
@@ -594,26 +653,56 @@ def calculate_category_rows(
 ) -> List[dict]:
     species_sequence = list(species_list)
     rows: List[dict] = []
+    existing_keys = set()
+    if progress_output_path is not None:
+        rows = load_existing_rows(progress_output_path)
+        existing_keys = {row_key_from_row(row) for row in rows}
+        if rows:
+            print(f"Loaded {len(rows)} existing {category} rows from {progress_output_path}")
+
     star_entries = selected_star_metadata(selected_stars)
-    max_workers = worker_count_for_category(category, len(species_sequence))
+    expected_per_species = {
+        species: {
+            row_key_from_values(species, broadening_label(b_kms), star_info["key"], star_info["teff_k"])
+            for b_kms in B_VALUES_KMS
+            for star_info in star_entries
+        }
+        for species in species_sequence
+    }
+    pending_species = []
+    for species in species_sequence:
+        if expected_per_species[species].issubset(existing_keys):
+            print(f"Skipping completed {category}: {species}")
+            continue
+        pending_species.append(species)
+
+    max_workers = worker_count_for_category(category, len(pending_species))
+
+    if not pending_species:
+        return sorted(rows, key=row_sort_key)
 
     if max_workers <= 1:
-        for species in species_sequence:
+        for species in pending_species:
             print(f"Calculating {category}: {species}")
             species_rows = calculate_species_rows_worker(category, species, star_entries)
-            rows.extend(species_rows)
+            for row in species_rows:
+                row_key = row_key_from_row(row)
+                if row_key in existing_keys:
+                    continue
+                rows.append(row)
+                existing_keys.add(row_key)
             if progress_output_path is not None:
                 save_rows_atomic(sorted(rows, key=row_sort_key), progress_output_path)
         return sorted(rows, key=row_sort_key)
 
     print(
         f"Calculating {category} in parallel with {max_workers} workers "
-        f"across {len(species_sequence)} species"
+        f"across {len(pending_species)} species"
     )
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(calculate_species_rows_worker, category, species, star_entries): species
-            for species in species_sequence
+            for species in pending_species
         }
         for future in as_completed(futures):
             species = futures[future]
@@ -622,7 +711,12 @@ def calculate_category_rows(
             except Exception as exc:
                 print(f"Failed {category} species={species}: {type(exc).__name__}: {exc}")
                 continue
-            rows.extend(species_rows)
+            for row in species_rows:
+                row_key = row_key_from_row(row)
+                if row_key in existing_keys:
+                    continue
+                rows.append(row)
+                existing_keys.add(row_key)
             if progress_output_path is not None:
                 save_rows_atomic(sorted(rows, key=row_sort_key), progress_output_path)
             print(f"Finished {category}: {species}")
