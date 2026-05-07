@@ -1,4 +1,5 @@
 import copy
+import concurrent.futures as cf
 import csv
 from dataclasses import dataclass
 import os
@@ -53,6 +54,13 @@ def _env_str_list(name: str):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return int(default)
+    return int(value)
+
+
 # -----------------------------------------------------------------------------
 # Advanced run configuration
 # -----------------------------------------------------------------------------
@@ -62,6 +70,7 @@ SELECTED_ATOMIC_SPECIES = _env_str_list("MLA_SELECTED_ATOMIC_SPECIES")
 SELECTED_MOLECULAR_SPECIES = _env_str_list("MLA_SELECTED_MOLECULAR_SPECIES")
 INCLUDE_STELLAR_GRAVITY = True
 USE_CHECKPOINT = _env_flag("MLA_USE_CHECKPOINT", True)
+MLA_SPECIES_MAX_WORKERS = max(1, _env_int("MLA_SPECIES_MAX_WORKERS", 4))
 
 RUN_FAMILY = os.environ.get("MLA_RUN_FAMILY", "solar_system_fixed")
 # Allowed values:
@@ -923,6 +932,115 @@ class PhotonPressureBinnedCache:
     @property
     def n_bins(self) -> int:
         return len(self.cache)
+
+
+_WORKER_EXOBASE_ROWS = None
+
+
+def build_species_task(
+    system_def: AdvancedSystem,
+    species: str,
+    planet_case: dict,
+    extra_fields: dict | None = None,
+) -> dict:
+    planet_label, star_label = get_system_display_names(system_def)
+    actual_teff_k = get_system_actual_teff_k(system_def)
+    planet_source_url, star_source_url, orbit_source_url = get_system_source_urls(system_def)
+    exobase_planet_key = get_system_exobase_planet_key(system_def)
+    spectrum_template_key = get_system_spectrum_template_key(system_def)
+    return {
+        "system_def": system_def,
+        "species": species,
+        "planet_case": planet_case,
+        "planet_label": planet_label,
+        "star_label": star_label,
+        "actual_teff_k": actual_teff_k,
+        "planet_source_url": planet_source_url,
+        "star_source_url": star_source_url,
+        "orbit_source_url": orbit_source_url,
+        "exobase_planet_key": exobase_planet_key,
+        "spectrum_template_key": spectrum_template_key,
+        "extra_fields": dict(extra_fields or {}),
+    }
+
+
+def _species_worker_init(exobase_rows) -> None:
+    global _WORKER_EXOBASE_ROWS
+    configure_base_module()
+    initialize_base_namespace()
+    _WORKER_EXOBASE_ROWS = exobase_rows
+
+
+def _compute_species_task(task: dict, exobase_rows) -> dict:
+    system_def: AdvancedSystem = task["system_def"]
+    species = task["species"]
+    planet_case = dict(task["planet_case"])
+    start_time = time.perf_counter()
+
+    try:
+        planet = base_mass_loss.build_planet(planet_case)
+        star = build_system_star(system_def)
+        system = base_mass_loss.PlanetarySystem(planet, star, system_def.distance_au * u.AU)
+        row = mass_loss_for_species_advanced(
+            system_def.test_family,
+            system_def.planet_key,
+            system_def.star_key,
+            system_def.distance_au,
+            species,
+            planet_case,
+            system,
+            exobase_rows,
+            exobase_planet_key=task["exobase_planet_key"],
+            target_stellar_teff_k=task["actual_teff_k"],
+            planet_label=task["planet_label"],
+            star_label=task["star_label"],
+            spectrum_template_key=task["spectrum_template_key"],
+            planet_source_url=task["planet_source_url"],
+            star_source_url=task["star_source_url"],
+            orbit_source_url=task["orbit_source_url"],
+        )
+        row.update(task["extra_fields"])
+        return {
+            "ok": True,
+            "species": species,
+            "row": row,
+            "elapsed_s": time.perf_counter() - start_time,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "species": species,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "elapsed_s": time.perf_counter() - start_time,
+        }
+
+
+def _species_worker_entry(task: dict) -> dict:
+    return _compute_species_task(task, _WORKER_EXOBASE_ROWS)
+
+
+def effective_species_max_workers(n_tasks: int) -> int:
+    if n_tasks <= 1:
+        return 1
+    return max(1, min(int(MLA_SPECIES_MAX_WORKERS), int(n_tasks)))
+
+
+def iter_species_task_results(tasks: List[dict], exobase_rows):
+    max_workers = effective_species_max_workers(len(tasks))
+    if max_workers == 1:
+        for task in tasks:
+            yield _compute_species_task(task, exobase_rows)
+        return
+
+    with cf.ProcessPoolExecutor(
+        max_workers=max_workers,
+        initializer=_species_worker_init,
+        initargs=(exobase_rows,),
+    ) as executor:
+        futures = [executor.submit(_species_worker_entry, task) for task in tasks]
+        for future in cf.as_completed(futures):
+            yield future.result()
 
 
 def parse_bool(value) -> bool:
@@ -2074,6 +2192,7 @@ def run_p0_sweep() -> None:
                 f"distance={float(P0_SWEEP_DISTANCE_AU):g} AU, P0={p0_bar:.1e} bar ---"
             )
 
+        pending_tasks = []
         for species in species_list:
             current_key = p0_row_key_from_values(
                 P0_SWEEP_TEST_FAMILY,
@@ -2086,28 +2205,33 @@ def run_p0_sweep() -> None:
             if current_key in completed_rows:
                 print(f"Skipping completed P0 species: {P0_SWEEP_PLANET_KEY} / {species} / P0={p0_bar:.1e}")
                 continue
-
-            species_start = time.perf_counter()
-            try:
-                row = mass_loss_for_species_advanced(
-                    P0_SWEEP_TEST_FAMILY,
-                    P0_SWEEP_PLANET_KEY,
-                    P0_SWEEP_STAR_KEY,
-                    P0_SWEEP_DISTANCE_AU,
+            pending_tasks.append(
+                build_species_task(
+                    system_def,
                     species,
                     planet_case,
-                    system,
-                    exobase_rows,
-                    target_stellar_teff_k=get_system_actual_teff_k(system_def),
-                    planet_label=base_mass_loss.get_planet_template(P0_SWEEP_PLANET_KEY).get("label", P0_SWEEP_PLANET_KEY),
-                    star_label=base_mass_loss.STAR_TEMPLATES[P0_SWEEP_STAR_KEY].get("label", P0_SWEEP_STAR_KEY),
-                    spectrum_template_key=P0_SWEEP_STAR_KEY,
+                    extra_fields={"P0_bar": float(p0_bar)},
                 )
-            except Exception as exc:
-                print(f"Skipping P0 sweep {P0_SWEEP_PLANET_KEY} {species}: {type(exc).__name__}: {exc}")
+            )
+
+        for result in iter_species_task_results(pending_tasks, exobase_rows):
+            species = result["species"]
+            current_key = p0_row_key_from_values(
+                P0_SWEEP_TEST_FAMILY,
+                P0_SWEEP_PLANET_KEY,
+                species,
+                P0_SWEEP_STAR_KEY,
+                P0_SWEEP_DISTANCE_AU,
+                p0_bar,
+            )
+            if not result["ok"]:
+                print(
+                    f"Skipping P0 sweep {P0_SWEEP_PLANET_KEY} {species}: "
+                    f"{result['error_type']}: {result['error_message']}"
+                )
                 continue
 
-            row["P0_bar"] = float(p0_bar)
+            row = result["row"]
             all_rows.append(row)
             completed_rows.add(current_key)
             write_family_results_txt(P0_SWEEP_TEST_FAMILY, all_rows)
@@ -2118,7 +2242,7 @@ def run_p0_sweep() -> None:
                 f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
                 f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
                 f"cache_bins={row['photon_pressure_cache_bins']}, "
-                f"elapsed={time.perf_counter() - species_start:.1f} s"
+                f"elapsed={result['elapsed_s']:.1f} s"
             )
 
         total_row = total_row_from_species_rows(p0_system_rows(all_rows, p0_bar))
@@ -2433,6 +2557,7 @@ def run_mu_sweeps() -> None:
                     f"distance={float(system_def.distance_au):g} AU, mu={mu_amu:.1f} ---"
                 )
 
+            pending_tasks = []
             for species in species_list:
                 current_key = scalar_row_key_from_values(
                     system_def.test_family,
@@ -2446,28 +2571,34 @@ def run_mu_sweeps() -> None:
                 if current_key in completed_rows:
                     print(f"Skipping completed mu species: {system_def.planet_key} / {species} / mu={mu_amu:.1f}")
                     continue
-
-                species_start = time.perf_counter()
-                try:
-                    row = mass_loss_for_species_advanced(
-                        system_def.test_family,
-                        system_def.planet_key,
-                        system_def.star_key,
-                        system_def.distance_au,
+                pending_tasks.append(
+                    build_species_task(
+                        system_def,
                         species,
                         planet_case,
-                        system,
-                        exobase_rows,
-                        target_stellar_teff_k=get_system_actual_teff_k(system_def),
-                        planet_label=base_mass_loss.get_planet_template(system_def.planet_key).get("label", system_def.planet_key),
-                        star_label=base_mass_loss.STAR_TEMPLATES[system_def.star_key].get("label", system_def.star_key),
-                        spectrum_template_key=system_def.star_key,
+                        extra_fields={"mu_amu": float(mu_amu)},
                     )
-                except Exception as exc:
-                    print(f"Skipping mu sweep {system_def.planet_key} {species}: {type(exc).__name__}: {exc}")
+                )
+
+            for result in iter_species_task_results(pending_tasks, exobase_rows):
+                species = result["species"]
+                current_key = scalar_row_key_from_values(
+                    system_def.test_family,
+                    system_def.planet_key,
+                    species,
+                    system_def.star_key,
+                    system_def.distance_au,
+                    "mu_amu",
+                    mu_amu,
+                )
+                if not result["ok"]:
+                    print(
+                        f"Skipping mu sweep {system_def.planet_key} {species}: "
+                        f"{result['error_type']}: {result['error_message']}"
+                    )
                     continue
 
-                row["mu_amu"] = float(mu_amu)
+                row = result["row"]
                 all_rows.append(row)
                 completed_rows.add(current_key)
                 write_family_results_txt(MU_SWEEP_HOT_JUPITER_FAMILY, all_rows)
@@ -2478,7 +2609,7 @@ def run_mu_sweeps() -> None:
                     f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
                     f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
                     f"cache_bins={row['photon_pressure_cache_bins']}, "
-                    f"elapsed={time.perf_counter() - species_start:.1f} s"
+                    f"elapsed={result['elapsed_s']:.1f} s"
                 )
 
             total_row = total_row_from_species_rows(scalar_system_rows(all_rows, system_def, "mu_amu", mu_amu))
@@ -2530,6 +2661,7 @@ def run_surface_gravity_sweep() -> None:
                 f"distance={float(system_def.distance_au):g} AU, g={g_surface:.3f} m/s^2 ---"
             )
 
+        pending_tasks = []
         for species in species_list:
             current_key = scalar_row_key_from_values(
                 system_def.test_family,
@@ -2543,29 +2675,37 @@ def run_surface_gravity_sweep() -> None:
             if current_key in completed_rows:
                 print(f"Skipping completed surface-gravity species: {system_def.planet_key} / {species} / g={g_surface:.3f}")
                 continue
-
-            species_start = time.perf_counter()
-            try:
-                row = mass_loss_for_species_advanced(
-                    system_def.test_family,
-                    system_def.planet_key,
-                    system_def.star_key,
-                    system_def.distance_au,
+            pending_tasks.append(
+                build_species_task(
+                    system_def,
                     species,
                     planet_case,
-                    system,
-                    exobase_rows,
-                    target_stellar_teff_k=get_system_actual_teff_k(system_def),
-                    planet_label=base_mass_loss.get_planet_template(system_def.planet_key).get("label", system_def.planet_key),
-                    star_label=base_mass_loss.STAR_TEMPLATES[system_def.star_key].get("label", system_def.star_key),
-                    spectrum_template_key=system_def.star_key,
+                    extra_fields={
+                        "surface_gravity_m_s2": float(g_surface),
+                        "mass_scale": float(mass_scale),
+                    },
                 )
-            except Exception as exc:
-                print(f"Skipping surface-gravity sweep {system_def.planet_key} {species}: {type(exc).__name__}: {exc}")
+            )
+
+        for result in iter_species_task_results(pending_tasks, exobase_rows):
+            species = result["species"]
+            current_key = scalar_row_key_from_values(
+                system_def.test_family,
+                system_def.planet_key,
+                species,
+                system_def.star_key,
+                system_def.distance_au,
+                "surface_gravity_m_s2",
+                g_surface,
+            )
+            if not result["ok"]:
+                print(
+                    f"Skipping surface-gravity sweep {system_def.planet_key} {species}: "
+                    f"{result['error_type']}: {result['error_message']}"
+                )
                 continue
 
-            row["surface_gravity_m_s2"] = float(g_surface)
-            row["mass_scale"] = float(mass_scale)
+            row = result["row"]
             all_rows.append(row)
             completed_rows.add(current_key)
             write_family_results_txt(SURFACE_GRAVITY_SWEEP_FAMILY, all_rows)
@@ -2576,7 +2716,7 @@ def run_surface_gravity_sweep() -> None:
                 f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
                 f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
                 f"cache_bins={row['photon_pressure_cache_bins']}, "
-                f"elapsed={time.perf_counter() - species_start:.1f} s"
+                f"elapsed={result['elapsed_s']:.1f} s"
             )
 
         total_row = total_row_from_species_rows(
@@ -2797,36 +2937,25 @@ def run_standard_systems() -> None:
                     f"({actual_teff_k:.0f} K), distance={distance_au:g} AU ---"
                 )
 
+            pending_tasks = []
             for species in species_list:
                 current_key = row_key_from_values(system_def.test_family, planet_key, species, star_key, distance_au)
                 if current_key in completed_rows:
                     print(f"Skipping completed advanced species: {system_def.test_family} / {planet_label} / {species}")
                     continue
+                pending_tasks.append(build_species_task(system_def, species, planet_case))
 
-                species_start = time.perf_counter()
-                try:
-                    row = mass_loss_for_species_advanced(
-                        system_def.test_family,
-                        planet_key,
-                        star_key,
-                        distance_au,
-                        species,
-                        planet_case,
-                        planetary_system,
-                        exobase_rows,
-                        exobase_planet_key=exobase_planet_key,
-                        target_stellar_teff_k=actual_teff_k,
-                        planet_label=planet_label,
-                        star_label=star_label,
-                        spectrum_template_key=spectrum_template_key,
-                        planet_source_url=planet_source_url,
-                        star_source_url=star_source_url,
-                        orbit_source_url=orbit_source_url,
+            for result in iter_species_task_results(pending_tasks, exobase_rows):
+                species = result["species"]
+                current_key = row_key_from_values(system_def.test_family, planet_key, species, star_key, distance_au)
+                if not result["ok"]:
+                    print(
+                        f"Skipping {planet_label} {species}: "
+                        f"{result['error_type']}: {result['error_message']}"
                     )
-                except Exception as exc:
-                    print(f"Skipping {planet_label} {species}: {type(exc).__name__}: {exc}")
                     continue
 
+                row = result["row"]
                 family_rows.append(row)
                 completed_rows.add(current_key)
                 txt_path = write_family_results_txt(test_family, family_rows)
@@ -2837,7 +2966,7 @@ def run_standard_systems() -> None:
                     f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
                     f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
                     f"cache_bins={row['photon_pressure_cache_bins']}, "
-                    f"elapsed={time.perf_counter() - species_start:.1f} s"
+                    f"elapsed={result['elapsed_s']:.1f} s"
                 )
                 print(f"Updated family results: {txt_path.name}")
 

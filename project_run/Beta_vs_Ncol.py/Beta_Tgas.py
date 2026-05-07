@@ -43,7 +43,8 @@ WAVEMAX = 50000 * u.AA
 NPTS_ATOM = 150
 
 # Excitation temperatures for beta(T_exc), from low to high.
-T_EXC_VALUES_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
+# Use a light 4-point grid by default spanning the original range.
+T_EXC_VALUES_K = [3000, 8000, 15000, 50000]
 # Use the same optically thin reference column as the tau=0 big-table study.
 FIXED_NCOL_CM2 = 1e-20
 CLEAR_MOLECULE_CACHES_AFTER_SPECIES = True
@@ -91,6 +92,7 @@ def _env_str_list(name: str) -> List[str]:
 INCLUDE_ATOMS = _env_flag("BETA_TGAS_INCLUDE_ATOMS", INCLUDE_ATOMS)
 INCLUDE_MOLECULES = _env_flag("BETA_TGAS_INCLUDE_MOLECULES", INCLUDE_MOLECULES)
 TARGET_STELLAR_TEFFS_K = _env_float_list("BETA_TGAS_TARGET_TEFFS_K", TARGET_STELLAR_TEFFS_K)
+T_EXC_VALUES_K = [int(value) for value in _env_float_list("BETA_TGAS_T_EXC_VALUES_K", T_EXC_VALUES_K)]
 SELECTED_STAR_KEYS = _env_str_list("BETA_TGAS_STAR_KEYS")
 SELECTED_ATOM_SPECIES = _env_str_list("BETA_TGAS_SELECTED_ATOM_SPECIES") or SELECTED_ATOM_SPECIES
 SELECTED_MOLECULE_SPECIES = _env_str_list("BETA_TGAS_SELECTED_MOLECULE_SPECIES") or SELECTED_MOLECULE_SPECIES
