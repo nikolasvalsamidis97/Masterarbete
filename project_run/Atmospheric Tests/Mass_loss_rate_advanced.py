@@ -71,6 +71,7 @@ SELECTED_MOLECULAR_SPECIES = _env_str_list("MLA_SELECTED_MOLECULAR_SPECIES")
 INCLUDE_STELLAR_GRAVITY = True
 USE_CHECKPOINT = _env_flag("MLA_USE_CHECKPOINT", True)
 MLA_SPECIES_MAX_WORKERS = max(1, _env_int("MLA_SPECIES_MAX_WORKERS", 4))
+MLA_PLANET_MAX_WORKERS = max(1, _env_int("MLA_PLANET_MAX_WORKERS", 1))
 
 RUN_FAMILY = os.environ.get("MLA_RUN_FAMILY", "solar_system_fixed")
 # Allowed values:
@@ -1003,6 +1004,9 @@ def _compute_species_task(task: dict, exobase_rows) -> dict:
         return {
             "ok": True,
             "species": species,
+            "system_def": system_def,
+            "planet_label": task["planet_label"],
+            "star_label": task["star_label"],
             "row": row,
             "elapsed_s": time.perf_counter() - start_time,
         }
@@ -1010,6 +1014,9 @@ def _compute_species_task(task: dict, exobase_rows) -> dict:
         return {
             "ok": False,
             "species": species,
+            "system_def": system_def,
+            "planet_label": task["planet_label"],
+            "star_label": task["star_label"],
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "elapsed_s": time.perf_counter() - start_time,
@@ -1020,14 +1027,15 @@ def _species_worker_entry(task: dict) -> dict:
     return _compute_species_task(task, _WORKER_EXOBASE_ROWS)
 
 
-def effective_species_max_workers(n_tasks: int) -> int:
+def effective_species_max_workers(n_tasks: int, n_systems: int = 1) -> int:
     if n_tasks <= 1:
         return 1
-    return max(1, min(int(MLA_SPECIES_MAX_WORKERS), int(n_tasks)))
+    total_budget = max(1, int(MLA_SPECIES_MAX_WORKERS)) * max(1, min(int(MLA_PLANET_MAX_WORKERS), int(n_systems)))
+    return max(1, min(int(total_budget), int(n_tasks)))
 
 
-def iter_species_task_results(tasks: List[dict], exobase_rows):
-    max_workers = effective_species_max_workers(len(tasks))
+def iter_species_task_results(tasks: List[dict], exobase_rows, n_systems: int = 1):
+    max_workers = effective_species_max_workers(len(tasks), n_systems=n_systems)
     if max_workers == 1:
         for task in tasks:
             yield _compute_species_task(task, exobase_rows)
@@ -1041,6 +1049,12 @@ def iter_species_task_results(tasks: List[dict], exobase_rows):
         futures = [executor.submit(_species_worker_entry, task) for task in tasks]
         for future in cf.as_completed(futures):
             yield future.result()
+
+
+def batched(items: List, size: int):
+    size = max(1, int(size))
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 def parse_bool(value) -> bool:
@@ -1535,6 +1549,8 @@ def common_run_parameter_lines() -> List[str]:
         f"selected_molecular_species: {SELECTED_MOLECULAR_SPECIES if SELECTED_MOLECULAR_SPECIES is not None else 'all available'}",
         f"include_stellar_gravity: {INCLUDE_STELLAR_GRAVITY}",
         f"use_checkpoint: {USE_CHECKPOINT}",
+        f"species_max_workers: {MLA_SPECIES_MAX_WORKERS}",
+        f"planet_max_workers: {MLA_PLANET_MAX_WORKERS}",
         f"selected_system_keys: {SELECTED_SYSTEM_KEYS if SELECTED_SYSTEM_KEYS is not None else 'all enabled systems'}",
         f"n_rho: {N_RHO}",
         f"n_x: {N_X}",
@@ -2906,48 +2922,56 @@ def run_standard_systems() -> None:
         if family_rows:
             print(f"Loaded {len(family_rows)} completed species rows from {family_results_path(test_family)}")
 
-        for system_def in family_systems:
-            planet_key = system_def.planet_key
-            star_key = system_def.star_key
-            distance_au = system_def.distance_au
-            planet_case = get_system_planet_case(system_def)
-            species_list = selected_species_for_planet(planet_case)
-            if not species_list:
-                print(f"Skipping {system_def.test_family} / {planet_key}: no species selected")
-                continue
-
-            planet = base_mass_loss.build_planet(planet_case)
-            star = build_system_star(system_def)
-            planetary_system = base_mass_loss.PlanetarySystem(planet, star, distance_au * u.AU)
-            existing_rows = system_rows_from_checkpoint(family_rows, system_def)
-            planet_label, star_label = get_system_display_names(system_def)
-            actual_teff_k = get_system_actual_teff_k(system_def)
-            planet_source_url, star_source_url, orbit_source_url = get_system_source_urls(system_def)
-            exobase_planet_key = get_system_exobase_planet_key(system_def)
-            spectrum_template_key = get_system_spectrum_template_key(system_def)
-
-            if existing_rows:
-                print(
-                    f"\n--- Advanced mass-loss system: {system_def.test_family} / {planet_label} / {star_label} / "
-                    f"{distance_au:g} AU ({len(existing_rows)}/{len(species_list)} species already saved) ---"
-                )
-            else:
-                print(
-                    f"\n--- Advanced mass-loss system: {system_def.test_family} / {planet_label}, star={star_label} "
-                    f"({actual_teff_k:.0f} K), distance={distance_au:g} AU ---"
-                )
-
+        for system_batch in batched(family_systems, MLA_PLANET_MAX_WORKERS):
             pending_tasks = []
-            for species in species_list:
-                current_key = row_key_from_values(system_def.test_family, planet_key, species, star_key, distance_au)
-                if current_key in completed_rows:
-                    print(f"Skipping completed advanced species: {system_def.test_family} / {planet_label} / {species}")
-                    continue
-                pending_tasks.append(build_species_task(system_def, species, planet_case))
+            batch_systems: List[AdvancedSystem] = []
 
-            for result in iter_species_task_results(pending_tasks, exobase_rows):
+            for system_def in system_batch:
+                planet_key = system_def.planet_key
+                star_key = system_def.star_key
+                distance_au = system_def.distance_au
+                planet_case = get_system_planet_case(system_def)
+                species_list = selected_species_for_planet(planet_case)
+                if not species_list:
+                    print(f"Skipping {system_def.test_family} / {planet_key}: no species selected")
+                    continue
+
+                existing_rows = system_rows_from_checkpoint(family_rows, system_def)
+                planet_label, star_label = get_system_display_names(system_def)
+                actual_teff_k = get_system_actual_teff_k(system_def)
+
+                if existing_rows:
+                    print(
+                        f"\n--- Advanced mass-loss system: {system_def.test_family} / {planet_label} / {star_label} / "
+                        f"{distance_au:g} AU ({len(existing_rows)}/{len(species_list)} species already saved) ---"
+                    )
+                else:
+                    print(
+                        f"\n--- Advanced mass-loss system: {system_def.test_family} / {planet_label}, star={star_label} "
+                        f"({actual_teff_k:.0f} K), distance={distance_au:g} AU ---"
+                    )
+
+                batch_systems.append(system_def)
+                for species in species_list:
+                    current_key = row_key_from_values(system_def.test_family, planet_key, species, star_key, distance_au)
+                    if current_key in completed_rows:
+                        print(
+                            f"Skipping completed advanced species: {system_def.test_family} / {planet_label} / {species}"
+                        )
+                        continue
+                    pending_tasks.append(build_species_task(system_def, species, planet_case))
+
+            for result in iter_species_task_results(pending_tasks, exobase_rows, n_systems=len(batch_systems)):
+                system_def = result["system_def"]
                 species = result["species"]
-                current_key = row_key_from_values(system_def.test_family, planet_key, species, star_key, distance_au)
+                planet_label = result["planet_label"]
+                current_key = row_key_from_values(
+                    system_def.test_family,
+                    system_def.planet_key,
+                    species,
+                    system_def.star_key,
+                    system_def.distance_au,
+                )
                 if not result["ok"]:
                     print(
                         f"Skipping {planet_label} {species}: "
@@ -2960,7 +2984,7 @@ def run_standard_systems() -> None:
                 completed_rows.add(current_key)
                 txt_path = write_family_results_txt(test_family, family_rows)
                 print(
-                    f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+                    f"{planet_label} / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
                     f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
                     f"mean_t={row['mean_escape_time_s']:.3e} s, "
                     f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
@@ -2970,14 +2994,16 @@ def run_standard_systems() -> None:
                 )
                 print(f"Updated family results: {txt_path.name}")
 
-            total_row = total_row_from_species_rows(system_rows_from_checkpoint(family_rows, system_def))
-            if total_row is not None:
-                print(
-                    f"TOTAL_INCLUDED_SPECIES for {system_def.test_family} / {planet_label}: "
-                    f"Mdot={total_row['mass_loss_rate_g_s']:.3e} g/s, "
-                    f"Myr={total_row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
-                    f"Gyr={total_row['mass_lost_Mearth_1Gyr']:.3e} Mearth"
-                )
+            for system_def in batch_systems:
+                planet_label, _ = get_system_display_names(system_def)
+                total_row = total_row_from_species_rows(system_rows_from_checkpoint(family_rows, system_def))
+                if total_row is not None:
+                    print(
+                        f"TOTAL_INCLUDED_SPECIES for {system_def.test_family} / {planet_label}: "
+                        f"Mdot={total_row['mass_loss_rate_g_s']:.3e} g/s, "
+                        f"Myr={total_row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
+                        f"Gyr={total_row['mass_lost_Mearth_1Gyr']:.3e} Mearth"
+                    )
 
     print(f"Total elapsed time: {time.perf_counter() - start_time:.1f} s")
 
