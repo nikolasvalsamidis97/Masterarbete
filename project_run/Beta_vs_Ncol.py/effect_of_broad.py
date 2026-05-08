@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import astropy.units as u
+from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
@@ -44,10 +45,10 @@ NCOL_POINTS = 300
 
 # Plot/output settings
 FIGSIZE = (8, 5)
-TITLE_SIZE = 15
-AXIS_LABEL_SIZE = 14
-TICK_LABEL_SIZE = 13
-LEGEND_SIZE = 10
+TITLE_SIZE = 17
+AXIS_LABEL_SIZE = 19
+TICK_LABEL_SIZE = 17
+LEGEND_SIZE = 13
 LINEWIDTH = 1.5
 SAVE_FIGURE = True
 SHOW_FIGURE = True
@@ -67,6 +68,17 @@ def get_star(star_key: str) -> Star:
         vsini=s["vsini"],
         epsilon=s["epsilon"],
     )
+
+
+def log10_exponent_label(value: float, _position: float) -> str:
+    if not np.isfinite(value) or value <= 0:
+        return ""
+
+    exponent = np.log10(value)
+    rounded = round(exponent)
+    if not np.isclose(exponent, rounded, atol=1e-10):
+        return ""
+    return f"{int(rounded)}"
 
 
 
@@ -214,8 +226,14 @@ def main() -> None:
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel(r"Column density, $N_{\rm col}$ [cm$^{-2}$]", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$\beta$", fontsize=AXIS_LABEL_SIZE)
+    ax.xaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+    ax.yaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+    ax.xaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+    ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlabel(r"$\log_{10}\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"$\log_{10}\beta$", fontsize=AXIS_LABEL_SIZE)
     ax.set_title(
         rf"$\beta$ vs column density | {SPECIES} | $T_{{\rm eff}}={teff_star.to_value(u.K):.0f}$ K",
         fontsize=TITLE_SIZE,

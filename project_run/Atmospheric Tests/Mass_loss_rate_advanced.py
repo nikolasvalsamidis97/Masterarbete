@@ -35,6 +35,9 @@ from project_func.plotdata_to_txt import save_plotdata_txt
 from project_func.Templates.Atoms.atom_species import ATOM_SPECIES
 from project_func.Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from project_func.Templates.Planets.planet_templates_updated import PLANET_TEMPLATES, get_planet_template
+from project_func.Templates.Systems.real_mass_loss_reference_systems import (
+    REAL_MASS_LOSS_REFERENCE_SYSTEMS as REAL_MASS_LOSS_REFERENCE_SYSTEMS_TEMPLATE,
+)
 from project_func.Templates.Stars.stars_templates_updated import STAR_TEMPLATES, infer_teff_from_star_template
 
 base_mass_loss = SimpleNamespace()
@@ -107,6 +110,7 @@ DT_LENGTH_FLOOR_CM = 1.0e5
 MAX_STEP_LENGTH_FRACTION = 0.05
 MAX_STEPS = 8000
 MAX_TIME_S = 5.0e7
+EXOBASE_MODEL_ID = "dynamic_collision_free_v1"
 
 WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
@@ -159,125 +163,7 @@ JUPITER_LIKE_CATEGORIES = {"gas_giant"}
 
 star_cache: Dict[str, Star] = {}
 profile_cache: Dict[str, BroadeningProfile] = {}
-
-REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
-    "gj1132_b": {
-        "system_name": "GJ 1132 b",
-        "category": "rocky",
-        "planet_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201132",
-        "star_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201132",
-        "orbit_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201132",
-        "spectrum_template_key": "M4",
-        "exobase_template_key": "super_earth_rocky",
-        "star": {
-            "label": "GJ 1132",
-            "path": "TS/Spectral_type/M/M4/lte032-4.0-0.0a+0.2.BT-NextGen.7.dat.txt",
-            "teff_K": 3229.0,
-            "radius": 0.2211 * const.R_sun,
-            "mass": 0.1945 * const.M_sun,
-            "vsini": 2.0 * u.km / u.s,
-            "epsilon": 0.5 * u.dimensionless_unscaled,
-        },
-        "planet": {
-            "label": "GJ 1132 b",
-            "radius": 1.192 * const.R_earth,
-            "mass": 1.84 * const.M_earth,
-            "T": 583.8 * u.K,
-            "mu": 25.0 * u.dimensionless_unscaled,
-            "P0": 1.0 * u.bar,
-            "composition": {"O I": 0.30, "N I": 0.15, "Na I": 0.15, "K I": 0.05, "CO2": 0.35},
-            "notes": "Real rocky comparison system with trimmed 4-atom + 1-molecule composition.",
-        },
-        "distance_au": 0.01570,
-    },
-    "gj1214_b": {
-        "system_name": "GJ 1214 b",
-        "category": "sub_neptune",
-        "planet_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201214",
-        "star_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201214",
-        "orbit_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%201214",
-        "spectrum_template_key": "M6",
-        "exobase_template_key": "sub_neptune",
-        "star": {
-            "label": "GJ 1214",
-            "path": "TS/Spectral_type/M/M6/lte030-4.0-0.0a+0.0.BT-NextGen.7.dat.txt",
-            "teff_K": 3026.0,
-            "radius": 0.2162 * const.R_sun,
-            "mass": 0.1820 * const.M_sun,
-            "vsini": 2.0 * u.km / u.s,
-            "epsilon": 0.5 * u.dimensionless_unscaled,
-        },
-        "planet": {
-            "label": "GJ 1214 b",
-            "radius": 2.733 * const.R_earth,
-            "mass": 8.41 * const.M_earth,
-            "T": 567.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
-            "P0": 1.0e-4 * u.bar,
-            "composition": {"H I": 0.56, "He I": 0.14, "O I": 0.01, "Na I": 0.01, "H2": 0.28},
-            "notes": "Real sub-Neptune comparison system with trimmed 4-atom + 1-molecule composition.",
-        },
-        "distance_au": 0.01505,
-    },
-    "gj436_b": {
-        "system_name": "GJ 436 b",
-        "category": "neptune",
-        "planet_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%20436%20b",
-        "star_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%20436",
-        "orbit_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/GJ%20436%20b",
-        "spectrum_template_key": "M1",
-        "exobase_template_key": "hot_neptune",
-        "star": {
-            "label": "GJ 436",
-            "path": "TS/Spectral_type/M/M1/lte036-4.0-0.0a+0.2.BT-NextGen.7.dat.txt",
-            "teff_K": 3500.0,
-            "radius": 0.422 * const.R_sun,
-            "mass": 0.445 * const.M_sun,
-            "vsini": 0.33 * u.km / u.s,
-            "epsilon": 0.5 * u.dimensionless_unscaled,
-        },
-        "planet": {
-            "label": "GJ 436 b",
-            "radius": 4.17 * const.R_earth,
-            "mass": 22.1 * const.M_earth,
-            "T": 686.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
-            "P0": 1.0e-4 * u.bar,
-            "composition": {"H I": 0.58, "He I": 0.14, "O I": 0.01, "Na I": 0.01, "H2": 0.26},
-            "notes": "Real Neptune comparison system with trimmed 4-atom + 1-molecule composition.",
-        },
-        "distance_au": 0.0282,
-    },
-    "hd209458_b": {
-        "system_name": "HD 209458 b",
-        "category": "gas_giant",
-        "planet_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/HD%20209458%20b",
-        "star_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/HD%20209458%20b",
-        "orbit_source_url": "https://exoplanetarchive.ipac.caltech.edu/overview/HD%20209458%20b",
-        "spectrum_template_key": "F8",
-        "exobase_template_key": "inflated_hot_jupiter",
-        "star": {
-            "label": "HD 209458",
-            "path": "TS/Spectral_type/F/F8/lte060-4.0-0.0a+0.2.BT-NextGen.7.dat.txt",
-            "teff_K": 6065.0,
-            "radius": 1.20 * const.R_sun,
-            "mass": 1.07 * const.M_sun,
-            "vsini": 4.5 * u.km / u.s,
-            "epsilon": 0.5 * u.dimensionless_unscaled,
-        },
-        "planet": {
-            "label": "HD 209458 b",
-            "radius": 1.359 * const.R_jup,
-            "mass": 0.685 * const.M_jup,
-            "T": 1459.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
-            "P0": 1.0e-3 * u.bar,
-            "composition": {"H I": 0.60, "He I": 0.10, "O I": 0.01, "Na I": 0.01, "H2": 0.28},
-            "notes": "Real gas-giant comparison system with trimmed 4-atom + 1-molecule composition.",
-        },
-        "distance_au": 0.04707,
-    },
-}
+REAL_MASS_LOSS_REFERENCE_SYSTEMS = copy.deepcopy(REAL_MASS_LOSS_REFERENCE_SYSTEMS_TEMPLATE)
 
 
 def get_real_mass_loss_reference_system(name: str) -> dict:
@@ -341,7 +227,6 @@ def build_advanced_systems() -> List[AdvancedSystem]:
                     system_key,
                     system_key,
                     float(system_def["distance_au"]),
-                    exobase_planet_key=str(system_def["exobase_template_key"]),
                 )
             )
 
@@ -401,7 +286,134 @@ def species_mixing_ratio(planet_case: dict, species: str) -> float:
     return float(value)
 
 
-def exobase_height(planet_key: str, species: str, exobase_rows: Dict[Tuple[str, str], dict]) -> u.Quantity | None:
+_EXOBASE_ENV_CACHE: Dict[tuple, dict] = {}
+_EXOBASE_HEIGHT_CACHE: Dict[tuple, u.Quantity | None] = {}
+_SPECIES_PROPERTIES_CACHE: Dict[str, tuple[float, float]] | None = None
+
+
+def exobase_species_properties(exobase_rows: Dict[Tuple[str, str], dict]) -> Dict[str, tuple[float, float]]:
+    global _SPECIES_PROPERTIES_CACHE
+    if _SPECIES_PROPERTIES_CACHE is not None:
+        return _SPECIES_PROPERTIES_CACHE
+
+    properties: Dict[str, tuple[float, float]] = {}
+    for (_, species), row in exobase_rows.items():
+        if species in properties:
+            continue
+        try:
+            radius_cm = (float(row["radius_AA"]) * u.AA).to_value(u.cm)
+            mass_g = (float(row["mass_amu"]) * const.u).to_value(u.g)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if radius_cm > 0.0 and mass_g > 0.0:
+            properties[species] = (radius_cm, mass_g)
+
+    _SPECIES_PROPERTIES_CACHE = properties
+    return properties
+
+
+def exobase_planet_cache_key(planet_key: str, planet_case: dict) -> tuple:
+    composition_key = tuple(
+        sorted(
+            (species, species_mixing_ratio(planet_case, species))
+            for species in planet_case.get("composition", {})
+        )
+    )
+    return (
+        str(planet_key),
+        float(planet_case["radius"].to_value(u.cm)),
+        float(planet_case["mass"].to_value(u.g)),
+        float(planet_case["T"].to_value(u.K)),
+        float(planet_case["mu"].to_value(u.dimensionless_unscaled)),
+        float(planet_case["P0"].to_value(u.bar)),
+        composition_key,
+    )
+
+
+def exobase_environment(
+    planet_key: str,
+    planet_case: dict,
+    exobase_rows: Dict[Tuple[str, str], dict],
+) -> dict | None:
+    cache_key = exobase_planet_cache_key(planet_key, planet_case)
+    cached = _EXOBASE_ENV_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    properties = exobase_species_properties(exobase_rows)
+    composition = {
+        species: species_mixing_ratio(planet_case, species)
+        for species in planet_case.get("composition", {})
+        if species in properties and species_mixing_ratio(planet_case, species) > 0.0
+    }
+    if not composition:
+        _EXOBASE_ENV_CACHE[cache_key] = None
+        return None
+
+    planet = build_planet(planet_case)
+    h0 = planet.scale_height(0 * u.km).to(u.km)
+    z_max = max(1000.0 * u.km, 100.0 * h0)
+    z_grid = np.linspace(0.0, z_max.to_value(u.km), 10000) * u.km
+    n_total = np.array([planet.number_density(zi).to_value(1 / u.cm**3) for zi in z_grid]) / u.cm**3
+    h_local = np.array([planet.scale_height(zi).to_value(u.cm) for zi in z_grid]) * u.cm
+
+    environment = {
+        "properties": properties,
+        "composition": composition,
+        "z_grid": z_grid,
+        "n_total": n_total,
+        "h_local": h_local,
+    }
+    _EXOBASE_ENV_CACHE[cache_key] = environment
+    return environment
+
+
+def calculated_exobase_height(
+    planet_key: str,
+    species: str,
+    planet_case: dict,
+    exobase_rows: Dict[Tuple[str, str], dict],
+) -> u.Quantity | None:
+    cache_key = exobase_planet_cache_key(planet_key, planet_case) + (str(species),)
+    if cache_key in _EXOBASE_HEIGHT_CACHE:
+        return _EXOBASE_HEIGHT_CACHE[cache_key]
+
+    environment = exobase_environment(planet_key, planet_case, exobase_rows)
+    if environment is None:
+        _EXOBASE_HEIGHT_CACHE[cache_key] = None
+        return None
+
+    properties = environment["properties"]
+    if species not in properties:
+        _EXOBASE_HEIGHT_CACHE[cache_key] = None
+        return None
+
+    radius_i_cm, _ = properties[species]
+    collision_rate = np.zeros_like(environment["n_total"].value) / u.cm
+    for species_j, frac_j in environment["composition"].items():
+        radius_j_cm, _ = properties[species_j]
+        sigma_ij = np.pi * (radius_i_cm + radius_j_cm) ** 2 * u.cm**2
+        collision_rate += frac_j * environment["n_total"] * sigma_ij
+
+    lambda_mfp = (1.0 / collision_rate).to(u.cm)
+    knudsen = (lambda_mfp / environment["h_local"]).decompose().value
+    idx = int(np.nanargmin(np.abs(knudsen - 1.0)))
+    z_exobase = environment["z_grid"][idx].to(u.km)
+    _EXOBASE_HEIGHT_CACHE[cache_key] = z_exobase
+    return z_exobase
+
+
+def exobase_height(
+    planet_key: str,
+    species: str,
+    exobase_rows: Dict[Tuple[str, str], dict],
+    planet_case: dict | None = None,
+) -> u.Quantity | None:
+    if planet_case is not None:
+        calculated = calculated_exobase_height(planet_key, species, planet_case, exobase_rows)
+        if calculated is not None:
+            return calculated
+
     row = exobase_rows.get((planet_key, species))
     if row is None:
         return None
@@ -436,7 +448,7 @@ def representative_atmosphere_top(
     candidate_species = list(planet_case.get("composition", {}).keys())
     heights = []
     for species in candidate_species:
-        z_exo = exobase_height(planet_key, species, exobase_rows)
+        z_exo = exobase_height(planet_key, species, exobase_rows, planet_case=planet_case)
         if z_exo is not None:
             heights.append((species, z_exo.to(u.km)))
 
@@ -766,7 +778,10 @@ def get_system_star_case(system: AdvancedSystem) -> dict:
 
 def get_system_planet_case(system: AdvancedSystem) -> dict:
     if is_real_system_key(system.planet_key):
-        return dict(get_real_mass_loss_reference_system(system.planet_key)["planet"])
+        system_def = get_real_mass_loss_reference_system(system.planet_key)
+        planet_case = dict(system_def["planet"])
+        planet_case.setdefault("category", system_def.get("category", ""))
+        return planet_case
     return dict(base_mass_loss.get_planet_template(system.planet_key))
 
 
@@ -1256,6 +1271,7 @@ def output_fieldnames() -> List[str]:
         "star_source_url",
         "orbit_source_url",
         "exobase_template_key",
+        "exobase_model",
         "target_stellar_teff_K",
         "actual_stellar_teff_K",
         "distance_AU",
@@ -1308,6 +1324,7 @@ def current_checkpoint_config() -> dict:
     return {
         "include_stellar_gravity": bool(INCLUDE_STELLAR_GRAVITY),
         "method": "advanced_trajectory_recomputed_acceleration",
+        "exobase_model": EXOBASE_MODEL_ID,
         "n_rho": int(N_RHO),
         "n_x": int(N_X),
         "column_steps": int(COLUMN_STEPS),
@@ -1335,6 +1352,7 @@ def validate_checkpoint_rows(rows: List[dict]) -> None:
         actual = {
             "include_stellar_gravity": parse_bool(row.get("include_stellar_gravity", "")),
             "method": row.get("method", ""),
+            "exobase_model": row.get("exobase_model", ""),
             "n_rho": int(float(row.get("n_rho", np.nan))),
             "n_x": int(float(row.get("n_x", np.nan))),
             "column_steps": int(float(row.get("column_steps", np.nan))),
@@ -1399,6 +1417,7 @@ def load_family_rows(test_family: str) -> List[dict]:
             row
             for row in reader
             if row.get("species") and not is_total_species_label(row.get("species", ""))
+            and row.get("exobase_model", "") == EXOBASE_MODEL_ID
         ]
 
 
@@ -1479,21 +1498,36 @@ def row_key_from_values(
     species: str,
     actual_star_key: str,
     distance_au: float,
-) -> Tuple[str, str, str, str, str]:
-    return test_family, planet_key, species, actual_star_key, f"{float(distance_au):.12g}"
+) -> Tuple[str, str, str, str, str, str]:
+    return (
+        EXOBASE_MODEL_ID,
+        test_family,
+        planet_key,
+        species,
+        actual_star_key,
+        f"{float(distance_au):.12g}",
+    )
 
 
-def row_key_from_row(row: dict) -> Tuple[str, str, str, str, str]:
+def row_key_from_row(row: dict) -> Tuple[str, str, str, str, str, str]:
+    model_id = row.get("exobase_model", "")
     return row_key_from_values(
         row["test_family"],
         row["planet"],
         row["species"],
         row["star"],
         float(row["distance_AU"]),
+    ) if model_id == EXOBASE_MODEL_ID else (
+        model_id,
+        row["test_family"],
+        row["planet"],
+        row["species"],
+        row["star"],
+        f"{float(row['distance_AU']):.12g}",
     )
 
 
-def completed_row_keys(rows: List[dict]) -> set[Tuple[str, str, str, str, str]]:
+def completed_row_keys(rows: List[dict]) -> set[Tuple[str, str, str, str, str, str]]:
     return {row_key_from_row(row) for row in rows}
 
 
@@ -1543,6 +1577,7 @@ def format_composition(planet_case: dict) -> str:
 
 def common_run_parameter_lines() -> List[str]:
     return [
+        f"exobase_model: {EXOBASE_MODEL_ID}",
         f"skip_atoms: {SKIP_ATOMS}",
         f"skip_molecules: {SKIP_MOLECULES}",
         f"selected_atomic_species: {SELECTED_ATOMIC_SPECIES if SELECTED_ATOMIC_SPECIES is not None else 'all available'}",
@@ -1961,8 +1996,9 @@ def p0_row_key_from_values(
     actual_star_key: str,
     distance_au: float,
     p0_bar: float,
-) -> Tuple[str, str, str, str, str, str]:
+) -> Tuple[str, str, str, str, str, str, str]:
     return (
+        EXOBASE_MODEL_ID,
         test_family,
         planet_key,
         species,
@@ -1972,18 +2008,29 @@ def p0_row_key_from_values(
     )
 
 
-def p0_row_key_from_row(row: dict) -> Tuple[str, str, str, str, str, str]:
-    return p0_row_key_from_values(
+def p0_row_key_from_row(row: dict) -> Tuple[str, str, str, str, str, str, str]:
+    model_id = row.get("exobase_model", "")
+    if model_id == EXOBASE_MODEL_ID:
+        return p0_row_key_from_values(
+            row["test_family"],
+            row["planet"],
+            row["species"],
+            row["star"],
+            float(row["distance_AU"]),
+            float(row["P0_bar"]),
+        )
+    return (
+        model_id,
         row["test_family"],
         row["planet"],
         row["species"],
         row["star"],
-        float(row["distance_AU"]),
-        float(row["P0_bar"]),
+        f"{float(row['distance_AU']):.12g}",
+        f"{float(row['P0_bar']):.12g}",
     )
 
 
-def p0_completed_row_keys(rows: List[dict]) -> set[Tuple[str, str, str, str, str, str]]:
+def p0_completed_row_keys(rows: List[dict]) -> set[Tuple[str, str, str, str, str, str, str]]:
     return {p0_row_key_from_row(row) for row in rows}
 
 
@@ -2280,8 +2327,9 @@ def scalar_row_key_from_values(
     distance_au: float,
     value_field: str,
     value: float,
-) -> Tuple[str, str, str, str, str, str, str]:
+) -> Tuple[str, str, str, str, str, str, str, str]:
     return (
+        EXOBASE_MODEL_ID,
         test_family,
         planet_key,
         species,
@@ -2292,19 +2340,31 @@ def scalar_row_key_from_values(
     )
 
 
-def scalar_row_key_from_row(row: dict, value_field: str) -> Tuple[str, str, str, str, str, str, str]:
-    return scalar_row_key_from_values(
+def scalar_row_key_from_row(row: dict, value_field: str) -> Tuple[str, str, str, str, str, str, str, str]:
+    model_id = row.get("exobase_model", "")
+    if model_id == EXOBASE_MODEL_ID:
+        return scalar_row_key_from_values(
+            row["test_family"],
+            row["planet"],
+            row["species"],
+            row["star"],
+            float(row["distance_AU"]),
+            value_field,
+            float(row[value_field]),
+        )
+    return (
+        model_id,
         row["test_family"],
         row["planet"],
         row["species"],
         row["star"],
-        float(row["distance_AU"]),
+        f"{float(row['distance_AU']):.12g}",
         value_field,
-        float(row[value_field]),
+        f"{float(row[value_field]):.12g}",
     )
 
 
-def scalar_completed_row_keys(rows: List[dict], value_field: str) -> set[Tuple[str, str, str, str, str, str, str]]:
+def scalar_completed_row_keys(rows: List[dict], value_field: str) -> set[Tuple[str, str, str, str, str, str, str, str]]:
     return {scalar_row_key_from_row(row, value_field) for row in rows}
 
 
@@ -2767,7 +2827,12 @@ def mass_loss_for_species_advanced(
     orbit_source_url: str = "",
 ) -> dict:
     exobase_lookup_key = exobase_planet_key or planet_key
-    z_exobase = base_mass_loss.exobase_height(exobase_lookup_key, species, exobase_rows)
+    z_exobase = base_mass_loss.exobase_height(
+        exobase_lookup_key,
+        species,
+        exobase_rows,
+        planet_case=planet_case,
+    )
     if z_exobase is None:
         raise ValueError(f"No exobase height for {exobase_lookup_key}, {species}")
 
@@ -2862,6 +2927,7 @@ def mass_loss_for_species_advanced(
         "star_source_url": star_source_url,
         "orbit_source_url": orbit_source_url,
         "exobase_template_key": exobase_lookup_key,
+        "exobase_model": EXOBASE_MODEL_ID,
         "target_stellar_teff_K": target_stellar_teff_k if target_stellar_teff_k is not None else base_mass_loss.infer_teff_from_star_template(star_key),
         "actual_stellar_teff_K": target_stellar_teff_k if target_stellar_teff_k is not None else base_mass_loss.infer_teff_from_star_template(star_key),
         "distance_AU": float(distance_au),

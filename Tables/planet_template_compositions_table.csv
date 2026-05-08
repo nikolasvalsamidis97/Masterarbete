@@ -16,5 +16,5 @@ super_puff,sub_neptune,"H I: 0.35, He I: 0.1, H2: 0.37, H2O: 0.1, CO: 0.05, CO2:
 cold_jupiter,gas_giant,"H I: 0.49, He I: 0.1, H2: 0.35, NH3: 0.03, H2O: 0.02, CO: 0.01"
 warm_jupiter,gas_giant,"H I: 0.5, He I: 0.1, H2: 0.33, H2O: 0.03, CO: 0.02, NH3: 0.02"
 hot_jupiter,gas_giant,"H I: 0.49, He I: 0.1, H2: 0.2, H2O: 0.1, CO: 0.08, CO2: 0.01, NO: 0.01, OH: 0.01"
-inflated_hot_jupiter,gas_giant,"H I: 0.49, He I: 0.1, H2: 0.2, H2O: 0.1, CO: 0.08, CO2: 0.01, NO: 0.01, OH: 0.01"
+inflated_hot_jupiter,gas_giant,"H I: 0.6, He I: 0.1, O I: 0.01, Na I: 0.01, H2: 0.28"
 ultra_hot_jupiter,gas_giant,"H I: 0.6, He I: 0.1, He II: 0.01, O I: 0.01, H2: 0.1, CO: 0.11, H2O: 0.04, NO: 0.02, OH: 0.01"

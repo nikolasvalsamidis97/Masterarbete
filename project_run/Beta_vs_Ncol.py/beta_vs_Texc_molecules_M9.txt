@@ -1,0 +1,28 @@
+# dataset_name: beta_vs_Texc_molecules_M9
+# x_label: Excitation temperature
+# x_unit: K
+# y_label: beta
+# y_unit: dimensionless
+# series_label: species
+# series_unit: label
+# series_values: CO, SO, SiO, NO, NaCl, H2S, H2, SO2, HCN
+# star_key: M9
+# stellar_teff_K: 2600
+# distance_AU: 1.0
+# b_km_s: 1.0
+# use_fixed_ncol: True
+# fixed_ncol_mode: constant_fixed_ncol
+# fixed_ncol_reference_t_K: 
+# fixed_ncol_cm2: 1e-20
+# category: molecule
+# vsini_km_s: 5.0
+# radius_rsun: 0.09999999999999999
+# mass_msun: 0.09999999999999999
+# n_series: 9
+# note: beta calculated against stellar gravity using gas excitation temperature T_exc and a fixed optically thin column density N_col=1.0e-20 cm^-2
+#
+x__Excitation_temperature	CO	SO	SiO	NO	NaCl	H2S	H2	SO2	HCN
+3000	2.882590188e-06	3.345274685e-07	8.576132632e-08	1.629000193e-07	2.260452703e-14	3.298617866e-07	9.919403451e-13	2.31219664e-07	7.712405533e-06
+8000	5.502815711e-06	6.21982628e-07	1.913146138e-06	6.523250704e-07	1.587134628e-14	1.780618547e-07	2.126210643e-12	9.293237055e-08	7.207959123e-06
+15000	8.09898786e-06	7.828325998e-07	1.497703378e-05	1.496032445e-06	6.881454105e-15	1.222472828e-07	2.798858887e-12	6.305970243e-08	6.364587386e-06
+50000	1.23897391e-05	7.558500802e-07	2.192599131e-05	2.208491985e-06	2.342118866e-15	8.724007438e-08	2.92868959e-12	4.480731675e-08	5.619896347e-06

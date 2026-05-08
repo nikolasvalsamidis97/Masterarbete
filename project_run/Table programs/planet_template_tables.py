@@ -187,8 +187,7 @@ def build_composition_rows() -> list[dict[str, str]]:
 def write_compositions_tex(path: pathlib.Path) -> None:
     lines = [
         r"\begin{longtable}{lll}",
-        r"\caption{Adopted atmospheric compositions for the planet templates. Abundances are given as mixing ratios.}",
-        r"\label{tab:planet_templates_compositions} \\",
+        r"\caption{Adopted atmospheric compositions for the planet templates. Abundances are given as mixing ratios.}\label{tab:planet_templates_compositions} \\",
         r"\toprule",
         r"Template & Category & Composition \\",
         r"\midrule",
@@ -232,8 +231,7 @@ def write_compositions_tex(path: pathlib.Path) -> None:
 def write_properties_tex(path: pathlib.Path) -> None:
     lines = [
         r"\begin{longtable}{llcccccl}",
-        r"\caption{Planet templates used in this work, grouped by atmospheric or structural category. The table lists the adopted radius, mass, atmospheric temperature, mean molecular weight, reference pressure, and a short description for each template.}",
-        r"\label{tab:planet_templates_properties} \\",
+        r"\caption{Planet templates used in this work, grouped by atmospheric or structural category. The table lists the adopted radius, mass, atmospheric temperature, mean molecular weight, reference pressure, and a short description for each template.}\label{tab:planet_templates_properties} \\",
         r"\toprule",
         r"Template & Category & $R$ & $M$ & $T$ [K] & $\mu$ & $P_0$ [bar] & Notes \\",
         r"\midrule",
