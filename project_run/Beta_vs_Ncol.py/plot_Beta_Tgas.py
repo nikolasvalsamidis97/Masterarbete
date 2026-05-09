@@ -15,10 +15,11 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 # -----------------------------------------------------------------------------
 TABLES_ROOT = pathlib.Path(__file__).resolve().parent
 PLOT_ATOMS = True
-PLOT_MOLECULES = False
+PLOT_MOLECULES = True
 TXT_NAME_ATOMS = "beta_vs_Texc_atoms.txt"
 TXT_NAME_MOLECULES = "beta_vs_Texc_molecules.txt"
 ATOM_FILE_GLOB = "beta_vs_Texc_atoms*.txt"
+MOLECULE_FILE_GLOB = "beta_vs_Texc_molecules*.txt"
 ATOM_FILE_EXCLUDE_SUBSTRINGS = ["fixedN"]
 ATOM_TARGETS = [
     ("lowest", 2600.0),
@@ -33,10 +34,10 @@ SELECTED_SPECIES = []
 FIGWIDTH = 12.0
 MIN_FIGHEIGHT = 4
 ROW_HEIGHT = 0.3
-TITLE_SIZE = 25
-AXIS_LABEL_SIZE = 20
-TICK_LABEL_SIZE = 15
-YTICK_LABEL_SIZE = 18
+TITLE_SIZE = 28
+AXIS_LABEL_SIZE = 22
+TICK_LABEL_SIZE = 17
+YTICK_LABEL_SIZE = 20
 CELL_TEXT_SIZE = 8
 ANNOTATE_CELLS = False
 SAVE_FIGURE = True
@@ -156,6 +157,10 @@ def discover_atom_table_files() -> List[pathlib.Path]:
     ]
 
 
+def discover_molecule_table_files() -> List[pathlib.Path]:
+    return sorted(TABLES_ROOT.glob(MOLECULE_FILE_GLOB))
+
+
 
 def read_plotdata_txt(path: pathlib.Path) -> Tuple[Dict[str, Any], np.ndarray, np.ndarray, List[str], List[str]]:
     metadata: Dict[str, Any] = {}
@@ -216,7 +221,7 @@ def dataset_stellar_teff(metadata: Dict[str, Any]) -> float | None:
         return None
 
 
-def select_atom_target_datasets(
+def select_target_datasets(
     datasets: List[Tuple[pathlib.Path, Dict[str, Any], np.ndarray, np.ndarray, List[str], List[str]]]
 ) -> List[Tuple[str, pathlib.Path, Dict[str, Any], np.ndarray, np.ndarray, List[str], List[str]]]:
     if not datasets:
@@ -355,6 +360,18 @@ def selected_molecule_species(species_labels: List[str]) -> List[str]:
     return [species for species in species_labels if species in selected]
 
 
+def ordered_molecule_species(all_species_lists: List[List[str]]) -> List[str]:
+    ordered: List[str] = []
+    seen: set[str] = set()
+
+    for species_labels in all_species_lists:
+        for species in selected_molecule_species(species_labels):
+            if species not in seen:
+                seen.add(species)
+                ordered.append(species)
+    return ordered
+
+
 def atom_contrast_limits() -> Tuple[float, float]:
     return float(ATOM_BETA_LOW), float(ATOM_BETA_HIGH)
 
@@ -437,8 +454,8 @@ def plot_atom_triptych(
     for ax in axes[1:]:
         ax.tick_params(axis="y", which="major", labelleft=False)
 
-    fig.suptitle(r"$\beta$ heatmap vs $T_{\rm exc}$ | $N_{\rm col}=0$", fontsize=TITLE_SIZE)
-    fig.subplots_adjust(right=0.885, top=0.915, bottom=0.075, wspace=0.08)
+    fig.suptitle(r"$\beta$ heatmap vs $T_{\rm exc}$ | $N_{\rm col}=0$", fontsize=TITLE_SIZE, y=0.985)
+    fig.subplots_adjust(right=0.885, top=0.86, bottom=0.075, wspace=0.08)
 
     if image is None:
         raise ValueError("No atom heatmap image was created.")
@@ -558,6 +575,106 @@ def plot_molecule_dataset(
     if SAVE_FIGURE:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = OUTPUT_DIR / output_name
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        print(f"Saved plot to {output_path}")
+
+    if SHOW_FIGURE:
+        plt.show()
+    else:
+        plt.close(fig)
+
+
+def plot_molecule_triptych(
+    datasets: List[Tuple[str, pathlib.Path, Dict[str, Any], np.ndarray, np.ndarray, List[str], List[str]]]
+) -> None:
+    species_order = ordered_molecule_species([species_labels for _, _, _, _, _, species_labels, _ in datasets])
+    if not species_order:
+        raise ValueError("No selected molecular species were available to plot.")
+
+    triptych_row_height = ROW_HEIGHT * 0.88
+    fig_height = max(MIN_FIGHEIGHT * 1.55, 2.0 + triptych_row_height * len(species_order))
+    fig_width = max(FIGWIDTH * 1.45, 4.3 * len(datasets) + 1.0)
+    fig, axes = plt.subplots(1, len(datasets), figsize=(fig_width, fig_height), sharey=True)
+    axes = np.atleast_1d(axes).ravel()
+    cmap, norm = build_atom_colormap()
+    image = None
+
+    for ax, (_target_label, _path, metadata, x_values, y_matrix, species_labels, _) in zip(axes, datasets):
+        lookup = build_species_lookup(species_labels)
+        panel_matrix = np.full((len(species_order), len(x_values)), np.nan, dtype=float)
+
+        for row_idx, species in enumerate(species_order):
+            col_idx = lookup.get(species)
+            if col_idx is not None:
+                panel_matrix[row_idx, :] = y_matrix[:, col_idx]
+
+        masked_panel = np.ma.masked_invalid(panel_matrix)
+        image = ax.imshow(
+            masked_panel,
+            aspect="auto",
+            interpolation="nearest",
+            origin="upper",
+            cmap=cmap,
+            norm=norm,
+        )
+
+        stellar_teff = dataset_stellar_teff(metadata)
+        teff_text = "unknown" if stellar_teff is None else f"{int(round(stellar_teff))} K"
+        ax.set_title(teff_text, fontsize=AXIS_LABEL_SIZE)
+        ax.set_xlabel(r"$T_{\rm exc}$ [$10^3$ K]", fontsize=AXIS_LABEL_SIZE)
+        ax.set_xticks(np.arange(len(x_values)))
+        ax.set_xticklabels([f"{(value / 1e3):g}" for value in x_values], rotation=45, ha="right")
+        ax.tick_params(axis="x", which="major", labelsize=TICK_LABEL_SIZE)
+        ax.tick_params(axis="y", which="major", labelsize=YTICK_LABEL_SIZE)
+        ax.set_xticks(np.arange(-0.5, len(x_values), 1.0), minor=True)
+        ax.set_yticks(np.arange(-0.5, len(species_order), 1.0), minor=True)
+        ax.grid(which="minor", color="black", linewidth=0.28, alpha=0.18)
+        ax.tick_params(which="minor", bottom=False, left=False)
+        for spine in ax.spines.values():
+            spine.set_linewidth(0.55)
+            spine.set_edgecolor((0, 0, 0, 0.35))
+
+    axes[0].set_yticks(np.arange(len(species_order)))
+    axes[0].set_yticklabels(species_order)
+    for ax in axes[1:]:
+        ax.tick_params(axis="y", which="major", labelleft=False)
+
+    fig.suptitle(
+        r"$\beta$ heatmap vs $T_{\rm exc}$ | $N_{\rm col}=0$",
+        fontsize=TITLE_SIZE,
+        y=0.985,
+    )
+    fig.subplots_adjust(right=0.885, top=0.84, bottom=0.075, wspace=0.08)
+
+    if image is None:
+        raise ValueError("No molecule heatmap image was created.")
+
+    cbar_ax = fig.add_axes([0.902, 0.075, 0.018, 0.84])
+    cbar = fig.colorbar(image, cax=cbar_ax)
+    cbar.set_ticks(
+        [
+            ATOM_BETA_LOW,
+            ATOM_BETA_GREEN_LOW,
+            1.0,
+            ATOM_BETA_GREEN_HIGH,
+            ATOM_BETA_HIGH,
+        ]
+    )
+    cbar.set_ticklabels(
+        [
+            f"{ATOM_BETA_LOW:g}",
+            "0.95",
+            "1",
+            "1.05",
+            f"{ATOM_BETA_HIGH:g}",
+        ]
+    )
+    cbar.set_label(r"$\beta$", fontsize=AXIS_LABEL_SIZE)
+    cbar.ax.tick_params(labelsize=TICK_LABEL_SIZE)
+
+    if SAVE_FIGURE:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = OUTPUT_DIR / OUTPUT_NAME_MOLECULES
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved plot to {output_path}")
 
@@ -707,7 +824,7 @@ def main() -> None:
     if PLOT_ATOMS:
         atom_files = discover_atom_table_files()
         atom_datasets = [(path, *read_plotdata_txt(path)) for path in atom_files]
-        selected_atom_datasets = select_atom_target_datasets(atom_datasets)
+        selected_atom_datasets = select_target_datasets(atom_datasets)
 
         if not selected_atom_datasets:
             print(f"Skipping missing atom txt files matching: {ATOM_FILE_GLOB}")
@@ -720,20 +837,32 @@ def main() -> None:
             plotted_any = True
 
     if PLOT_MOLECULES:
-        table_path_tau1 = TABLES_ROOT / TXT_NAME_MOLECULES
-        if not table_path_tau1.exists():
-            print(f"Skipping missing txt file: {table_path_tau1}")
-        else:
-            metadata_tau1, x_tau1, y_tau1, species_tau1, _ = read_plotdata_txt(table_path_tau1)
-            plot_dataset(
-                metadata_tau1,
-                x_tau1,
-                y_tau1,
-                species_tau1,
-                output_name=OUTPUT_NAME_MOLECULES,
-                mode_label=rf"$N_{{\rm col}}=0$",
-            )
+        molecule_files = discover_molecule_table_files()
+        molecule_datasets = [(path, *read_plotdata_txt(path)) for path in molecule_files]
+        selected_molecule_datasets = select_target_datasets(molecule_datasets)
+
+        if selected_molecule_datasets:
+            plot_molecule_triptych(selected_molecule_datasets)
+            for target_label, path, metadata_tau1, *_rest in selected_molecule_datasets:
+                stellar_teff = dataset_stellar_teff(metadata_tau1)
+                teff_text = "unknown" if stellar_teff is None else f"{int(round(stellar_teff))} K"
+                print(f"Used molecule dataset for {target_label} ({teff_text}): {path}")
             plotted_any = True
+        else:
+            table_path_tau1 = TABLES_ROOT / TXT_NAME_MOLECULES
+            if not table_path_tau1.exists():
+                print(f"Skipping missing txt file: {table_path_tau1}")
+            else:
+                metadata_tau1, x_tau1, y_tau1, species_tau1, _ = read_plotdata_txt(table_path_tau1)
+                plot_dataset(
+                    metadata_tau1,
+                    x_tau1,
+                    y_tau1,
+                    species_tau1,
+                    output_name=OUTPUT_NAME_MOLECULES,
+                    mode_label=rf"$N_{{\rm col}}=0$",
+                )
+                plotted_any = True
 
     if not plotted_any:
         raise FileNotFoundError("No enabled beta(T_exc) txt files were found to plot.")

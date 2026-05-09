@@ -1,0 +1,28 @@
+family_key,family,planet_label,parameters,distance_AU,P0_bar,mu_amu,surface_gravity_m_s2,mass_scale,planet_mass_Mearth,mass_loss_rate_g_s,mass_lost_Mearth_1Myr,relative_loss_1Myr
+solar_system_fixed,Solar system analogues,Mercury-like rocky planet,a=0.387 AU,0.387,,,,,0.055,7.304554371732839e-06,3.8598078644873184e-20,7.017832480886033e-19
+solar_system_fixed,Solar system analogues,Earth-like rocky planet,a=1 AU,1.0,,,,,1.0,0.0,0.0,0.0
+solar_system_fixed,Solar system analogues,Mars-like rocky planet,a=1.524 AU,1.524,,,,,0.107,0.0,0.0,0.0
+solar_system_fixed,Solar system analogues,Cold Jupiter,a=5.204 AU,5.204,,,,,317.8284065946748,0.0,0.0,0.0
+real_reference_systems,Real reference systems,GJ 1214 b,a=0.015 AU,0.01505,,,,,8.41,0.0,0.0,0.0
+real_reference_systems,Real reference systems,GJ 1132 b,a=0.016 AU,0.0157,,,,,1.8399999999999999,1.4371795746350152e-144,7.5942168988754e-159,4.127291792867065e-159
+real_reference_systems,Real reference systems,GJ 436 b,a=0.028 AU,0.0282,,,,,22.1,0.0,0.0,0.0
+real_reference_systems,Real reference systems,HD 209458 b,a=0.047 AU,0.04707,,,,,217.71245851735225,2178.9906448740617,1.1514029192904755e-11,5.2886404716186955e-14
+distance_sweep,Distance sweep,Inflated hot Jupiter,a=0.03 AU,0.03,,,,,158.9142032973374,714266.2743806244,3.7742625256663975e-09,2.3750315877080796e-11
+distance_sweep,Distance sweep,Inflated hot Jupiter,a=0.05 AU,0.05,,,,,158.9142032973374,148110.56289998928,7.826327061200376e-10,4.924875749813802e-12
+distance_sweep,Distance sweep,Inflated hot Jupiter,a=0.1 AU,0.1,,,,,158.9142032973374,9441.983644808253,4.989249292143467e-11,3.1395867635621603e-13
+distance_sweep,Distance sweep,Inflated hot Jupiter,a=0.3 AU,0.3,,,,,158.9142032973374,0.007946030349973808,4.198770914071248e-17,2.642162139664201e-19
+p0_sweep,P0 sweep,Inflated hot Jupiter,P0=1.000e-06 bar,0.05,1e-06,,,,158.9142032973374,88266.6563185784,4.664108402681746e-10,2.934985234740118e-12
+p0_sweep,P0 sweep,Inflated hot Jupiter,P0=1.000e-05 bar,0.05,1e-05,,,,158.9142032973374,105611.33694111243,5.580620639662959e-10,3.5117192320571272e-12
+p0_sweep,P0 sweep,Inflated hot Jupiter,P0=1.000e-04 bar,0.05,0.0001,,,,158.9142032973374,127320.70784319236,6.727767970993481e-10,4.2335850612455636e-12
+p0_sweep,P0 sweep,Inflated hot Jupiter,P0=1.000e-03 bar,0.05,0.001,,,,158.9142032973374,148110.56289998928,7.826327061200376e-10,4.924875749813802e-12
+p0_sweep,P0 sweep,Inflated hot Jupiter,P0=0.01 bar,0.05,0.01,,,,158.9142032973374,174456.0909394282,9.218454097918895e-10,5.800900049613973e-12
+mu_sweep,mu sweep,Inflated hot Jupiter,mu=1,0.05,,1.0,,,158.9142032973374,9204479.48166966,4.8637494477890535e-08,3.0606134296811124e-10
+mu_sweep,mu sweep,Inflated hot Jupiter,mu=2,0.05,,2.0,,,158.9142032973374,304922.6172095825,1.611245061738653e-09,1.0139087811577942e-11
+mu_sweep,mu sweep,Inflated hot Jupiter,mu=5,0.05,,5.0,,,158.9142032973374,23312.044885029896,1.2318344091286988e-10,7.751568982313478e-13
+mu_sweep,mu sweep,Inflated hot Jupiter,mu=10,0.05,,10.0,,,158.9142032973374,2190.8627932822455,1.1576762947028894e-11,7.284913938981352e-14
+mu_sweep,mu sweep,Inflated hot Jupiter,mu=20,0.05,,20.0,,,158.9142032973374,1413.5347396076909,7.46927495779526e-12,4.700193439487487e-14
+surface_gravity_sweep,Surface gravity sweep,Super-Earth rocky planet,g=4.899 m s^-2; xM=0.5,0.1,,,4.899199066834733,0.5,2.0,3.622536546872438,1.9141886474443465e-14,9.570943237221732e-15
+surface_gravity_sweep,Surface gravity sweep,Super-Earth rocky planet,g=9.798 m s^-2; xM=1,0.1,,,9.798398133669465,1.0,4.0,5.4171313016897e-19,2.8624724982726253e-33,7.156181245681563e-34
+surface_gravity_sweep,Surface gravity sweep,Super-Earth rocky planet,g=19.597 m s^-2; xM=2,0.1,,,19.59679626733893,2.0,8.0,2.391451266618232e-96,1.2636694775182398e-110,1.5795868468977998e-111
+surface_gravity_sweep,Surface gravity sweep,Super-Earth rocky planet,g=29.395 m s^-2; xM=3,0.1,,,29.3951944010084,3.0,12.0,6.404126742064299e-252,3.3840118789244335e-266,2.8200098991036944e-267
+surface_gravity_sweep,Surface gravity sweep,Super-Earth rocky planet,g=39.194 m s^-2; xM=4,0.1,,,39.19359253467786,4.0,16.0,0.0,0.0,0.0

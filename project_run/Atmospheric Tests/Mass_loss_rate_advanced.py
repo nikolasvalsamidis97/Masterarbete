@@ -85,7 +85,7 @@ RUN_FAMILY = os.environ.get("MLA_RUN_FAMILY", "solar_system_fixed")
 #   mu_sweep
 #   surface_gravity_sweep
 #   all
-SELECTED_SYSTEM_KEYS = None
+SELECTED_SYSTEM_KEYS = _env_str_list("MLA_SELECTED_SYSTEM_KEYS")
 
 # Moderate-resolution advanced run for one representative case.
 N_RHO = 32
@@ -235,6 +235,10 @@ def build_advanced_systems() -> List[AdvancedSystem]:
             systems.append(
                 AdvancedSystem("distance_sweep", DISTANCE_SWEEP_PLANET_KEY, DISTANCE_SWEEP_STAR_KEY, float(distance_au))
             )
+
+    if SELECTED_SYSTEM_KEYS is not None:
+        selected_keys = {key.strip().lower() for key in SELECTED_SYSTEM_KEYS}
+        systems = [system for system in systems if system.planet_key.strip().lower() in selected_keys]
 
     return systems
 
