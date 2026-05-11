@@ -148,6 +148,7 @@ P0_SWEEP_OUTPUT_DIR = OUTPUT_DIR
 SURFACE_GRAVITY_VALUES_M_S2 = np.linspace(1.0, 10.0, 10)
 SURFACE_GRAVITY_SWEEP_FAMILY = "surface_gravity_sweep"
 SURFACE_GRAVITY_SWEEP_OUTPUT_DIR = OUTPUT_DIR
+COMPUTED_MOLECULAR_SPECIES = {"SiO"}
 
 M_NEPTUNE = 17.147 * u.M_earth
 ROCKY_CATEGORIES = {"rocky"}
@@ -858,11 +859,22 @@ def selected_species_for_planet(planet_case: dict) -> List[str]:
         if is_molecular_species(species):
             if SKIP_MOLECULES:
                 continue
+            if species not in COMPUTED_MOLECULAR_SPECIES:
+                continue
             if SELECTED_MOLECULAR_SPECIES is not None and species not in SELECTED_MOLECULAR_SPECIES:
                 continue
             selected.append(species)
 
     return selected
+
+
+def zero_loss_molecular_species_for_planet(planet_case: dict) -> List[str]:
+    selected = set(selected_species_for_planet(planet_case))
+    return [
+        species
+        for species in planet_case["composition"].keys()
+        if is_molecular_species(species) and species not in selected
+    ]
 
 
 molecule_profile_cache: Dict[str, BroadeningProfileMolecule] = {}
@@ -1013,6 +1025,7 @@ def _compute_species_task(task: dict, exobase_rows) -> dict:
             "system_def": system_def,
             "planet_label": task["planet_label"],
             "star_label": task["star_label"],
+            "extra_fields": task["extra_fields"],
             "row": row,
             "elapsed_s": time.perf_counter() - start_time,
         }
@@ -1023,6 +1036,7 @@ def _compute_species_task(task: dict, exobase_rows) -> dict:
             "system_def": system_def,
             "planet_label": task["planet_label"],
             "star_label": task["star_label"],
+            "extra_fields": task["extra_fields"],
             "error_type": type(exc).__name__,
             "error_message": str(exc),
             "elapsed_s": time.perf_counter() - start_time,
@@ -1950,6 +1964,121 @@ def total_row_from_species_rows(species_rows: List[dict]) -> dict | None:
     return template
 
 
+def zero_loss_shell_properties(
+    system_def: AdvancedSystem,
+    species: str,
+    planet_case: dict,
+    exobase_rows: Dict[Tuple[str, str], dict],
+) -> dict:
+    z_exobase = base_mass_loss.exobase_height(
+        get_system_exobase_planet_key(system_def),
+        species,
+        exobase_rows,
+        planet_case=planet_case,
+    )
+    if z_exobase is None:
+        return {
+            "z_exobase_km": "",
+            "r_exobase_over_Rp": "",
+            "hill_radius_over_Rp": "",
+            "total_shell_mass_g": 0.0,
+        }
+
+    planet = base_mass_loss.build_planet(planet_case)
+    star = build_system_star(system_def)
+    system = base_mass_loss.PlanetarySystem(planet, star, system_def.distance_au * u.AU)
+    planet_radius = planet.radius.to(u.cm)
+    hill_radius = system.hill_radius().to(u.cm)
+    r_exobase = planet_radius + z_exobase.to(u.cm)
+    shell_info = {
+        "z_exobase_km": z_exobase.to_value(u.km),
+        "r_exobase_over_Rp": (r_exobase / planet_radius).decompose().value,
+        "hill_radius_over_Rp": (hill_radius / planet_radius).decompose().value,
+        "total_shell_mass_g": 0.0,
+    }
+    if r_exobase >= hill_radius:
+        return shell_info
+
+    species_properties = exobase_species_properties(exobase_rows)
+    if species not in species_properties:
+        return shell_info
+
+    _, species_mass_g = species_properties[species]
+    abundance = base_mass_loss.species_mixing_ratio(planet_case, species)
+    if abundance <= 0.0:
+        return shell_info
+
+    cells = base_mass_loss.spherical_shell_cells(
+        planet,
+        abundance,
+        species_mass_g,
+        r_exobase.to_value(u.cm),
+        hill_radius.to_value(u.cm),
+    )
+    shell_info["total_shell_mass_g"] = float(np.nansum(cells["dm_g"])) if len(cells["dm_g"]) else 0.0
+    return shell_info
+
+
+def zero_loss_species_row(
+    template_row: dict,
+    system_def: AdvancedSystem,
+    species: str,
+    planet_case: dict,
+    exobase_rows: Dict[Tuple[str, str], dict],
+    extra_fields: dict | None = None,
+) -> dict:
+    row = dict(template_row)
+    row.update(
+        {
+            "species": species,
+            "mixing_ratio": base_mass_loss.species_mixing_ratio(planet_case, species),
+            "escaping_shell_mass_g": 0.0,
+            "mass_loss_rate_g_s": 0.0,
+            "mass_loss_rate_kg_s": 0.0,
+            "mass_loss_rate_Mearth_yr": 0.0,
+            "mass_lost_g_1Myr": 0.0,
+            "mass_lost_g_1Gyr": 0.0,
+            "mass_lost_Mearth_1Myr": 0.0,
+            "mass_lost_Mearth_1Gyr": 0.0,
+            "mean_escape_time_s": np.nan,
+            "median_escape_time_s": np.nan,
+            "min_escape_time_s": np.nan,
+            "mass_weighted_initial_beta": np.nan,
+            "mean_steps_escaped": np.nan,
+            "max_steps_any_cell": 0,
+            "photon_pressure_cache_bins": 0,
+            "n_cells": 0,
+            "n_escape_cells": 0,
+        }
+    )
+    row.update(zero_loss_shell_properties(system_def, species, planet_case, exobase_rows))
+    row.update(extra_fields or {})
+    return row
+
+
+def append_zero_loss_molecular_rows(
+    rows: List[dict],
+    system_def: AdvancedSystem,
+    planet_case: dict,
+    exobase_rows: Dict[Tuple[str, str], dict],
+    species_rows: List[dict],
+    extra_fields: dict | None = None,
+) -> int:
+    if not species_rows:
+        return 0
+
+    present_species = {row.get("species", "") for row in species_rows}
+    template_row = species_rows[0]
+    added = 0
+    for species in zero_loss_molecular_species_for_planet(planet_case):
+        if species in present_species:
+            continue
+        rows.append(zero_loss_species_row(template_row, system_def, species, planet_case, exobase_rows, extra_fields))
+        present_species.add(species)
+        added += 1
+    return added
+
+
 def p0_row_key_from_values(
     test_family: str,
     planet_key: str,
@@ -2193,13 +2322,11 @@ def run_p0_sweep() -> None:
     if all_rows:
         print(f"Loaded {len(all_rows)} completed species rows from {family_results_path(P0_SWEEP_TEST_FAMILY)}")
 
+    pending_tasks = []
     for p0_bar in P0_SWEEP_VALUES_BAR:
         planet_case = dict(planet_base_case)
         planet_case["P0"] = float(p0_bar) * u.bar
         species_list = selected_species_for_planet(planet_case)
-        planet = base_mass_loss.build_planet(planet_case)
-        star = build_system_star(system_def)
-        system = base_mass_loss.PlanetarySystem(planet, star, P0_SWEEP_DISTANCE_AU * u.AU)
 
         existing = p0_system_rows(all_rows, p0_bar)
         if existing:
@@ -2208,7 +2335,6 @@ def run_p0_sweep() -> None:
                 f"{float(P0_SWEEP_DISTANCE_AU):g} AU / P0={p0_bar:.1e} bar "
                 f"({len(existing)}/{len(species_list)} species already saved) ---"
             )
-            write_p0_sweep_outputs(all_rows)
         else:
             print(
                 f"\n--- Advanced P0 sweep: {P0_SWEEP_PLANET_KEY}, star={P0_SWEEP_STAR_KEY} "
@@ -2216,7 +2342,6 @@ def run_p0_sweep() -> None:
                 f"distance={float(P0_SWEEP_DISTANCE_AU):g} AU, P0={p0_bar:.1e} bar ---"
             )
 
-        pending_tasks = []
         for species in species_list:
             current_key = p0_row_key_from_values(
                 P0_SWEEP_TEST_FAMILY,
@@ -2238,36 +2363,51 @@ def run_p0_sweep() -> None:
                 )
             )
 
-        for result in iter_species_task_results(pending_tasks, exobase_rows):
-            species = result["species"]
-            current_key = p0_row_key_from_values(
-                P0_SWEEP_TEST_FAMILY,
-                P0_SWEEP_PLANET_KEY,
-                species,
-                P0_SWEEP_STAR_KEY,
-                P0_SWEEP_DISTANCE_AU,
-                p0_bar,
-            )
-            if not result["ok"]:
-                print(
-                    f"Skipping P0 sweep {P0_SWEEP_PLANET_KEY} {species}: "
-                    f"{result['error_type']}: {result['error_message']}"
-                )
-                continue
-
-            row = result["row"]
-            all_rows.append(row)
-            completed_rows.add(current_key)
-            write_family_results_txt(P0_SWEEP_TEST_FAMILY, all_rows)
+    for result in iter_species_task_results(pending_tasks, exobase_rows, n_systems=len(P0_SWEEP_VALUES_BAR)):
+        species = result["species"]
+        p0_bar = float(result["extra_fields"]["P0_bar"])
+        current_key = p0_row_key_from_values(
+            P0_SWEEP_TEST_FAMILY,
+            P0_SWEEP_PLANET_KEY,
+            species,
+            P0_SWEEP_STAR_KEY,
+            P0_SWEEP_DISTANCE_AU,
+            p0_bar,
+        )
+        if not result["ok"]:
             print(
-                f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
-                f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
-                f"mean_t={row['mean_escape_time_s']:.3e} s, "
-                f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
-                f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
-                f"cache_bins={row['photon_pressure_cache_bins']}, "
-                f"elapsed={result['elapsed_s']:.1f} s"
+                f"Skipping P0 sweep {P0_SWEEP_PLANET_KEY} {species} at P0={p0_bar:.1e}: "
+                f"{result['error_type']}: {result['error_message']}"
             )
+            continue
+
+        row = result["row"]
+        all_rows.append(row)
+        completed_rows.add(current_key)
+        write_family_results_txt(P0_SWEEP_TEST_FAMILY, all_rows)
+        print(
+            f"P0={p0_bar:.1e} / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+            f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
+            f"mean_t={row['mean_escape_time_s']:.3e} s, "
+            f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
+            f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
+            f"cache_bins={row['photon_pressure_cache_bins']}, "
+            f"elapsed={result['elapsed_s']:.1f} s"
+        )
+
+    for p0_bar in P0_SWEEP_VALUES_BAR:
+        planet_case = dict(planet_base_case)
+        planet_case["P0"] = float(p0_bar) * u.bar
+        added_zero_rows = append_zero_loss_molecular_rows(
+            all_rows,
+            system_def,
+            planet_case,
+            exobase_rows,
+            p0_system_rows(all_rows, p0_bar),
+            extra_fields={"P0_bar": float(p0_bar)},
+        )
+        if added_zero_rows:
+            write_family_results_txt(P0_SWEEP_TEST_FAMILY, all_rows)
 
         total_row = total_row_from_species_rows(p0_system_rows(all_rows, p0_bar))
         if total_row is not None:
@@ -2576,14 +2716,12 @@ def run_surface_gravity_sweep() -> None:
             f"Loaded {len(all_rows)} completed species rows from {family_results_path(SURFACE_GRAVITY_SWEEP_FAMILY)}"
         )
 
+    pending_tasks = []
     for surface_gravity_m_s2 in SURFACE_GRAVITY_VALUES_M_S2:
         g_surface = float(surface_gravity_m_s2)
         planet_case = build_surface_gravity_sweep_planet_case(system_def.planet_key, g_surface)
         mass_scale = surface_gravity_mass_scale(system_def.planet_key, g_surface)
         species_list = selected_species_for_planet(planet_case)
-        planet = base_mass_loss.build_planet(planet_case)
-        star = build_system_star(system_def)
-        system = base_mass_loss.PlanetarySystem(planet, star, system_def.distance_au * u.AU)
         existing = scalar_system_rows(all_rows, system_def, "surface_gravity_m_s2", g_surface)
         if existing:
             print(
@@ -2598,7 +2736,6 @@ def run_surface_gravity_sweep() -> None:
                 f"distance={float(system_def.distance_au):g} AU, g={g_surface:.3f} m/s^2 ---"
             )
 
-        pending_tasks = []
         for species in species_list:
             current_key = scalar_row_key_from_values(
                 system_def.test_family,
@@ -2624,37 +2761,56 @@ def run_surface_gravity_sweep() -> None:
                 )
             )
 
-        for result in iter_species_task_results(pending_tasks, exobase_rows):
-            species = result["species"]
-            current_key = scalar_row_key_from_values(
-                system_def.test_family,
-                system_def.planet_key,
-                species,
-                system_def.star_key,
-                system_def.distance_au,
-                "surface_gravity_m_s2",
-                g_surface,
-            )
-            if not result["ok"]:
-                print(
-                    f"Skipping surface-gravity sweep {system_def.planet_key} {species}: "
-                    f"{result['error_type']}: {result['error_message']}"
-                )
-                continue
-
-            row = result["row"]
-            all_rows.append(row)
-            completed_rows.add(current_key)
-            write_family_results_txt(SURFACE_GRAVITY_SWEEP_FAMILY, all_rows)
+    for result in iter_species_task_results(pending_tasks, exobase_rows, n_systems=len(SURFACE_GRAVITY_VALUES_M_S2)):
+        species = result["species"]
+        g_surface = float(result["extra_fields"]["surface_gravity_m_s2"])
+        current_key = scalar_row_key_from_values(
+            system_def.test_family,
+            system_def.planet_key,
+            species,
+            system_def.star_key,
+            system_def.distance_au,
+            "surface_gravity_m_s2",
+            g_surface,
+        )
+        if not result["ok"]:
             print(
-                f"{species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
-                f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
-                f"mean_t={row['mean_escape_time_s']:.3e} s, "
-                f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
-                f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
-                f"cache_bins={row['photon_pressure_cache_bins']}, "
-                f"elapsed={result['elapsed_s']:.1f} s"
+                f"Skipping surface-gravity sweep {system_def.planet_key} {species} at g={g_surface:.3f} m/s^2: "
+                f"{result['error_type']}: {result['error_message']}"
             )
+            continue
+
+        row = result["row"]
+        all_rows.append(row)
+        completed_rows.add(current_key)
+        write_family_results_txt(SURFACE_GRAVITY_SWEEP_FAMILY, all_rows)
+        print(
+            f"g={g_surface:.3f} m/s^2 / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+            f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
+            f"mean_t={row['mean_escape_time_s']:.3e} s, "
+            f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
+            f"Gyr={row['mass_lost_Mearth_1Gyr']:.3e} Mearth, "
+            f"cache_bins={row['photon_pressure_cache_bins']}, "
+            f"elapsed={result['elapsed_s']:.1f} s"
+        )
+
+    for surface_gravity_m_s2 in SURFACE_GRAVITY_VALUES_M_S2:
+        g_surface = float(surface_gravity_m_s2)
+        planet_case = build_surface_gravity_sweep_planet_case(system_def.planet_key, g_surface)
+        mass_scale = surface_gravity_mass_scale(system_def.planet_key, g_surface)
+        added_zero_rows = append_zero_loss_molecular_rows(
+            all_rows,
+            system_def,
+            planet_case,
+            exobase_rows,
+            scalar_system_rows(all_rows, system_def, "surface_gravity_m_s2", g_surface),
+            extra_fields={
+                "surface_gravity_m_s2": float(g_surface),
+                "mass_scale": float(mass_scale),
+            },
+        )
+        if added_zero_rows:
+            write_family_results_txt(SURFACE_GRAVITY_SWEEP_FAMILY, all_rows)
 
         total_row = total_row_from_species_rows(
             scalar_system_rows(all_rows, system_def, "surface_gravity_m_s2", g_surface)
@@ -2922,6 +3078,16 @@ def run_standard_systems() -> None:
 
             for system_def in batch_systems:
                 planet_label, _ = get_system_display_names(system_def)
+                added_zero_rows = append_zero_loss_molecular_rows(
+                    family_rows,
+                    system_def,
+                    get_system_planet_case(system_def),
+                    exobase_rows,
+                    system_rows_from_checkpoint(family_rows, system_def),
+                )
+                if added_zero_rows:
+                    write_family_results_txt(test_family, family_rows)
+
                 total_row = total_row_from_species_rows(system_rows_from_checkpoint(family_rows, system_def))
                 if total_row is not None:
                     print(
