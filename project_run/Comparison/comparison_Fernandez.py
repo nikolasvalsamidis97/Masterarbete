@@ -1,5 +1,6 @@
 import sys, pathlib
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.append(str(PROJECT_ROOT))
 from project_classes.Atom import Atom
 from project_classes.BroadeningProfile import BroadeningProfile
 from project_classes.PhotonPressure import PhotonPressure
@@ -7,7 +8,24 @@ from project_classes.Star import Star
 from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 import numpy as np
+
+PLOTS_ROOT = PROJECT_ROOT / "Plots"
+SHOW_FIGURE = False
+BT_NEXTGEN_PATH = PROJECT_ROOT / "TS" / "Spectral_type" / "A" / "A6" / "lte080-4.0-0.0a+0.0.BT-NextGen.7.dat.txt"
+FERNANDEZ_PATH = PROJECT_ROOT / "TS" / "Spectra" / "HRspec_A5V_130.dat"
+
+
+def log10_exponent_label(value, _position):
+    if not np.isfinite(value) or value <= 0:
+        return ""
+
+    exponent = np.log10(value)
+    rounded = round(exponent)
+    if not np.isclose(exponent, rounded, atol=1e-10):
+        return ""
+    return f"{int(rounded)}"
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # This file compares the results from "Braking the gas in the β Pictoris debris disk" (Fernandez et al. 2006) with the results from this code.
@@ -142,11 +160,16 @@ all_atoms_list = [
 wav_min = 150 * u.AA
 wav_max = 50000 * u.AA
 
-atoms = {sp: Atom(sp, wav_min, wav_max) for sp in all_atoms_list}
+atoms_all = {sp: Atom(sp, wav_min, wav_max) for sp in all_atoms_list}
 
-
-for sp, atom in atoms.items():
+for sp, atom in atoms_all.items():
   print(f"Number of lines for {sp}: {atom.lam0.shape[0]}")
+
+atoms = {
+    sp: atom
+    for sp, atom in atoms_all.items()
+    if atom.lam0.shape[0] > 0 and getattr(atom, "_unique_states", np.empty((0, 2))).size > 0
+}
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------ #
 # Applying broadening to the atomic lines
@@ -162,7 +185,7 @@ vsini = 130 * u.km / u.s
 epsilon = 0.5 * u.dimensionless_unscaled
 R0 = 1.75 * const.R_sun
 M0 = 1.75 * const.M_sun                                                         # As in Fernandez et al. 2006 (e.g., Gray 1976)
-beta_pic = Star('TS/models_1770121505/bt-nextgen-agss2009/lte080-4.0-0.0a+0.0.BT-NextGen.7.dat.txt', 
+beta_pic = Star(str(BT_NEXTGEN_PATH), 
                R0, M0, vsini, epsilon)
 d_earth_to_pic = 19.3 * u.pc                                                                             # Distance to β Pic
 
@@ -196,28 +219,22 @@ print(f"Old radius: {r_old.to(u.R_sun):.3f}, New radius: {r_new.to(u.R_sun):.3f}
 def compute_beta_arrays(star_obj, broadening_profiles, beta_values_Fernandez,
                         d_atom_to_pic, include_fluxcal_4pct=False):
     """Return aligned arrays: my_beta, my_err, fern_beta, fern_err (same species order)."""
-    # Photon pressure objects
-    pps_obj = {sp: PhotonPressure(broad_prof, star_obj) for sp, broad_prof in broadening_profiles.items()}
-
     Temp_atm = [1] * u.K
     Ncol = [1] * u.cm**(-2)
     chunk_size = 1
 
-    # Photon pressure
-    pps = {sp: pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size)
-           for sp, pp in pps_obj.items()}
-
-    # Add 4% flux calibration uncertainty (multiplicative) in quadrature
-    if include_fluxcal_4pct:
-        cal = 0.04
-        pps_cal = {}
-        for sp, (F, Ferr, a, b) in pps.items():
-            Ferr_new = np.sqrt(Ferr**2 + (cal * F)**2)
-            pps_cal[sp] = (F, Ferr_new, a, b)
-        pps = pps_cal
-
-    # Betas
-    beta_vals = {sp: pps_obj[sp].beta_Values(*pps[sp][:2], d_atom_to_pic) for sp in pps_obj.keys()}
+    beta_vals = {}
+    for sp, broad_prof in broadening_profiles.items():
+        try:
+            pp = PhotonPressure(broad_prof, star_obj)
+            F, Ferr, a, b = pp.calc_PhotonPressure(Ncol, Temp_atm, d_atom_to_pic, chunk_size=chunk_size)
+            if include_fluxcal_4pct:
+                cal = 0.04
+                Ferr = np.sqrt(Ferr**2 + (cal * F)**2)
+            beta_vals[sp] = pp.beta_Values(F, Ferr, star_obj.mass, d_atom_to_pic)
+        except Exception as exc:
+            print(f"Skipping {sp}: {type(exc).__name__}: {exc}")
+            continue
 
     # Align with Fernandez dict
     common = [k for k in beta_values_Fernandez.keys() if k in beta_vals]
@@ -231,7 +248,7 @@ def compute_beta_arrays(star_obj, broadening_profiles, beta_values_Fernandez,
     return common, my_beta, my_err, fern_beta, fern_err
 
 
-def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, title=None, save_name=None, xlabel=r'$\beta$ (This work)', ylabel=r'$\beta$ (Fernandez et al. 2006)'):
+def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, title=None, save_name=None, xlabel=r'$\log(\beta)$ (This work)', ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)'):
     fig, ax = plt.subplots(figsize=(7, 7))
 
     ax.errorbar(
@@ -252,6 +269,12 @@ def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, tit
 
     ax.set_xscale('log')
     ax.set_yscale('log')
+    ax.xaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+    ax.yaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+    ax.xaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+    ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.yaxis.set_minor_formatter(NullFormatter())
 
     # y=x line (works for log too)
     ax.plot([lo, hi], [lo, hi], 'r--', linewidth=1)
@@ -265,8 +288,13 @@ def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, tit
 
     fig.tight_layout()
     if save_name is not None:
-        fig.savefig(f"Plots/{save_name}.pdf")
-    plt.show()
+        output_path = PLOTS_ROOT / f"{save_name}.pdf"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path)
+    if SHOW_FIGURE:
+        plt.show()
+    else:
+        plt.close(fig)
     return fig, ax
 
 
@@ -278,7 +306,7 @@ alpha=5.24e-5
 dist_for_spec=1 * const.au
 # fern_radius = 1.75 * const.R_sun
 fern_radius = r_new
-fern_beta_pic = Star('TS/Spectra/HRspec_A5V_130.dat',
+fern_beta_pic = Star(str(FERNANDEZ_PATH),
                fern_radius, 1.75*const.M_sun, vsini, epsilon)
 fern_beta_pic.convert_from_log10()
 fern_beta_pic.flux_star_rot = fern_beta_pic.flux_star_unrot * alpha * (dist_for_spec / fern_beta_pic.radius)**2  # convert to surface flux
@@ -317,10 +345,10 @@ plot_compare(my_beta_B, my_err_B, fern_beta_B, fern_err_B, zoom_beta_gt_1=True, 
 
 
 # 5) Fernandez vs Model, (+4% flux error)
-plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=False, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error)", save_name="Betacomp/Bt-NextGen_vs_Fernandez", xlabel=r'$\beta$ (Bt-NextGen)', ylabel=r'$\beta$ (Fernandez spectrum)')
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=False, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error)", save_name="Betacomp/Bt-NextGen_vs_Fernandez", xlabel=r'$\log(\beta)$ (Bt-NextGen)', ylabel=r'$\log(\beta)$ (Fernandez spectrum)')
 
 # 5) Fernandez vs Model, (+4% flux error)
-plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=True, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error, β>1)", save_name="Betacomp/Bt-NextGen_vs_Fernandez_zoom", xlabel=r'$\beta$ (Bt-NextGen)', ylabel=r'$\beta$ (Fernandez spectrum)')
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=True, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error, β>1)", save_name="Betacomp/Bt-NextGen_vs_Fernandez_zoom", xlabel=r'$\log(\beta)$ (Bt-NextGen)', ylabel=r'$\log(\beta)$ (Fernandez spectrum)')
 
 # -----------------------------
 # Paired (stacked) comparison figures (2 + 2 + 2)
@@ -331,8 +359,8 @@ def plot_compare_two_cases(
     my_beta_bot, my_err_bot, fern_beta_bot, fern_err_bot,
     zoom_beta_gt_1=False,
     save_name=None,
-    xlabel=r'$\beta$ (This work)',
-    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+    xlabel=r'$\log(\beta)$ (This work)',
+    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
 ):
     """
     Two-panel (vertical) comparison figure with shared axes:
@@ -346,6 +374,10 @@ def plot_compare_two_cases(
 
     fig = plt.figure(figsize=(7, 14))
     gs = fig.add_gridspec(2, 1, hspace=0)
+
+    pair_label_size = 15
+    pair_tick_size = 15
+    pair_panel_size = 14
 
     ax_top = fig.add_subplot(gs[0, 0])
     ax_bot = fig.add_subplot(gs[1, 0], sharex=ax_top, sharey=ax_top)
@@ -364,17 +396,23 @@ def plot_compare_two_cases(
         ax.set_yscale('log')
         ax.set_xlim(lo, hi)
         ax.set_ylim(lo, hi)
+        ax.xaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+        ax.yaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
+        ax.xaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+        ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
+        ax.xaxis.set_minor_formatter(NullFormatter())
+        ax.yaxis.set_minor_formatter(NullFormatter())
 
         # y=x reference line
         ax.plot([lo, hi], [lo, hi], 'r--', linewidth=1)
 
-        ax.tick_params(axis='both', which='major', labelsize=13)
+        ax.tick_params(axis='both', which='major', labelsize=pair_tick_size)
 
         # panel label only
         ax.text(
             0.04, 0.94, panel_tag,
             transform=ax.transAxes,
-            fontsize=12,
+            fontsize=pair_panel_size,
             va='top',
             ha='left'
         )
@@ -395,14 +433,19 @@ def plot_compare_two_cases(
 
     # labels: only one x label
     ax_top.set_xlabel('')
-    ax_top.set_ylabel(ylabel, fontsize=12)
-    ax_bot.set_xlabel(xlabel, fontsize=12)
-    ax_bot.set_ylabel(ylabel, fontsize=12)
+    ax_top.set_ylabel(ylabel, fontsize=pair_label_size)
+    ax_bot.set_xlabel(xlabel, fontsize=pair_label_size)
+    ax_bot.set_ylabel(ylabel, fontsize=pair_label_size)
 
     if save_name is not None:
-        fig.savefig(f"Plots/{save_name}.pdf", bbox_inches="tight", pad_inches=0.02)
+        output_path = PLOTS_ROOT / f"{save_name}.pdf"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight", pad_inches=0.02)
 
-    plt.show()
+    if SHOW_FIGURE:
+        plt.show()
+    else:
+        plt.close(fig)
     return fig, (ax_top, ax_bot)
 
 # Paired figure: full range (unzoomed)
@@ -411,8 +454,8 @@ plot_compare_two_cases(
     my_beta_B, my_err_B, fern_beta_B, fern_err_B,
     zoom_beta_gt_1=False,
     save_name="Betacomp/Validation_pair_full",
-    xlabel=r'$\beta$ (This work)',
-    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+    xlabel=r'$\log(\beta)$ (This work)',
+    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
 )
 
 # Paired figure: zoom β>1
@@ -421,6 +464,6 @@ plot_compare_two_cases(
     my_beta_B, my_err_B, fern_beta_B, fern_err_B,
     zoom_beta_gt_1=True,
     save_name="Betacomp/Validation_pair_zoom",
-    xlabel=r'$\beta$ (This work)',
-    ylabel=r'$\beta$ (Fernandez et al. 2006)',
+    xlabel=r'$\log(\beta)$ (This work)',
+    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
 )

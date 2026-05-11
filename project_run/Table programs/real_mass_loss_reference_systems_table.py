@@ -13,11 +13,16 @@ from project_func.Templates.Systems.real_mass_loss_reference_systems import (
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Tables"
 OUTPUT_TEX = OUTPUT_DIR / "real_mass_loss_reference_systems_table.tex"
-SYSTEM_COL_WIDTH = "2.0cm"
-TYPE_COL_WIDTH = "2.0cm"
-STELLAR_COL_WIDTH = "2.6cm"
-PLANET_COL_WIDTH = "2.95cm"
-COMPOSITION_COL_WIDTH = "3.35cm"
+COMPOSITION_COL_WIDTH = "4.2cm"
+
+CATEGORY_BLOCKS = [
+    ("Rocky reference systems", ["gj1132_b", "55cnc_e"]),
+    ("Sub-Neptunes / Neptunes", ["gj1214_b", "hd56414_b", "gj436_b"]),
+    (
+        "Hot and ultra-hot Jupiters",
+        ["51peg_b", "hd209458_b", "wasp174_b", "wasp193_b", "kelt9_b"],
+    ),
+]
 
 
 def latex_escape(text: str) -> str:
@@ -61,6 +66,10 @@ def format_plain_number(value: float) -> str:
     return text
 
 
+def format_mu(value: float) -> str:
+    return f"{float(value):.2f}"
+
+
 def format_compact_number(value: float) -> str:
     value = float(value)
     if value == 0.0:
@@ -101,67 +110,54 @@ def format_radius(system_def: dict) -> str:
 
 def format_planet_type(system_def: dict) -> str:
     category = str(system_def.get("category", "")).strip().lower()
-    mapping = {
-        "rocky": "Rocky",
-        "sub_neptune": "Sub-Neptune",
-        "neptune": "Neptune",
-        "gas_giant": "Gas giant",
-    }
-    return mapping.get(category, latex_escape(str(system_def.get("category", ""))))
-
-
-def stellar_parameter_lines(system_def: dict) -> list[str]:
-    star = system_def["star"]
-    return [
-        rf"$T_{{\rm eff}}={format_plain_number(float(star['teff_K']))}$ K",
-        rf"$R_\star={format_plain_number(star['radius'].to_value(const.R_sun))}$ $R_\odot$",
-        rf"$M_\star={format_plain_number(star['mass'].to_value(const.M_sun))}$ $M_\odot$",
-        rf"$v\sin i={format_plain_number(star['vsini'].to_value(star['vsini'].unit))}$ km s$^{{-1}}$",
-        rf"$\epsilon={format_plain_number(star['epsilon'].value)}$",
-    ]
-
-
-def planet_parameter_lines(system_def: dict) -> list[str]:
-    category = str(system_def.get("category", "")).strip().lower()
-    planet = system_def["planet"]
+    if category == "rocky":
+        return "Rocky"
+    if category == "sub_neptune":
+        return "Sub-Neptune"
+    if category == "neptune":
+        return "Neptune"
     if category == "gas_giant":
-        radius_text = rf"$R_{{\rm p}}={format_plain_number(planet['radius'].to_value(const.R_jup))}$ $R_{{\rm J}}$"
-        mass_text = rf"$M_{{\rm p}}={format_plain_number(planet['mass'].to_value(const.M_jup))}$ $M_{{\rm J}}$"
+        if str(system_def.get("exobase_template_key", "")) == "ultra_hot_jupiter":
+            return "Ultra-hot Jupiter"
+        return "Hot Jupiter"
+    return latex_escape(str(system_def.get("category", "")))
+
+
+def format_fraction(value: float) -> str:
+    value = float(value)
+    if value < 1e-3 and value > 0:
+        text = f"{value:.0e}"
+        mantissa, exponent = text.split("e")
+        exponent = int(exponent)
+        if mantissa == "1":
+            return rf"$10^{{{exponent}}}$"
+        return rf"${mantissa}\times10^{{{exponent}}}$"
+    if value < 0.01 and value > 0:
+        text = f"{value:.3f}"
     else:
-        radius_text = rf"$R_{{\rm p}}={format_plain_number(planet['radius'].to_value(const.R_earth))}$ $R_\oplus$"
-        mass_text = rf"$M_{{\rm p}}={format_plain_number(planet['mass'].to_value(const.M_earth))}$ $M_\oplus$"
-    return [
-        radius_text,
-        mass_text,
-        rf"$a={format_compact_number(float(system_def['distance_au']))}$ AU",
-        rf"$T={format_plain_number(planet['T'].to_value(planet['T'].unit))}$ K",
-        rf"$\mu={format_plain_number(planet['mu'].value)}$",
-        rf"$P_0={format_compact_number(planet['P0'].to_value(planet['P0'].unit))}$ bar",
-    ]
-
-
-def composition_lines(system_def: dict) -> list[str]:
-    return [
-        f"{latexify_species(species)} = {format_plain_number(float(fraction))}"
-        for species, fraction in system_def["planet"]["composition"].items()
-    ]
-
-
-def multiline_text(lines: list[str]) -> str:
-    return r" \\ ".join(lines)
-
-
-def parbox_cell(width: str, content: str) -> str:
-    return rf"\parbox[t]{{{width}}}{{\raggedright\vspace{{0pt}} {content}}}"
+        text = f"{value:.2f}"
+    return text.rstrip("0").rstrip(".")
 
 
 def ordered_system_items():
     return [
         ("gj1132_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj1132_b"]),
+        ("55cnc_e", REAL_MASS_LOSS_REFERENCE_SYSTEMS["55cnc_e"]),
         ("gj1214_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj1214_b"]),
+        ("hd56414_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["hd56414_b"]),
         ("gj436_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj436_b"]),
+        ("51peg_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["51peg_b"]),
         ("hd209458_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["hd209458_b"]),
+        ("wasp174_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["wasp174_b"]),
+        ("wasp193_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["wasp193_b"]),
+        ("kelt9_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["kelt9_b"]),
     ]
+
+
+def iter_grouped_systems():
+    for heading, keys in CATEGORY_BLOCKS:
+        group = [(key, REAL_MASS_LOSS_REFERENCE_SYSTEMS[key]) for key in keys]
+        yield heading, group
 
 
 def build_source_indices():
@@ -175,60 +171,87 @@ def build_source_indices():
     return mapping, ordered_urls
 
 
+def composition_text(system_def: dict) -> str:
+    return ", ".join(
+        f"{latexify_species(species)}: {format_fraction(float(fraction))}"
+        for species, fraction in system_def["planet"]["composition"].items()
+    )
+
+
 def build_table_tex() -> str:
     source_indices, ordered_urls = build_source_indices()
 
     lines = [
-        r"\begin{table}[p]",
-        r"\centering",
+        r"\begin{landscape}",
         r"\scriptsize",
-        r"\setlength{\tabcolsep}{2pt}",
+        r"\setlength{\tabcolsep}{4pt}",
         r"\renewcommand{\arraystretch}{1.0}",
-        r"\caption{Real reference systems adopted in the mass-loss study. Stellar parameters, adopted planet/orbit/atmosphere parameters, and compositions are listed for each system.}",
-        r"\label{tab:real_mass_loss_reference_systems}",
-        rf"\begin{{tabular}}{{@{{}}p{{{SYSTEM_COL_WIDTH}}}p{{{TYPE_COL_WIDTH}}}p{{{STELLAR_COL_WIDTH}}}p{{{PLANET_COL_WIDTH}}}p{{{COMPOSITION_COL_WIDTH}}}@{{}}}}",
+        r"\begin{longtable}{llcccccccccccp{" + COMPOSITION_COL_WIDTH + r"}}",
+        r"\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations.}\label{tab:real_mass_loss_reference_systems} \\",
         r"\toprule",
-        r"System & Type & Stellar~parameters & Planet~parameters & Composition \\",
+        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\",
         r"\midrule",
+        r"\endfirsthead",
+        "",
+        r"\toprule",
+        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\",
+        r"\midrule",
+        r"\endhead",
+        "",
+        r"\midrule",
+        r"\multicolumn{14}{r}{Continued on next page} \\",
+        r"\midrule",
+        r"\endfoot",
+        "",
+        r"\bottomrule",
+        r"\endlastfoot",
+        "",
     ]
 
-    for _, system_def in ordered_system_items():
-        name = system_def["planet"]["label"]
-        url = str(system_def.get("planet_source_url", "")).strip()
-        source_marker = ""
-        if url:
-            source_marker = rf"\textsuperscript{{{source_indices[url]}}}"
-        system_cell = parbox_cell(
-            SYSTEM_COL_WIDTH,
-            f"{latex_escape(name).replace(' ', '~')}{source_marker}",
+    for heading, group in iter_grouped_systems():
+        lines.extend(
+            [
+                rf"\multicolumn{{14}}{{l}}{{\textbf{{{heading}}}}} \\",
+                r"\midrule",
+            ]
         )
-        type_cell = parbox_cell(TYPE_COL_WIDTH, format_planet_type(system_def))
-        stellar_cell = parbox_cell(
-            STELLAR_COL_WIDTH,
-            multiline_text(stellar_parameter_lines(system_def)),
-        )
-        planet_cell = parbox_cell(
-            PLANET_COL_WIDTH,
-            multiline_text(planet_parameter_lines(system_def)),
-        )
-        composition_cell = parbox_cell(
-            COMPOSITION_COL_WIDTH,
-            multiline_text(composition_lines(system_def)),
-        )
-        lines.append(
-            f"{system_cell} & "
-            f"{type_cell} & "
-            f"{stellar_cell} & "
-            f"{planet_cell} & "
-            f"{composition_cell} \\\\"
-        )
+        for _, system_def in group:
+            name = system_def["planet"]["label"]
+            url = str(system_def.get("planet_source_url", "")).strip()
+            source_marker = ""
+            if url:
+                source_marker = rf"\textsuperscript{{{source_indices[url]}}}"
+            star = system_def["star"]
+            planet = system_def["planet"]
+            composition_cell = composition_text(system_def)
+            lines.append(
+                " & ".join(
+                    [
+                        latex_escape(name).replace(" ", "~") + source_marker,
+                        format_planet_type(system_def),
+                        format_plain_number(float(star["teff_K"])),
+                        format_plain_number(star["radius"].to_value(const.R_sun)) + r" $R_\odot$",
+                        format_plain_number(star["mass"].to_value(const.M_sun)) + r" $M_\odot$",
+                        format_plain_number(star["vsini"].to_value(star["vsini"].unit)),
+                        format_plain_number(star["epsilon"].value),
+                        format_radius(system_def),
+                        format_mass(system_def),
+                        f"${format_compact_number(float(system_def['distance_au']))}$",
+                        format_plain_number(planet["T"].to_value(planet["T"].unit)),
+                        format_mu(planet["mu"].value),
+                        f"${format_compact_number(planet['P0'].to_value(planet['P0'].unit))}$",
+                        composition_cell,
+                    ]
+                )
+                + r" \\"
+            )
         lines.append(r"\midrule")
 
     if lines[-1] == r"\midrule":
-        lines[-1] = r"\bottomrule"
+        lines[-1] = ""
     else:
-        lines.append(r"\bottomrule")
-    lines.append(r"\end{tabular}")
+        lines.append("")
+    lines.append(r"\end{longtable}")
     lines.append("")
     if ordered_urls:
         source_parts = [
@@ -237,7 +260,7 @@ def build_table_tex() -> str:
         ]
         lines.append(r"\vspace{0.3em}")
         lines.append(r"\parbox{0.98\linewidth}{\scriptsize " + f"Sources: {'; '.join(source_parts)}." + "}")
-    lines.append(r"\end{table}")
+    lines.append(r"\end{landscape}")
     return "\n".join(lines) + "\n"
 
 

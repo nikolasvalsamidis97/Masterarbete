@@ -1,7 +1,81 @@
 import copy
+import re
 
 import astropy.constants as const
 import astropy.units as u
+
+
+ATOMIC_MASSES_AMU = {
+    "H": 1.008,
+    "He": 4.002602,
+    "Li": 6.94,
+    "Be": 9.0121831,
+    "B": 10.81,
+    "C": 12.011,
+    "N": 14.007,
+    "O": 15.999,
+    "F": 18.998403163,
+    "Ne": 20.1797,
+    "Na": 22.98976928,
+    "Mg": 24.305,
+    "Al": 26.9815385,
+    "Si": 28.085,
+    "P": 30.973761998,
+    "S": 32.06,
+    "Cl": 35.45,
+    "Ar": 39.948,
+    "K": 39.0983,
+    "Ca": 40.078,
+    "Sc": 44.955908,
+    "Ti": 47.867,
+    "V": 50.9415,
+    "Cr": 51.9961,
+    "Mn": 54.938044,
+    "Fe": 55.845,
+}
+
+FORMULA_TOKEN_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+
+
+def species_molecular_weight_amu(species: str) -> float:
+    formula = str(species).split()[0]
+    position = 0
+    molecular_weight = 0.0
+    for match in FORMULA_TOKEN_RE.finditer(formula):
+        if match.start() != position:
+            raise ValueError(f"Could not parse species formula '{species}'.")
+        element, count_text = match.groups()
+        if element not in ATOMIC_MASSES_AMU:
+            raise KeyError(f"No atomic mass available for element '{element}' in species '{species}'.")
+        molecular_weight += ATOMIC_MASSES_AMU[element] * int(count_text or 1)
+        position = match.end()
+    if position != len(formula):
+        raise ValueError(f"Could not parse species formula '{species}'.")
+    return molecular_weight
+
+
+def mean_molecular_weight_from_composition(composition: dict[str, float]) -> float:
+    total_fraction = sum(float(fraction) for fraction in composition.values())
+    if total_fraction <= 0.0:
+        raise ValueError("Composition fractions must have a positive sum.")
+    weighted_mass = sum(
+        float(fraction) * species_molecular_weight_amu(species)
+        for species, fraction in composition.items()
+    )
+    return weighted_mass / total_fraction
+
+
+def rounded_mean_molecular_weight_from_composition(composition: dict[str, float]) -> float:
+    return round(mean_molecular_weight_from_composition(composition), 2)
+
+
+def assign_composition_mean_molecular_weights(systems: dict) -> None:
+    for system_def in systems.values():
+        planet = system_def["planet"]
+        planet["mu"] = (
+            rounded_mean_molecular_weight_from_composition(planet["composition"])
+            * u.dimensionless_unscaled
+        )
 
 
 REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
@@ -27,7 +101,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.192 * const.R_earth,
             "mass": 1.84 * const.M_earth,
             "T": 583.8 * u.K,
-            "mu": 25.0 * u.dimensionless_unscaled,
             "P0": 1.0 * u.bar,
             "composition": {
                 "O I": 0.30,
@@ -65,7 +138,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 2.733 * const.R_earth,
             "mass": 8.41 * const.M_earth,
             "T": 567.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-4 * u.bar,
             "composition": {
                 "H I": 0.56,
@@ -103,7 +175,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 4.17 * const.R_earth,
             "mass": 22.1 * const.M_earth,
             "T": 686.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-4 * u.bar,
             "composition": {
                 "H I": 0.58,
@@ -141,7 +212,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.359 * const.R_jup,
             "mass": 0.685 * const.M_jup,
             "T": 1459.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "H I": 0.60,
@@ -179,7 +249,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.875 * const.R_earth,
             "mass": 7.99 * const.M_earth,
             "T": 1958.0 * u.K,
-            "mu": 35.0 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "O I": 0.1,
@@ -221,7 +290,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 3.71 * const.R_earth,
             "mass": 13.3 * const.M_earth,
             "T": 1133.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-4 * u.bar,
             "composition": {
                 "H I": 0.4,
@@ -261,7 +329,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.319 * const.R_jup,
             "mass": 0.112 * const.M_jup,
             "T": 1250.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "H I": 0.60,
@@ -299,7 +366,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.437 * const.R_jup,
             "mass": 0.33 * const.M_jup,
             "T": 1528.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "H I": 0.60,
@@ -337,7 +403,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.27 * const.R_jup,
             "mass": 0.46 * const.M_jup,
             "T": 1311.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "H I": 0.60,
@@ -376,7 +441,6 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "radius": 1.891 * const.R_jup,
             "mass": 2.88 * const.M_jup,
             "T": 4050.0 * u.K,
-            "mu": 2.5 * u.dimensionless_unscaled,
             "P0": 1.0e-3 * u.bar,
             "composition": {
                 "H I": 0.6,
@@ -397,6 +461,9 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
         "distance_au": 0.03462,
     },
 }
+
+
+assign_composition_mean_molecular_weights(REAL_MASS_LOSS_REFERENCE_SYSTEMS)
 
 
 def get_real_mass_loss_reference_system(name):

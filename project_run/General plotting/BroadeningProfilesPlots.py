@@ -1,6 +1,15 @@
+import pathlib
+
 import numpy as np
 import matplotlib.pyplot as plt
 from astropy.modeling.models import Voigt1D
+
+
+OUTPUT_PATH = pathlib.Path(__file__).resolve().parents[2] / "Plots" / "Broadening plots" / "BroadeningProfiles.pdf"
+TITLE_SIZE = 17
+AXIS_LABEL_SIZE = 18
+TICK_LABEL_SIZE = 15
+LEGEND_SIZE = 14
 
 # ------------------ Grid and basic params ------------------
 # Physical velocity grid [km/s]
@@ -63,14 +72,15 @@ plt.plot(x, phi_G, linewidth=0.9, color='brown',        label="Gaussian")
 plt.plot(x, phi_L, linewidth=0.9, color='darkgoldenrod', label="Lorentzian")
 plt.plot(x_V, phi_V, linewidth=0.9, color='lightseagreen', label="Voigt (Voigt1D)")
 
-plt.xlabel(r"$\mathrm{FWHM}$")
-plt.ylabel(r"Broadening profiles $\phi(v)$")
-plt.title("Gaussian, Lorentzian and Voigt profiles")
-plt.legend()
+plt.xlabel(r"$\mathrm{FWHM}$", fontsize=AXIS_LABEL_SIZE)
+plt.ylabel(r"Broadening profiles $\phi(v)$", fontsize=AXIS_LABEL_SIZE)
+plt.title("Gaussian, Lorentzian and Voigt profiles", fontsize=TITLE_SIZE)
+plt.legend(fontsize=LEGEND_SIZE)
 plt.yticks([])
+plt.xticks(fontsize=TICK_LABEL_SIZE)
 
 plt.xlim(-4, 4)
 
 plt.tight_layout()
-plt.savefig("Plots/BroadeningProfiles.pdf")
+plt.savefig(OUTPUT_PATH)
 plt.show()

@@ -1,24 +1,48 @@
-\begin{table}[p]
-\centering
+\begin{landscape}
 \scriptsize
-\setlength{\tabcolsep}{2pt}
+\setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.0}
-\caption{Real reference systems adopted in the mass-loss study. Stellar parameters, adopted planet/orbit/atmosphere parameters, and compositions are listed for each system.}
-\label{tab:real_mass_loss_reference_systems}
-\begin{tabular}{@{}p{2.0cm}p{2.0cm}p{2.6cm}p{2.95cm}p{3.35cm}@{}}
+\begin{longtable}{llcccccccccccp{4.2cm}}
+\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations.}\label{tab:real_mass_loss_reference_systems} \\
 \toprule
-System & Type & Stellar~parameters & Planet~parameters & Composition \\
+Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\
 \midrule
-\parbox[t]{2.0cm}{\raggedright\vspace{0pt} GJ~1132~b\textsuperscript{1}} & \parbox[t]{2.0cm}{\raggedright\vspace{0pt} Rocky} & \parbox[t]{2.6cm}{\raggedright\vspace{0pt} $T_{\rm eff}=3229$ K \\ $R_\star=0.221$ $R_\odot$ \\ $M_\star=0.194$ $M_\odot$ \\ $v\sin i=2$ km s$^{-1}$ \\ $\epsilon=0.5$} & \parbox[t]{2.95cm}{\raggedright\vspace{0pt} $R_{\rm p}=1.192$ $R_\oplus$ \\ $M_{\rm p}=1.84$ $M_\oplus$ \\ $a=0.0157$ AU \\ $T=583.8$ K \\ $\mu=25$ \\ $P_0=1$ bar} & \parbox[t]{3.35cm}{\raggedright\vspace{0pt} O I = 0.3 \\ N I = 0.15 \\ Na I = 0.15 \\ K I = 0.05 \\ CO$_{2}$ = 0.35} \\
+\endfirsthead
+
+\toprule
+Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\
 \midrule
-\parbox[t]{2.0cm}{\raggedright\vspace{0pt} GJ~1214~b\textsuperscript{2}} & \parbox[t]{2.0cm}{\raggedright\vspace{0pt} Sub-Neptune} & \parbox[t]{2.6cm}{\raggedright\vspace{0pt} $T_{\rm eff}=3026$ K \\ $R_\star=0.216$ $R_\odot$ \\ $M_\star=0.182$ $M_\odot$ \\ $v\sin i=2$ km s$^{-1}$ \\ $\epsilon=0.5$} & \parbox[t]{2.95cm}{\raggedright\vspace{0pt} $R_{\rm p}=2.733$ $R_\oplus$ \\ $M_{\rm p}=8.41$ $M_\oplus$ \\ $a=0.015$ AU \\ $T=567$ K \\ $\mu=2.5$ \\ $P_0=10^{-4}$ bar} & \parbox[t]{3.35cm}{\raggedright\vspace{0pt} H I = 0.56 \\ He I = 0.14 \\ O I = 0.01 \\ Na I = 0.01 \\ H$_{2}$ = 0.28} \\
+\endhead
+
 \midrule
-\parbox[t]{2.0cm}{\raggedright\vspace{0pt} GJ~436~b\textsuperscript{3}} & \parbox[t]{2.0cm}{\raggedright\vspace{0pt} Neptune} & \parbox[t]{2.6cm}{\raggedright\vspace{0pt} $T_{\rm eff}=3500$ K \\ $R_\star=0.422$ $R_\odot$ \\ $M_\star=0.445$ $M_\odot$ \\ $v\sin i=0.33$ km s$^{-1}$ \\ $\epsilon=0.5$} & \parbox[t]{2.95cm}{\raggedright\vspace{0pt} $R_{\rm p}=4.17$ $R_\oplus$ \\ $M_{\rm p}=22.1$ $M_\oplus$ \\ $a=0.0282$ AU \\ $T=686$ K \\ $\mu=2.5$ \\ $P_0=10^{-4}$ bar} & \parbox[t]{3.35cm}{\raggedright\vspace{0pt} H I = 0.58 \\ He I = 0.14 \\ O I = 0.01 \\ Na I = 0.01 \\ H$_{2}$ = 0.26} \\
+\multicolumn{14}{r}{Continued on next page} \\
 \midrule
-\parbox[t]{2.0cm}{\raggedright\vspace{0pt} HD~209458~b\textsuperscript{4}} & \parbox[t]{2.0cm}{\raggedright\vspace{0pt} Gas giant} & \parbox[t]{2.6cm}{\raggedright\vspace{0pt} $T_{\rm eff}=6065$ K \\ $R_\star=1.2$ $R_\odot$ \\ $M_\star=1.07$ $M_\odot$ \\ $v\sin i=4.5$ km s$^{-1}$ \\ $\epsilon=0.5$} & \parbox[t]{2.95cm}{\raggedright\vspace{0pt} $R_{\rm p}=1.359$ $R_{\rm J}$ \\ $M_{\rm p}=0.685$ $M_{\rm J}$ \\ $a=0.0471$ AU \\ $T=1459$ K \\ $\mu=2.5$ \\ $P_0=10^{-3}$ bar} & \parbox[t]{3.35cm}{\raggedright\vspace{0pt} H I = 0.6 \\ He I = 0.1 \\ O I = 0.01 \\ Na I = 0.01 \\ H$_{2}$ = 0.28} \\
+\endfoot
+
 \bottomrule
-\end{tabular}
+\endlastfoot
+
+\multicolumn{14}{l}{\textbf{Rocky reference systems}} \\
+\midrule
+GJ~1132~b\textsuperscript{1} & Rocky & 3229 & 0.221 $R_\odot$ & 0.194 $M_\odot$ & 2 & 0.5 & 1.192 $R_\oplus$ & 1.84 $M_\oplus$ & $0.0157$ & 583.8 & 27.71 & $1$ & O I: 0.3, N I: 0.15, Na I: 0.15, K I: 0.05, CO$_{2}$: 0.35 \\
+55~Cnc~e\textsuperscript{2} & Rocky & 5172 & 0.943 $R_\odot$ & 0.905 $M_\odot$ & 1.23 & 0.5 & 1.875 $R_\oplus$ & 7.99 $M_\oplus$ & $0.0154$ & 1958 & 36.39 & $10^{-3}$ & O I: 0.1, Na I: 0.2, K I: 0.1, Si I: 0.1, Ca I: 0.1, SiO: 0.2, NaCl: 0.1, O$_{2}$: 0.05, SO$_{2}$: 0.05 \\
+\midrule
+\multicolumn{14}{l}{\textbf{Sub-Neptunes / Neptunes}} \\
+\midrule
+GJ~1214~b\textsuperscript{3} & Sub-Neptune & 3026 & 0.216 $R_\odot$ & 0.182 $M_\odot$ & 2 & 0.5 & 2.733 $R_\oplus$ & 8.41 $M_\oplus$ & $0.015$ & 567 & 2.08 & $10^{-4}$ & H I: 0.56, He I: 0.14, O I: 0.01, Na I: 0.01, H$_{2}$: 0.28 \\
+HD~56414~b\textsuperscript{4} & Sub-Neptune & 8500 & 1.751 $R_\odot$ & 1.89 $M_\odot$ & 59.4 & 0.5 & 3.71 $R_\oplus$ & 13.3 $M_\oplus$ & $0.229$ & 1133 & 7.59 & $10^{-4}$ & H I: 0.4, He I: 0.11, H$_{2}$: 0.24, H$_{2}$O: 0.1, CO: 0.1, CO$_{2}$: 0.03, NH$_{3}$: 0.02 \\
+GJ~436~b\textsuperscript{5} & Neptune & 3500 & 0.422 $R_\odot$ & 0.445 $M_\odot$ & 0.33 & 0.5 & 4.17 $R_\oplus$ & 22.1 $M_\oplus$ & $0.0282$ & 686 & 2.06 & $10^{-4}$ & H I: 0.58, He I: 0.14, O I: 0.01, Na I: 0.01, H$_{2}$: 0.26 \\
+\midrule
+\multicolumn{14}{l}{\textbf{Hot and ultra-hot Jupiters}} \\
+\midrule
+51~Peg~b\textsuperscript{6} & Hot Jupiter & 5758 & 1.176 $R_\odot$ & 1.03 $M_\odot$ & 2.2 & 0.5 & 1.27 $R_\mathrm{J}$ & 0.46 $M_\mathrm{J}$ & $0.0527$ & 1311 & 1.96 & $10^{-3}$ & H I: 0.6, He I: 0.1, O I: 0.01, Na I: 0.01, H$_{2}$: 0.28 \\
+HD~209458~b\textsuperscript{7} & Hot Jupiter & 6065 & 1.2 $R_\odot$ & 1.07 $M_\odot$ & 4.5 & 0.5 & 1.359 $R_\mathrm{J}$ & 0.685 $M_\mathrm{J}$ & $0.0471$ & 1459 & 1.96 & $10^{-3}$ & H I: 0.6, He I: 0.1, O I: 0.01, Na I: 0.01, H$_{2}$: 0.28 \\
+WASP-174~b\textsuperscript{8} & Hot Jupiter & 6399 & 1.347 $R_\odot$ & 1.24 $M_\odot$ & 16.24 & 0.5 & 1.437 $R_\mathrm{J}$ & 0.33 $M_\mathrm{J}$ & $0.055$ & 1528 & 1.96 & $10^{-3}$ & H I: 0.6, He I: 0.1, O I: 0.01, Na I: 0.01, H$_{2}$: 0.28 \\
+WASP-193~b\textsuperscript{9} & Hot Jupiter & 6080 & 1.213 $R_\odot$ & 1.018 $M_\odot$ & 5.11 & 0.5 & 1.319 $R_\mathrm{J}$ & 0.112 $M_\mathrm{J}$ & $0.0668$ & 1250 & 1.96 & $10^{-3}$ & H I: 0.6, He I: 0.1, O I: 0.01, Na I: 0.01, H$_{2}$: 0.28 \\
+KELT-9~b\textsuperscript{10} & Ultra-hot Jupiter & 10170 & 2.362 $R_\odot$ & 2.52 $M_\odot$ & 111.4 & 0.5 & 1.891 $R_\mathrm{J}$ & 2.88 $M_\mathrm{J}$ & $0.0346$ & 4050 & 5.98 & $10^{-3}$ & H I: 0.6, He I: 0.1, He II: 0.01, O I: 0.01, H$_{2}$: 0.1, CO: 0.11, H$_{2}$O: 0.04, NO: 0.02, OH: 0.01 \\
+
+\end{longtable}
 
 \vspace{0.3em}
-\parbox{0.98\linewidth}{\scriptsize Sources: \textsuperscript{1}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%201132}; \textsuperscript{2}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%201214}; \textsuperscript{3}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%20436\%20b}; \textsuperscript{4}\url{https://exoplanetarchive.ipac.caltech.edu/overview/HD\%20209458\%20b}.}
-\end{table}
+\parbox{0.98\linewidth}{\scriptsize Sources: \textsuperscript{1}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%201132}; \textsuperscript{2}\url{https://exoplanetarchive.ipac.caltech.edu/overview/55\%20Cnc\%20e}; \textsuperscript{3}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%201214}; \textsuperscript{4}\url{https://exoplanetarchive.ipac.caltech.edu/overview/HD\%2056414\%20b}; \textsuperscript{5}\url{https://exoplanetarchive.ipac.caltech.edu/overview/GJ\%20436\%20b}; \textsuperscript{6}\url{https://exoplanetarchive.ipac.caltech.edu/overview/51\%20Peg\%20b}; \textsuperscript{7}\url{https://exoplanetarchive.ipac.caltech.edu/overview/HD\%20209458\%20b}; \textsuperscript{8}\url{https://exoplanetarchive.ipac.caltech.edu/overview/WASP-174\%20b}; \textsuperscript{9}\url{https://exoplanetarchive.ipac.caltech.edu/overview/WASP-193\%20b}; \textsuperscript{10}\url{https://exoplanetarchive.ipac.caltech.edu/overview/KELT-9\%20b}.}
+\end{landscape}

@@ -35,8 +35,8 @@ FIGWIDTH = 12.0
 MIN_FIGHEIGHT = 4
 ROW_HEIGHT = 0.3
 TITLE_SIZE = 28
-AXIS_LABEL_SIZE = 22
-TICK_LABEL_SIZE = 17
+AXIS_LABEL_SIZE = 25
+TICK_LABEL_SIZE = 25
 YTICK_LABEL_SIZE = 20
 CELL_TEXT_SIZE = 8
 ANNOTATE_CELLS = False
@@ -464,20 +464,20 @@ def plot_atom_triptych(
     cbar = fig.colorbar(image, cax=cbar_ax, extend="both")
     cbar.set_ticks(
         [
-            ATOM_BETA_LOW,
-            ATOM_BETA_GREEN_LOW,
+            # ATOM_BETA_LOW,
+            # ATOM_BETA_GREEN_LOW,
             1.0,
-            ATOM_BETA_GREEN_HIGH,
-            ATOM_BETA_HIGH,
+            # ATOM_BETA_GREEN_HIGH,
+            # ATOM_BETA_HIGH,
         ]
     )
     cbar.set_ticklabels(
         [
-            f"{ATOM_BETA_LOW:g}",
-            "0.95",
+            # f"{ATOM_BETA_LOW:g}",
+            # "0.95",
             "1",
-            "1.05",
-            f"{ATOM_BETA_HIGH:g}",
+            # "1.05",
+            # f"{ATOM_BETA_HIGH:g}",
         ]
     )
     cbar.set_label(r"$\beta$", fontsize=AXIS_LABEL_SIZE)
@@ -653,20 +653,20 @@ def plot_molecule_triptych(
     cbar = fig.colorbar(image, cax=cbar_ax)
     cbar.set_ticks(
         [
-            ATOM_BETA_LOW,
-            ATOM_BETA_GREEN_LOW,
+            # ATOM_BETA_LOW,
+            # ATOM_BETA_GREEN_LOW,
             1.0,
-            ATOM_BETA_GREEN_HIGH,
-            ATOM_BETA_HIGH,
+            # ATOM_BETA_GREEN_HIGH,
+            # ATOM_BETA_HIGH,
         ]
     )
     cbar.set_ticklabels(
         [
-            f"{ATOM_BETA_LOW:g}",
-            "0.95",
+            # f"{ATOM_BETA_LOW:g}",
+            # "0.95",
             "1",
-            "1.05",
-            f"{ATOM_BETA_HIGH:g}",
+            # "1.05",
+            # f"{ATOM_BETA_HIGH:g}",
         ]
     )
     cbar.set_label(r"$\beta$", fontsize=AXIS_LABEL_SIZE)

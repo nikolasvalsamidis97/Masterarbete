@@ -151,8 +151,8 @@ def main() -> None:
     ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.set_xlabel(r"$\log_{10}\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$\log_{10}\beta$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(r"$\log\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"$\log(\beta)$", fontsize=AXIS_LABEL_SIZE)
     ax.set_title(
         rf"$\beta$ vs column density | {SPECIES}",
         fontsize=TITLE_SIZE,
@@ -160,7 +160,7 @@ def main() -> None:
     ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_SIZE)
     ax.tick_params(axis="both", which="minor", labelsize=TICK_LABEL_SIZE - 1)
     ax.grid(True, which="major", alpha=0.35)
-    ax.legend(loc="best", framealpha=0.9, fontsize=LEGEND_SIZE)
+    ax.legend(loc="lower left", framealpha=0.3, fontsize=LEGEND_SIZE)
     ax.set_xlim(ncol_min_plot, ncol_max_plot)
     #ax.set_ylim(np.nanmin(beta_plot), np.nanmax(beta_plot))
     fig.tight_layout()

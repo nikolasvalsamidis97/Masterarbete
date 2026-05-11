@@ -196,7 +196,7 @@ def main() -> None:
             beta_none,
             linewidth=LINEWIDTH,
             linestyle="-",
-            label=r"no broadening",
+            label="No broadening",
         )
     if ncol_line.size > 0:
         ax.plot(
@@ -204,7 +204,7 @@ def main() -> None:
             beta_line,
             linewidth=LINEWIDTH,
             linestyle="--",
-            label=rf"line broadening only ($b={B_LINE.to_value(u.km/u.s):.1f}$ km s$^{{-1}}$)",
+            label=rf"$b = {B_LINE.to_value(u.km/u.s):.0f}$ km/s",
         )
     if ncol_rot.size > 0:
         ax.plot(
@@ -212,7 +212,7 @@ def main() -> None:
             beta_rot,
             linewidth=LINEWIDTH,
             linestyle=":",
-            label=rf"rotational broadening only ($v \sin i = {vsini_value:.1f}$ km s$^{{-1}}$)",
+            label=rf"$v \sin i = {vsini_value:.0f}$ km/s",
         )
     if ncol_both.size > 0:
         ax.plot(
@@ -220,7 +220,7 @@ def main() -> None:
             beta_both,
             linewidth=LINEWIDTH,
             linestyle="-.",
-            label=rf"line + rotational broadening",
+            label=rf"$b = {B_LINE.to_value(u.km/u.s):.0f}$ km/s + $v \sin i = {vsini_value:.0f}$ km/s",
         )
     ax.axhline(1.0, linestyle=":", linewidth=1.2, color="0.4", label=r"$\beta = 1$")
 
@@ -232,8 +232,8 @@ def main() -> None:
     ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.set_xlabel(r"$\log_{10}\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$\log_{10}\beta$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(r"$\log\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"$\log(\beta)$", fontsize=AXIS_LABEL_SIZE)
     ax.set_title(
         rf"$\beta$ vs column density | {SPECIES} | $T_{{\rm eff}}={teff_star.to_value(u.K):.0f}$ K",
         fontsize=TITLE_SIZE,
@@ -241,7 +241,7 @@ def main() -> None:
     ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_SIZE)
     ax.tick_params(axis="both", which="minor", labelsize=TICK_LABEL_SIZE - 1)
     ax.grid(True, which="major", alpha=0.35)
-    ax.legend(loc="best", framealpha=0.9, fontsize=LEGEND_SIZE)
+    ax.legend(loc="lower left", framealpha=0.3, fontsize=LEGEND_SIZE)
 
     x_arrays = [arr for arr in (ncol_none, ncol_line, ncol_rot, ncol_both) if arr.size > 0]
     y_arrays = [arr for arr in (beta_none, beta_line, beta_rot, beta_both) if arr.size > 0]
@@ -250,7 +250,7 @@ def main() -> None:
     y_min = min(np.nanmin(arr) for arr in y_arrays)
     y_max = max(np.nanmax(arr) for arr in y_arrays)
     ax.set_xlim(x_min, x_max)
-    # ax.set_ylim(y_min, y_max)
+    ax.set_ylim(10**-1, 10**2.5)
 
     fig.tight_layout()
 
