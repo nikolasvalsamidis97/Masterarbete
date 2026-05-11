@@ -15,6 +15,84 @@ OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Tables"
 OUTPUT_TEX = OUTPUT_DIR / "real_mass_loss_reference_systems_table.tex"
 COMPOSITION_COL_WIDTH = "4.2cm"
 
+SOURCE_REFERENCES = [
+    ("xue2024jwst", r"\cite{xue2024jwst}"),
+    ("berta2015rocky", r"\cite{berta2015rocky}"),
+    ("swain2021detection", r"\cite{swain2021detection}"),
+    ("bourrier201855", r"\cite{bourrier201855}"),
+    ("moutou2026characterising", r"\cite{moutou2026characterising}"),
+    ("hu2024secondary", r"\cite{hu2024secondary}"),
+    ("mahajan2024using", r"\cite{mahajan2024using}"),
+    ("charbonneau2009super", r"\cite{charbonneau2009super}"),
+    ("kempton2023reflective", r"\cite{kempton2023reflective}"),
+    ("giacalone2022hd", r"\cite{giacalone2022hd}"),
+    ("otegi2020revisited", r"\cite{otegi2020revisited}"),
+    ("maxted2022analysis", r"\cite{maxted2022analysis}"),
+    ("bourrier2018orbital", r"\cite{bourrier2018orbital}"),
+    ("maciejewski2015gj", r"\cite{maciejewski2015gj}"),
+    ("turner2016ground", r"\cite{turner2016ground}"),
+    ("stevenson2010possible", r"\cite{stevenson2010possible}"),
+    ("knutson2014featureless", r"\cite{knutson2014featureless}"),
+    ("ehrenreich2015giant", r"\cite{ehrenreich2015giant}"),
+    ("rosenthal2021california", r"\cite{rosenthal2021california}"),
+    ("valenti2005spectroscopic", r"\cite{valenti2005spectroscopic}"),
+    ("van2009directly", r"\cite{van2009directly}"),
+    ("martins2015evidence", r"\cite{martins2015evidence}"),
+    ("brogi2013detection", r"\cite{brogi2013detection}"),
+    ("birkby2017discovery", r"\cite{birkby2017discovery}"),
+    ("bonomo2017gaps", r"\cite{bonomo2017gaps}"),
+    ("stassun2017accurate", r"\cite{stassun2017accurate}"),
+    ("barstow2017consistent", r"\cite{barstow2017consistent}"),
+    ("charbonneau2002detection", r"\cite{charbonneau2002detection}"),
+    ("vidal2003extended", r"\cite{vidal2003extended}"),
+    ("macdonald2017hd209458b", r"\cite{macdonald2017hd209458b}"),
+    ("mancini2020highly", r"\cite{mancini2020highly}"),
+    ("yee2025super", r"\cite{yee2025super}"),
+    ("barkaoui2024extended", r"\cite{barkaoui2024extended}"),
+    ("gaudi2017giant", r"\cite{gaudi2017giant}"),
+    ("yan2018extended", r"\cite{yan2018extended}"),
+    ("hoeijmakers2018atomic", r"\cite{hoeijmakers2018atomic}"),
+    ("hoeijmakers2019spectral", r"\cite{hoeijmakers2019spectral}"),
+]
+
+SOURCE_INDEX = {key: index + 1 for index, (key, _) in enumerate(SOURCE_REFERENCES)}
+
+SYSTEM_SOURCE_KEYS = {
+    "gj1132_b": ["xue2024jwst", "berta2015rocky", "swain2021detection"],
+    "55cnc_e": ["bourrier201855", "moutou2026characterising", "hu2024secondary"],
+    "gj1214_b": ["mahajan2024using", "charbonneau2009super", "kempton2023reflective"],
+    "hd56414_b": ["giacalone2022hd", "otegi2020revisited"],
+    "gj436_b": [
+        "maxted2022analysis",
+        "bourrier2018orbital",
+        "maciejewski2015gj",
+        "turner2016ground",
+        "stevenson2010possible",
+        "knutson2014featureless",
+        "ehrenreich2015giant",
+    ],
+    "51peg_b": [
+        "rosenthal2021california",
+        "valenti2005spectroscopic",
+        "van2009directly",
+        "martins2015evidence",
+        "brogi2013detection",
+        "birkby2017discovery",
+    ],
+    "hd209458_b": [
+        "rosenthal2021california",
+        "bonomo2017gaps",
+        "stassun2017accurate",
+        "barstow2017consistent",
+        "charbonneau2002detection",
+        "vidal2003extended",
+        "macdonald2017hd209458b",
+    ],
+    "wasp174_b": ["mancini2020highly"],
+    "wasp193_b": ["yee2025super", "barkaoui2024extended"],
+    "kelt9_b": ["gaudi2017giant", "yan2018extended", "hoeijmakers2018atomic", "hoeijmakers2019spectral"],
+}
+
 CATEGORY_BLOCKS = [
     ("Rocky reference systems", ["gj1132_b", "55cnc_e"]),
     ("Sub-Neptunes / Neptunes", ["gj1214_b", "hd56414_b", "gj436_b"]),
@@ -53,10 +131,6 @@ def latexify_species(species: str) -> str:
     if " " in species:
         return latex_escape(species)
     return latexify_formula(species)
-
-
-def latex_url(text: str) -> str:
-    return str(text).replace("%", r"\%")
 
 
 def format_plain_number(value: float) -> str:
@@ -139,36 +213,10 @@ def format_fraction(value: float) -> str:
     return text.rstrip("0").rstrip(".")
 
 
-def ordered_system_items():
-    return [
-        ("gj1132_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj1132_b"]),
-        ("55cnc_e", REAL_MASS_LOSS_REFERENCE_SYSTEMS["55cnc_e"]),
-        ("gj1214_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj1214_b"]),
-        ("hd56414_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["hd56414_b"]),
-        ("gj436_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["gj436_b"]),
-        ("51peg_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["51peg_b"]),
-        ("hd209458_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["hd209458_b"]),
-        ("wasp174_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["wasp174_b"]),
-        ("wasp193_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["wasp193_b"]),
-        ("kelt9_b", REAL_MASS_LOSS_REFERENCE_SYSTEMS["kelt9_b"]),
-    ]
-
-
 def iter_grouped_systems():
     for heading, keys in CATEGORY_BLOCKS:
         group = [(key, REAL_MASS_LOSS_REFERENCE_SYSTEMS[key]) for key in keys]
         yield heading, group
-
-
-def build_source_indices():
-    mapping = {}
-    ordered_urls = []
-    for _, system_def in ordered_system_items():
-        url = str(system_def.get("planet_source_url", "")).strip()
-        if url and url not in mapping:
-            mapping[url] = len(mapping) + 1
-            ordered_urls.append(url)
-    return mapping, ordered_urls
 
 
 def composition_text(system_def: dict) -> str:
@@ -178,28 +226,41 @@ def composition_text(system_def: dict) -> str:
     )
 
 
-def build_table_tex() -> str:
-    source_indices, ordered_urls = build_source_indices()
+def source_marker_for_system(system_key: str) -> str:
+    source_keys = SYSTEM_SOURCE_KEYS.get(system_key, [])
+    if not source_keys:
+        return ""
+    marker = ",".join(str(SOURCE_INDEX[source_key]) for source_key in source_keys)
+    return rf"\textsuperscript{{{marker}}}"
 
+
+def source_footnote_parts() -> list[str]:
+    return [
+        rf"\textsuperscript{{{index}}}{reference_text}"
+        for index, (_, reference_text) in enumerate(SOURCE_REFERENCES, start=1)
+    ]
+
+
+def build_table_tex() -> str:
     lines = [
         r"\begin{landscape}",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{4pt}",
         r"\renewcommand{\arraystretch}{1.0}",
-        r"\begin{longtable}{llcccccccccccp{" + COMPOSITION_COL_WIDTH + r"}}",
-        r"\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations.}\label{tab:real_mass_loss_reference_systems} \\",
+        r"\begin{longtable}{llcccccccccccp{" + COMPOSITION_COL_WIDTH + r"}c}",
+        r"\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations. The final column gives literature sources for the stellar and planetary parameters and for the atmospheric-composition basis; $\epsilon$, $\mu$, $P_0$, and composition are adopted model quantities.}\label{tab:real_mass_loss_reference_systems} \\",
         r"\toprule",
-        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\",
+        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition & Sources \\",
         r"\midrule",
         r"\endfirsthead",
         "",
         r"\toprule",
-        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition \\",
+        r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition & Sources \\",
         r"\midrule",
         r"\endhead",
         "",
         r"\midrule",
-        r"\multicolumn{14}{r}{Continued on next page} \\",
+        r"\multicolumn{15}{r}{Continued on next page} \\",
         r"\midrule",
         r"\endfoot",
         "",
@@ -211,23 +272,19 @@ def build_table_tex() -> str:
     for heading, group in iter_grouped_systems():
         lines.extend(
             [
-                rf"\multicolumn{{14}}{{l}}{{\textbf{{{heading}}}}} \\",
+                rf"\multicolumn{{15}}{{l}}{{\textbf{{{heading}}}}} \\",
                 r"\midrule",
             ]
         )
-        for _, system_def in group:
+        for system_key, system_def in group:
             name = system_def["planet"]["label"]
-            url = str(system_def.get("planet_source_url", "")).strip()
-            source_marker = ""
-            if url:
-                source_marker = rf"\textsuperscript{{{source_indices[url]}}}"
             star = system_def["star"]
             planet = system_def["planet"]
             composition_cell = composition_text(system_def)
             lines.append(
                 " & ".join(
                     [
-                        latex_escape(name).replace(" ", "~") + source_marker,
+                        latex_escape(name).replace(" ", "~"),
                         format_planet_type(system_def),
                         format_plain_number(float(star["teff_K"])),
                         format_plain_number(star["radius"].to_value(const.R_sun)) + r" $R_\odot$",
@@ -241,6 +298,7 @@ def build_table_tex() -> str:
                         format_mu(planet["mu"].value),
                         f"${format_compact_number(planet['P0'].to_value(planet['P0'].unit))}$",
                         composition_cell,
+                        source_marker_for_system(system_key),
                     ]
                 )
                 + r" \\"
@@ -253,13 +311,16 @@ def build_table_tex() -> str:
         lines.append("")
     lines.append(r"\end{longtable}")
     lines.append("")
-    if ordered_urls:
-        source_parts = [
-            rf"\textsuperscript{{{source_indices[url]}}}\url{{{latex_url(url)}}}"
-            for url in ordered_urls
-        ]
-        lines.append(r"\vspace{0.3em}")
-        lines.append(r"\parbox{0.98\linewidth}{\scriptsize " + f"Sources: {'; '.join(source_parts)}." + "}")
+    source_parts = source_footnote_parts()
+    lines.append(r"\vspace{0.3em}")
+    lines.append(r"\parbox{0.98\linewidth}{\scriptsize " + f"Sources: {'; '.join(source_parts)}." + "}")
+    lines.append(r"\vspace{0.2em}")
+    lines.append(
+        r"\parbox{0.98\linewidth}{\scriptsize Atmospheric compositions are normalized, "
+        r"literature-informed proxy mixtures for the mass-loss calculations; they are not direct "
+        r"observational abundance measurements. Molecules are included only when present in the local "
+        r"molecule template library.}"
+    )
     lines.append(r"\end{landscape}")
     return "\n".join(lines) + "\n"
 

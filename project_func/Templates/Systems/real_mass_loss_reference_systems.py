@@ -103,15 +103,16 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 583.8 * u.K,
             "P0": 1.0 * u.bar,
             "composition": {
-                "O I": 0.30,
-                "N I": 0.15,
-                "Na I": 0.15,
-                "K I": 0.05,
-                "CO2": 0.35,
+                "H2": 0.55,
+                "H I": 0.20,
+                "HCN": 0.20,
+                "N I": 0.03,
+                "C I": 0.02,
             },
             "notes": (
-                "Real rocky comparison system. Composition trimmed to the four most abundant atoms "
-                "plus the most abundant molecule from the rocky super-Earth analogue and renormalized."
+                "Real rocky comparison system. Composition is a normalized proxy based on the "
+                "claimed H2/HCN secondary-atmosphere interpretation, with the later JWST "
+                "non-detection noted as an uncertainty."
             ),
         },
         "distance_au": 0.01570,
@@ -127,7 +128,7 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
         "star": {
             "label": "GJ 1214",
             "path": "TS/Spectral_type/M/M6/lte030-4.0-0.0a+0.0.BT-NextGen.7.dat.txt",
-            "teff_K": 3026.0,
+            "teff_K": 3101.0,
             "radius": 0.2162 * const.R_sun,
             "mass": 0.1820 * const.M_sun,
             "vsini": 2.0 * u.km / u.s,
@@ -140,15 +141,18 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 567.0 * u.K,
             "P0": 1.0e-4 * u.bar,
             "composition": {
-                "H I": 0.56,
-                "He I": 0.14,
+                "H2": 0.40,
+                "He I": 0.10,
+                "H2O": 0.30,
+                "CO2": 0.10,
+                "H I": 0.05,
+                "CO": 0.03,
                 "O I": 0.01,
                 "Na I": 0.01,
-                "H2": 0.28,
             },
             "notes": (
-                "Real sub-Neptune comparison system. Composition trimmed to the four most abundant atoms "
-                "plus the dominant molecule from the sub-Neptune analogue and renormalized."
+                "Real sub-Neptune comparison system. Composition is a normalized proxy for a "
+                "high-metallicity, cloudy/hazy atmosphere with H2O as the main inferred absorber."
             ),
         },
         "distance_au": 0.01505,
@@ -177,18 +181,21 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 686.0 * u.K,
             "P0": 1.0e-4 * u.bar,
             "composition": {
-                "H I": 0.58,
-                "He I": 0.14,
-                "O I": 0.01,
+                "H2": 0.30,
+                "H I": 0.20,
+                "He I": 0.10,
+                "CO": 0.25,
+                "H2O": 0.08,
+                "CO2": 0.04,
+                "O I": 0.02,
                 "Na I": 0.01,
-                "H2": 0.26,
             },
             "notes": (
-                "Real Neptune comparison system. Composition trimmed to the four most abundant atoms "
-                "plus the dominant molecule from the hot-Neptune analogue and renormalized."
+                "Real Neptune comparison system. Composition is a normalized proxy for a "
+                "high-metallicity, CO-rich, methane-poor atmosphere with an escaping hydrogen component."
             ),
         },
-        "distance_au": 0.0282,
+        "distance_au": 0.0291,
     },
     "hd209458_b": {
         "system_name": "HD 209458 b",
@@ -201,31 +208,34 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
         "star": {
             "label": "HD 209458",
             "path": "TS/Spectral_type/F/F8/lte060-4.0-0.0a+0.2.BT-NextGen.7.dat.txt",
-            "teff_K": 6065.0,
-            "radius": 1.20 * const.R_sun,
-            "mass": 1.07 * const.M_sun,
-            "vsini": 4.5 * u.km / u.s,
+            "teff_K": 6026.35,
+            "radius": 1.199976 * const.R_sun,
+            "mass": 1.069175 * const.M_sun,
+            "vsini": 4.49 * u.km / u.s,
             "epsilon": 0.5 * u.dimensionless_unscaled,
         },
         "planet": {
             "label": "HD 209458 b",
-            "radius": 1.359 * const.R_jup,
-            "mass": 0.685 * const.M_jup,
-            "T": 1459.0 * u.K,
+            "radius": 1.39 * const.R_jup,
+            "mass": 0.73 * const.M_jup,
+            "T": 1448.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "H I": 0.60,
-                "He I": 0.10,
-                "O I": 0.01,
+                "H2": 0.70,
+                "He I": 0.15,
+                "H I": 0.10,
+                "H2O": 0.03,
                 "Na I": 0.01,
-                "H2": 0.28,
+                "NH3": 0.005,
+                "HCN": 0.005,
             },
             "notes": (
-                "Real gas-giant comparison system. Composition trimmed to the four most abundant atoms "
-                "plus the dominant molecule from the inflated hot-Jupiter analogue and renormalized."
+                "Real gas-giant comparison system. Composition is a normalized hot-Jupiter proxy "
+                "based on H2/He dominance, sodium absorption, escaping hydrogen, H2O, and possible "
+                "nitrogen chemistry."
             ),
         },
-        "distance_au": 0.04707,
+        "distance_au": 0.04634,
     },
     "55cnc_e": {
         "system_name": "55 Cnc e",
@@ -241,7 +251,7 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "teff_K": 5172.0,
             "radius": 0.943 * const.R_sun,
             "mass": 0.905 * const.M_sun,
-            "vsini": 1.23 * u.km / u.s,
+            "vsini": 1.06 * u.km / u.s,
             "epsilon": 0.5 * u.dimensionless_unscaled,
         },
         "planet": {
@@ -251,19 +261,17 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 1958.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "O I": 0.1,
-                "Na I": 0.2,
-                "K I": 0.1,
-                "Si I": 0.1,
-                "Ca I": 0.1,
-                "SiO": 0.2,
-                "NaCl": 0.1,
-                "O2": 0.05,
-                "SO2": 0.05,
+                "CO2": 0.45,
+                "CO": 0.35,
+                "H2O": 0.08,
+                "H I": 0.04,
+                "O I": 0.04,
+                "HCN": 0.02,
+                "SiO": 0.02,
             },
             "notes": (
-                "Real ultra-hot rocky comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "composition adopts the generic lava-world analogue."
+                "Real ultra-hot rocky comparison system. Composition is a normalized proxy for a "
+                "secondary volatile atmosphere rich in CO2 or CO, not a primordial H2/He atmosphere."
             ),
         },
         "distance_au": 0.01544,
@@ -288,21 +296,21 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
         "planet": {
             "label": "HD 56414 b",
             "radius": 3.71 * const.R_earth,
-            "mass": 13.3 * const.M_earth,
+            "mass": 13.8 * const.M_earth,
             "T": 1133.0 * u.K,
             "P0": 1.0e-4 * u.bar,
             "composition": {
-                "H I": 0.4,
-                "He I": 0.11,
-                "H2": 0.24,
-                "H2O": 0.1,
-                "CO": 0.1,
-                "CO2": 0.03,
-                "NH3": 0.02,
+                "H2": 0.65,
+                "He I": 0.15,
+                "H I": 0.10,
+                "H2O": 0.05,
+                "CO": 0.03,
+                "O I": 0.01,
+                "Na I": 0.01,
             },
             "notes": (
-                "Real irradiated sub-Neptune comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "composition adopts the generic sub-Neptune analogue."
+                "Real irradiated sub-Neptune comparison system. Composition is a normalized light-atmosphere "
+                "proxy for a Neptune-size planet expected to retain most of its atmosphere."
             ),
         },
         "distance_au": 0.229,
@@ -331,15 +339,15 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 1250.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "H I": 0.60,
-                "He I": 0.1,
-                "O I": 0.01,
+                "H2": 0.75,
+                "He I": 0.15,
+                "H I": 0.08,
                 "Na I": 0.01,
-                "H2": 0.28,
+                "H2O": 0.01,
             },
             "notes": (
-                "Real inflated hot-Jupiter comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "composition adopts the generic inflated hot-Jupiter analogue."
+                "Real inflated hot-Jupiter comparison system. Composition is a normalized H2/He proxy "
+                "for an extremely low-density planet with an extended light atmosphere."
             ),
         },
         "distance_au": 0.0668,
@@ -368,15 +376,16 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 1528.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "H I": 0.60,
-                "He I": 0.1,
-                "O I": 0.01,
+                "H2": 0.72,
+                "He I": 0.15,
+                "H I": 0.08,
+                "H2O": 0.03,
                 "Na I": 0.01,
-                "H2": 0.28,
+                "O I": 0.01,
             },
             "notes": (
-                "Real inflated hot-Jupiter comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "composition adopts the generic inflated hot-Jupiter analogue."
+                "Real inflated hot-Jupiter comparison system. Composition is a normalized H2/He hot-Jupiter "
+                "proxy for a highly inflated giant planet."
             ),
         },
         "distance_au": 0.05503,
@@ -392,32 +401,33 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
         "star": {
             "label": "51 Peg",
             "path": "TS/Spectral_type/G/G1/lte058-4.0-0.0a+0.0.BT-NextGen.7.dat.txt",
-            "teff_K": 5758.0,
-            "radius": 1.175610 * const.R_sun,
-            "mass": 1.03 * const.M_sun,
-            "vsini": 2.2 * u.km / u.s,
+            "teff_K": 5760.76,
+            "radius": 1.186744 * const.R_sun,
+            "mass": 1.069296 * const.M_sun,
+            "vsini": 2.6 * u.km / u.s,
             "epsilon": 0.5 * u.dimensionless_unscaled,
         },
         "planet": {
             "label": "51 Peg b",
-            "radius": 1.27 * const.R_jup,
+            "radius": 1.2 * const.R_jup,
             "mass": 0.46 * const.M_jup,
-            "T": 1311.0 * u.K,
+            "T": 1250.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "H I": 0.60,
-                "He I": 0.1,
-                "O I": 0.01,
-                "Na I": 0.01,
-                "H2": 0.28,
+                "H2": 0.72,
+                "He I": 0.15,
+                "H I": 0.08,
+                "H2O": 0.04,
+                "O I": 0.005,
+                "Na I": 0.005,
             },
             "notes": (
                 "Real hot-Jupiter comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "equilibrium temperature estimated from archive stellar properties and orbital distance because "
-                "no archive pl_eqt entry is available. Composition adopts the generic inflated hot-Jupiter analogue."
+                "temperature adopts the dayside value from the 51 Pegasi b literature. Composition is a normalized "
+                "H2/He hot-Jupiter proxy with detected H2O absorption."
             ),
         },
-        "distance_au": 0.0527,
+        "distance_au": 0.052,
     },
     "kelt9_b": {
         "system_name": "KELT-9 b",
@@ -443,19 +453,22 @@ REAL_MASS_LOSS_REFERENCE_SYSTEMS = {
             "T": 4050.0 * u.K,
             "P0": 1.0e-3 * u.bar,
             "composition": {
-                "H I": 0.6,
-                "He I": 0.1,
-                "He II": 0.01,
-                "O I": 0.01,
-                "H2": 0.1,
-                "CO": 0.11,
-                "H2O": 0.04,
-                "NO": 0.02,
-                "OH": 0.01,
+                "H I": 0.765,
+                "He I": 0.13,
+                "He II": 0.02,
+                "H2": 0.03,
+                "O I": 0.02,
+                "Fe I": 0.008,
+                "Fe II": 0.008,
+                "Ti II": 0.004,
+                "Mg I": 0.005,
+                "Ca II": 0.005,
+                "Na I": 0.005,
             },
             "notes": (
                 "Real ultra-hot Jupiter comparison system. Source-based mass/radius/orbit from the Exoplanet Archive; "
-                "composition adopts the generic ultra-hot-Jupiter analogue."
+                "composition is a normalized ultra-hot-Jupiter proxy with an extended hydrogen envelope and "
+                "atomic/ionized metal absorbers."
             ),
         },
         "distance_au": 0.03462,
