@@ -1,7 +1,70 @@
 import copy
+import re
 
 import astropy.constants as const
 import astropy.units as u
+
+
+ATOMIC_MASSES_AMU = {
+    "H": 1.008,
+    "He": 4.002602,
+    "C": 12.011,
+    "N": 14.007,
+    "O": 15.999,
+    "Na": 22.98976928,
+    "Si": 28.085,
+    "S": 32.06,
+    "Cl": 35.45,
+    "K": 39.0983,
+}
+
+FORMULA_TOKEN_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+COMPOSITION_MU_TEMPLATE_KEYS = {
+    "super_earth_rocky",
+    "alkali_exosphere_rocky",
+    "metal_rich_secondary",
+}
+
+
+def species_molecular_weight_amu(species: str) -> float:
+    formula = str(species).split()[0]
+    position = 0
+    molecular_weight = 0.0
+    for match in FORMULA_TOKEN_RE.finditer(formula):
+        if match.start() != position:
+            raise ValueError(f"Could not parse species formula '{species}'.")
+        element, count_text = match.groups()
+        if element not in ATOMIC_MASSES_AMU:
+            raise KeyError(f"No atomic mass available for element '{element}' in species '{species}'.")
+        molecular_weight += ATOMIC_MASSES_AMU[element] * int(count_text or 1)
+        position = match.end()
+    if position != len(formula):
+        raise ValueError(f"Could not parse species formula '{species}'.")
+    return molecular_weight
+
+
+def mean_molecular_weight_from_composition(composition: dict[str, float]) -> float:
+    total_fraction = sum(float(fraction) for fraction in composition.values())
+    if total_fraction <= 0.0:
+        raise ValueError("Composition fractions must have a positive sum.")
+    weighted_mass = sum(
+        float(fraction) * species_molecular_weight_amu(species)
+        for species, fraction in composition.items()
+    )
+    return weighted_mass / total_fraction
+
+
+def rounded_mean_molecular_weight_from_composition(composition: dict[str, float]) -> float:
+    return round(mean_molecular_weight_from_composition(composition), 2)
+
+
+def assign_composition_mean_molecular_weights(templates: dict, template_keys: set[str]) -> None:
+    for template_key in template_keys:
+        template = templates[template_key]
+        template["mu"] = (
+            rounded_mean_molecular_weight_from_composition(template["composition"])
+            * u.dimensionless_unscaled
+        )
 
 
 PLANET_TEMPLATES_UPDATED = {
@@ -62,12 +125,11 @@ PLANET_TEMPLATES_UPDATED = {
         "notes": "Thin CO2-dominated secondary atmosphere approximated by large mean molecular weight.",
     },
     "super_earth_rocky": {
-        "label": "Super-Earth rocky planet",
+        "label": "Super earth",
         "category": "rocky",
         "radius": 2.0 * const.R_earth,
         "mass": 4.0 * const.M_earth,
         "T": 300 * u.K,
-        "mu": 25.0 * u.dimensionless_unscaled,
         "P0": 1.0 * u.bar,
         "composition": {
             "O I": 0.2,
@@ -335,12 +397,11 @@ PLANET_TEMPLATES_UPDATED = {
         "notes": "Ultra-hot giant with partial ionization and strong heavy-species signatures.",
     },
     "alkali_exosphere_rocky": {
-        "label": "Alkali-rich rocky exosphere",
+        "label": "Alkali Rocky",
         "category": "rocky",
         "radius": 0.8 * const.R_earth,
         "mass": 0.4 * const.M_earth,
         "T": 1000 * u.K,
-        "mu": 25.0 * u.dimensionless_unscaled,
         "P0": 1.0e-8 * u.bar,
         "composition": {
             "Na I": 0.4,
@@ -356,12 +417,11 @@ PLANET_TEMPLATES_UPDATED = {
         "notes": "Useful for emphasizing Na/K radiation-pressure signatures.",
     },
     "metal_rich_secondary": {
-        "label": "Metal-rich secondary atmosphere",
+        "label": "Metal rich",
         "category": "rocky",
         "radius": 2.0 * const.R_earth,
         "mass": 6.0 * const.M_earth,
         "T": 1000 * u.K,
-        "mu": 35.0 * u.dimensionless_unscaled,
         "P0": 1.0e-2 * u.bar,
         "composition": {
             "O I": 0.15,
@@ -378,6 +438,8 @@ PLANET_TEMPLATES_UPDATED = {
         "notes": "Heavy secondary atmosphere for parameter studies beyond H/He envelopes.",
     },
 }
+
+assign_composition_mean_molecular_weights(PLANET_TEMPLATES_UPDATED, COMPOSITION_MU_TEMPLATE_KEYS)
 
 PLANET_TEMPLATES = PLANET_TEMPLATES_UPDATED
 

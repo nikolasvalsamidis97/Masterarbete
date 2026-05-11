@@ -59,6 +59,10 @@ def latex_escape(text: str) -> str:
     return str(text).replace("_", r"\_")
 
 
+def template_display_name(key: str, template: dict) -> str:
+    return str(template.get("label") or key)
+
+
 def latexify_formula(text: str) -> str:
     escaped = latex_escape(text)
     escaped = re.sub(r"([A-Za-z])(\d+)", r"\1$_{\2}$", escaped)
@@ -82,6 +86,10 @@ def format_plain_number(value: float) -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return text
+
+
+def format_mu(value: float) -> str:
+    return f"{float(value):.2f}"
 
 
 def format_scientific_latex(value: float) -> str:
@@ -143,7 +151,7 @@ def iter_grouped_templates():
 
 def write_csv(path: pathlib.Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -154,12 +162,12 @@ def build_properties_rows() -> list[dict[str, str]]:
         for key, template in group:
             rows.append(
                 {
-                    "template": key,
+                    "template": template_display_name(key, template),
                     "category": template["category"],
                     "radius": radius_string(template),
                     "mass": mass_string(template),
                     "T_K": format_plain_number(template["T"].to_value(u.K)),
-                    "mu": format_plain_number(template["mu"].value),
+                    "mu": format_mu(template["mu"].value),
                     "P0_bar": format_plain_number(template["P0"].to_value(u.bar)),
                     "notes": template["notes"],
                 }
@@ -173,7 +181,7 @@ def build_composition_rows() -> list[dict[str, str]]:
         for key, template in group:
             rows.append(
                 {
-                    "template": key,
+                    "template": template_display_name(key, template),
                     "category": template["category"],
                     "composition": ", ".join(
                         f"{species}: {format_fraction(float(fraction), latex=False)}"
@@ -219,7 +227,8 @@ def write_compositions_tex(path: pathlib.Path) -> None:
                 for species, fraction in template["composition"].items()
             )
             lines.append(
-                f"{latex_escape(key)} & {latex_escape(template['category'])} & {composition} \\\\"
+                f"{latex_escape(template_display_name(key, template))} & "
+                f"{latex_escape(template['category'])} & {composition} \\\\"
             )
         lines.append(r"\midrule")
         lines.append("")
@@ -259,10 +268,11 @@ def write_properties_tex(path: pathlib.Path) -> None:
         ])
         for key, template in group:
             lines.append(
-                f"{latex_escape(key)} & {latex_escape(template['category'])} & "
+                f"{latex_escape(template_display_name(key, template))} & "
+                f"{latex_escape(template['category'])} & "
                 f"{radius_string(template)} & {mass_string(template)} & "
                 f"{format_plain_number(template['T'].to_value(u.K))} & "
-                f"{format_plain_number(template['mu'].value)} & "
+                f"{format_mu(template['mu'].value)} & "
                 f"{format_pressure_bar(template['P0'].to_value(u.bar))} & "
                 f"{latexify_note(template['notes'])} \\\\"
             )

@@ -83,6 +83,9 @@ SOLAR_TYPE_LABELS = {
     "rocky": "Rocky",
     "gas_giant": "Gas giant",
 }
+P0_SWEEP_PLOT_PLANET = "super_earth_rocky"
+SURFACE_GRAVITY_SWEEP_PLOT_PLANET = "super_earth_rocky"
+SURFACE_GRAVITY_SWEEP_PLOT_VALUES_M_S2 = tuple(float(value) for value in range(1, 11))
 
 
 def read_total_rows(family_name: str) -> list[dict[str, str]]:
@@ -108,6 +111,26 @@ def plain_tick_text(value: float) -> str:
 def ordered_rows(rows: list[dict[str, str]], order: list[str]) -> list[dict[str, str]]:
     rank = {key: index for index, key in enumerate(order)}
     return sorted(rows, key=lambda row: rank.get(row["planet"], 999))
+
+
+def filter_planet_rows(rows: list[dict[str, str]], planet_key: str) -> list[dict[str, str]]:
+    return [row for row in rows if row["planet"] == planet_key]
+
+
+def filter_exact_sweep_values(
+    rows: list[dict[str, str]],
+    *,
+    value_key: str,
+    allowed_values: tuple[float, ...],
+) -> list[dict[str, str]]:
+    return [
+        row
+        for row in rows
+        if any(
+            math.isclose(to_float(row[value_key]), allowed_value, rel_tol=0.0, abs_tol=1.0e-9)
+            for allowed_value in allowed_values
+        )
+    ]
 
 
 def wrap_label(label: str) -> str:
@@ -522,8 +545,7 @@ def plot_p0_sweep(axis, rows: list[dict[str, str]]) -> None:
         title="$P_0$ Sweep",
         xscale="log",
         yscale="linear",
-        y_plain_scale_power=5,
-        context_lines=["Inflated hot Jupiter", r"$T_{\rm eff}=6000$ K", "0.05 AU"],
+        context_lines=["Super earth", r"$T_{\rm eff}=6000$ K", "0.05 AU"],
         context_side="left",
     )
 
@@ -554,7 +576,7 @@ def plot_surface_gravity_sweep(axis, rows: list[dict[str, str]]) -> None:
         yscale="log",
         y_log_exponents_only=True,
         show_zero_floor=True,
-        context_lines=["Super-Earth rocky planet", r"$T_{\rm eff}=6000$ K", "0.1 AU"],
+        context_lines=["Super earth", r"$T_{\rm eff}=6000$ K", "0.1 AU"],
         context_side="right",
     )
 
@@ -571,9 +593,13 @@ def main() -> None:
     solar_rows = read_total_rows("solar_system_fixed")
     distance_rows = read_total_rows("distance_sweep")
     real_rows = read_total_rows("real_reference_systems")
-    p0_rows = read_total_rows("p0_sweep")
+    p0_rows = filter_planet_rows(read_total_rows("p0_sweep"), P0_SWEEP_PLOT_PLANET)
     mu_rows = read_total_rows("mu_sweep")
-    gravity_rows = read_total_rows("surface_gravity_sweep")
+    gravity_rows = filter_exact_sweep_values(
+        filter_planet_rows(read_total_rows("surface_gravity_sweep"), SURFACE_GRAVITY_SWEEP_PLOT_PLANET),
+        value_key="surface_gravity_m_s2",
+        allowed_values=SURFACE_GRAVITY_SWEEP_PLOT_VALUES_M_S2,
+    )
 
     save_family_figure("solar_system_analogues_total_mass_loss.pdf", plot_solar_system_fixed, solar_rows)
     save_family_figure("distance_sweep_total_mass_loss.pdf", plot_distance_sweep, distance_rows)
