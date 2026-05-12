@@ -275,7 +275,7 @@ def write_csv(rows: list[dict[str, str | float]]) -> None:
         "relative_loss_1Myr",
     ]
     with OUTPUT_CSV.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow(row)

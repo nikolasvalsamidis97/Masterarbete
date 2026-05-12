@@ -14,6 +14,7 @@ from project_func.Templates.Systems.real_mass_loss_reference_systems import (
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parents[2] / "Tables"
 OUTPUT_TEX = OUTPUT_DIR / "real_mass_loss_reference_systems_table.tex"
 COMPOSITION_COL_WIDTH = "4.2cm"
+FULL_WIDTH_NOTE_COL = r"@{}p{\dimexpr\linewidth-2\tabcolsep\relax}@{}"
 
 SOURCE_REFERENCES = [
     ("xue2024jwst", r"\cite{xue2024jwst}"),
@@ -242,6 +243,12 @@ def source_footnote_parts() -> list[str]:
 
 
 def build_table_tex() -> str:
+    source_note = "Sources: " + "; ".join(source_footnote_parts()) + "."
+    composition_note = (
+        r"Atmospheric compositions are normalized, literature-informed proxy mixtures for the "
+        r"mass-loss calculations; they are not direct observational abundance measurements. "
+        r"Molecules are included only when present in the local molecule template library."
+    )
     lines = [
         r"\begin{landscape}",
         r"\scriptsize",
@@ -265,6 +272,8 @@ def build_table_tex() -> str:
         r"\endfoot",
         "",
         r"\bottomrule",
+        rf"\multicolumn{{15}}{{{FULL_WIDTH_NOTE_COL}}}{{\tiny {source_note}}} \\[0.2em]",
+        rf"\multicolumn{{15}}{{{FULL_WIDTH_NOTE_COL}}}{{\tiny {composition_note}}} \\",
         r"\endlastfoot",
         "",
     ]
@@ -310,17 +319,6 @@ def build_table_tex() -> str:
     else:
         lines.append("")
     lines.append(r"\end{longtable}")
-    lines.append("")
-    source_parts = source_footnote_parts()
-    lines.append(r"\vspace{0.3em}")
-    lines.append(r"\parbox{0.98\linewidth}{\scriptsize " + f"Sources: {'; '.join(source_parts)}." + "}")
-    lines.append(r"\vspace{0.2em}")
-    lines.append(
-        r"\parbox{0.98\linewidth}{\scriptsize Atmospheric compositions are normalized, "
-        r"literature-informed proxy mixtures for the mass-loss calculations; they are not direct "
-        r"observational abundance measurements. Molecules are included only when present in the local "
-        r"molecule template library.}"
-    )
     lines.append(r"\end{landscape}")
     return "\n".join(lines) + "\n"
 

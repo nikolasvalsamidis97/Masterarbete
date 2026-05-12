@@ -955,6 +955,13 @@ class PhotonPressureBinnedCache:
 
 _WORKER_EXOBASE_ROWS = None
 
+ZERO_LOSS_FALLBACK_ERROR_PREFIXES = (
+    "No exobase height for ",
+)
+ZERO_LOSS_FALLBACK_ERROR_MESSAGES = {
+    "Exobase is outside or at the Hill radius.",
+}
+
 
 def build_species_task(
     system_def: AdvancedSystem,
@@ -981,6 +988,76 @@ def build_species_task(
         "spectrum_template_key": spectrum_template_key,
         "extra_fields": dict(extra_fields or {}),
     }
+
+
+def is_zero_loss_fallback_exception(exc: Exception) -> bool:
+    if not isinstance(exc, ValueError):
+        return False
+    message = str(exc)
+    if message in ZERO_LOSS_FALLBACK_ERROR_MESSAGES:
+        return True
+    return any(message.startswith(prefix) for prefix in ZERO_LOSS_FALLBACK_ERROR_PREFIXES)
+
+
+def zero_loss_species_row_from_task(task: dict, exobase_rows, fallback_reason: str | None = None) -> dict:
+    system_def: AdvancedSystem = task["system_def"]
+    species = task["species"]
+    planet_case = dict(task["planet_case"])
+    row = {
+        "test_family": system_def.test_family,
+        "planet": system_def.planet_key,
+        "planet_label": task["planet_label"],
+        "star": system_def.star_key,
+        "star_label": task["star_label"],
+        "spectrum_template_key": task["spectrum_template_key"] or system_def.star_key,
+        "planet_source_url": task["planet_source_url"],
+        "star_source_url": task["star_source_url"],
+        "orbit_source_url": task["orbit_source_url"],
+        "exobase_template_key": task["exobase_planet_key"],
+        "exobase_model": EXOBASE_MODEL_ID,
+        "target_stellar_teff_K": task["actual_teff_k"],
+        "actual_stellar_teff_K": task["actual_teff_k"],
+        "distance_AU": float(system_def.distance_au),
+        "P0_bar": "",
+        "surface_gravity_m_s2": "",
+        "mass_scale": "",
+        "species": species,
+        "mixing_ratio": base_mass_loss.species_mixing_ratio(planet_case, species),
+        "hill_radius_over_Rp": "",
+        "escaping_shell_mass_g": 0.0,
+        "mass_loss_rate_g_s": 0.0,
+        "mass_loss_rate_kg_s": 0.0,
+        "mass_loss_rate_Mearth_yr": 0.0,
+        "mass_lost_g_1Myr": 0.0,
+        "mass_lost_g_1Gyr": 0.0,
+        "mass_lost_Mearth_1Myr": 0.0,
+        "mass_lost_Mearth_1Gyr": 0.0,
+        "mean_escape_time_s": np.nan,
+        "median_escape_time_s": np.nan,
+        "min_escape_time_s": np.nan,
+        "mass_weighted_initial_beta": np.nan,
+        "mean_steps_escaped": np.nan,
+        "max_steps_any_cell": 0,
+        "photon_pressure_cache_bins": 0,
+        "n_cells": 0,
+        "n_escape_cells": 0,
+        "include_stellar_gravity": INCLUDE_STELLAR_GRAVITY,
+        "method": "advanced_trajectory_recomputed_acceleration",
+        "n_rho": N_RHO,
+        "n_x": N_X,
+        "column_steps": COLUMN_STEPS,
+        "rho_grid_power": RHO_GRID_POWER,
+        "log_column_bin_dex": LOG_COLUMN_BIN_DEX,
+        "dt_min_s": DT_MIN_S,
+        "dt_max_s": DT_MAX_S,
+        "max_steps": MAX_STEPS,
+        "max_time_s": MAX_TIME_S,
+    }
+    row.update(zero_loss_shell_properties(system_def, species, planet_case, exobase_rows))
+    row.update(task["extra_fields"])
+    if fallback_reason:
+        row["fallback_reason"] = fallback_reason
+    return row
 
 
 def _species_worker_init(exobase_rows) -> None:
@@ -1030,6 +1107,20 @@ def _compute_species_task(task: dict, exobase_rows) -> dict:
             "elapsed_s": time.perf_counter() - start_time,
         }
     except Exception as exc:
+        if is_zero_loss_fallback_exception(exc):
+            row = zero_loss_species_row_from_task(task, exobase_rows, fallback_reason=str(exc))
+            return {
+                "ok": True,
+                "species": species,
+                "system_def": system_def,
+                "planet_label": task["planet_label"],
+                "star_label": task["star_label"],
+                "extra_fields": task["extra_fields"],
+                "row": row,
+                "elapsed_s": time.perf_counter() - start_time,
+                "used_zero_loss_fallback": True,
+                "fallback_reason": str(exc),
+            }
         return {
             "ok": False,
             "species": species,
@@ -2385,8 +2476,13 @@ def run_p0_sweep() -> None:
         all_rows.append(row)
         completed_rows.add(current_key)
         write_family_results_txt(P0_SWEEP_TEST_FAMILY, all_rows)
+        fallback_note = (
+            f" zero-loss fallback ({result['fallback_reason']});"
+            if result.get("used_zero_loss_fallback")
+            else ""
+        )
         print(
-            f"P0={p0_bar:.1e} / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+            f"P0={p0_bar:.1e} / {species}:{fallback_note} Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
             f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
             f"mean_t={row['mean_escape_time_s']:.3e} s, "
             f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
@@ -2784,8 +2880,13 @@ def run_surface_gravity_sweep() -> None:
         all_rows.append(row)
         completed_rows.add(current_key)
         write_family_results_txt(SURFACE_GRAVITY_SWEEP_FAMILY, all_rows)
+        fallback_note = (
+            f" zero-loss fallback ({result['fallback_reason']});"
+            if result.get("used_zero_loss_fallback")
+            else ""
+        )
         print(
-            f"g={g_surface:.3f} m/s^2 / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+            f"g={g_surface:.3f} m/s^2 / {species}:{fallback_note} Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
             f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
             f"mean_t={row['mean_escape_time_s']:.3e} s, "
             f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "
@@ -3065,8 +3166,13 @@ def run_standard_systems() -> None:
                 family_rows.append(row)
                 completed_rows.add(current_key)
                 txt_path = write_family_results_txt(test_family, family_rows)
+                fallback_note = (
+                    f" zero-loss fallback ({result['fallback_reason']});"
+                    if result.get("used_zero_loss_fallback")
+                    else ""
+                )
                 print(
-                    f"{planet_label} / {species}: Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
+                    f"{planet_label} / {species}:{fallback_note} Mdot={row['mass_loss_rate_g_s']:.3e} g/s, "
                     f"escaping_mass={row['escaping_shell_mass_g']:.3e} g, "
                     f"mean_t={row['mean_escape_time_s']:.3e} s, "
                     f"Myr={row['mass_lost_Mearth_1Myr']:.3e} Mearth, "

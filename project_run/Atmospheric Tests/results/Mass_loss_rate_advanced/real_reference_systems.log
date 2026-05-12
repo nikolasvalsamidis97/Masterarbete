@@ -1,0 +1,108 @@
+
+--- Advanced mass-loss system: real_reference_systems / GJ 1132 b, star=GJ 1132 (3229 K), distance=0.0157 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / GJ 1214 b, star=GJ 1214 (3026 K), distance=0.01505 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / GJ 436 b, star=GJ 436 (3500 K), distance=0.0282 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / HD 209458 b, star=HD 209458 (6065 K), distance=0.04707 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / 55 Cnc e, star=55 Cnc (5172 K), distance=0.01544 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / HD 56414 b, star=HD 56414 (8500 K), distance=0.229 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / WASP-193 b, star=WASP-193 (6080 K), distance=0.0668 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / WASP-174 b, star=WASP-174 (6399 K), distance=0.05503 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / 51 Peg b, star=51 Peg (5758 K), distance=0.0527 AU ---
+
+--- Advanced mass-loss system: real_reference_systems / KELT-9 b, star=KELT-9 (10170 K), distance=0.03462 AU ---
+[SiO] starting calculating weights for T=1958K
+[SiO] Finished caching data for T=1958K
+[SiO] calculating betas at d = 0.02 AU for T_atm=1958 K and T_eff=5200 K
+Skipping WASP-193 b O I: ValueError: Exobase is outside or at the Hill radius.
+Skipping WASP-193 b H I: ValueError: Exobase is outside or at the Hill radius.
+Skipping WASP-193 b Na I: ValueError: Exobase is outside or at the Hill radius.
+Skipping WASP-193 b He I: ValueError: Exobase is outside or at the Hill radius.
+Skipping KELT-9 b He II: ValueError: No exobase height for kelt9_b, He II
+WASP-174 b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=525, elapsed=186.0 s
+Updated family results: real_reference_systems.txt
+WASP-174 b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=520, elapsed=189.8 s
+Updated family results: real_reference_systems.txt
+WASP-174 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=521, elapsed=199.3 s
+Updated family results: real_reference_systems.txt
+KELT-9 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3767, elapsed=264.8 s
+Updated family results: real_reference_systems.txt
+GJ 1214 b / Na I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1036, elapsed=275.1 s
+Updated family results: real_reference_systems.txt
+GJ 1214 b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1049, elapsed=282.5 s
+Updated family results: real_reference_systems.txt
+GJ 1214 b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1054, elapsed=285.2 s
+Updated family results: real_reference_systems.txt
+GJ 1214 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1050, elapsed=287.9 s
+Updated family results: real_reference_systems.txt
+51 Peg b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1495, elapsed=288.0 s
+Updated family results: real_reference_systems.txt
+HD 209458 b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1940, elapsed=289.9 s
+Updated family results: real_reference_systems.txt
+51 Peg b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1490, elapsed=293.5 s
+Updated family results: real_reference_systems.txt
+HD 209458 b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1936, elapsed=299.1 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / Si I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3749, elapsed=304.8 s
+Updated family results: real_reference_systems.txt
+HD 209458 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1937, elapsed=309.1 s
+Updated family results: real_reference_systems.txt
+51 Peg b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1491, elapsed=311.8 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3756, elapsed=323.7 s
+Updated family results: real_reference_systems.txt
+GJ 436 b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1746, elapsed=330.8 s
+Updated family results: real_reference_systems.txt
+GJ 436 b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1752, elapsed=332.9 s
+Updated family results: real_reference_systems.txt
+GJ 436 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1748, elapsed=343.7 s
+Updated family results: real_reference_systems.txt
+GJ 436 b / Na I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=1733, elapsed=345.9 s
+Updated family results: real_reference_systems.txt
+GJ 1132 b / O I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3783, elapsed=375.1 s
+Updated family results: real_reference_systems.txt
+GJ 1132 b / Na I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3757, elapsed=375.5 s
+Updated family results: real_reference_systems.txt
+GJ 1132 b / N I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3766, elapsed=410.7 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / SiO: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3764, elapsed=458.8 s
+Updated family results: real_reference_systems.txt
+GJ 1132 b / K I: Mdot=3.786e-162 g/s, escaping_mass=9.604e-158 g, mean_t=2.537e+04 s, Myr=2.001e-176 Mearth, Gyr=2.001e-173 Mearth, cache_bins=3731, elapsed=627.2 s
+Updated family results: real_reference_systems.txt
+KELT-9 b / O I: Mdot=1.411e-56 g/s, escaping_mass=2.106e-52 g, mean_t=1.492e+04 s, Myr=7.457e-71 Mearth, Gyr=7.457e-68 Mearth, cache_bins=3716, elapsed=681.7 s
+Updated family results: real_reference_systems.txt
+KELT-9 b / H I: Mdot=7.748e-42 g/s, escaping_mass=1.189e-37 g, mean_t=1.535e+04 s, Myr=4.094e-56 Mearth, Gyr=4.094e-53 Mearth, cache_bins=3809, elapsed=817.9 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / Ca I: Mdot=1.464e-106 g/s, escaping_mass=9.227e-103 g, mean_t=6.304e+03 s, Myr=7.733e-121 Mearth, Gyr=7.733e-118 Mearth, cache_bins=3745, elapsed=830.9 s
+Updated family results: real_reference_systems.txt
+WASP-174 b / Na I: Mdot=2.186e+06 g/s, escaping_mass=1.434e+10 g, mean_t=6.558e+03 s, Myr=1.155e-08 Mearth, Gyr=1.155e-05 Mearth, cache_bins=508, elapsed=918.2 s
+Updated family results: real_reference_systems.txt
+HD 56414 b / He I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3358, elapsed=1054.1 s
+Updated family results: real_reference_systems.txt
+HD 56414 b / H I: Mdot=0.000e+00 g/s, escaping_mass=0.000e+00 g, mean_t=nan s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth, cache_bins=3362, elapsed=1192.6 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / Na I: Mdot=7.226e-10 g/s, escaping_mass=2.461e-06 g, mean_t=3.406e+03 s, Myr=3.819e-24 Mearth, Gyr=3.819e-21 Mearth, cache_bins=3762, elapsed=1196.4 s
+Updated family results: real_reference_systems.txt
+HD 209458 b / Na I: Mdot=4.532e+03 g/s, escaping_mass=5.527e+07 g, mean_t=1.219e+04 s, Myr=2.395e-11 Mearth, Gyr=2.395e-08 Mearth, cache_bins=1922, elapsed=1240.7 s
+Updated family results: real_reference_systems.txt
+55 Cnc e / K I: Mdot=7.041e+00 g/s, escaping_mass=1.875e+04 g, mean_t=2.663e+03 s, Myr=3.720e-14 Mearth, Gyr=3.720e-11 Mearth, cache_bins=3744, elapsed=1244.8 s
+Updated family results: real_reference_systems.txt
+51 Peg b / Na I: Mdot=3.126e+03 g/s, escaping_mass=4.975e+07 g, mean_t=1.591e+04 s, Myr=1.652e-11 Mearth, Gyr=1.652e-08 Mearth, cache_bins=1476, elapsed=1250.9 s
+Updated family results: real_reference_systems.txt
+TOTAL_INCLUDED_SPECIES for real_reference_systems / GJ 1132 b: Mdot=3.786e-162 g/s, Myr=2.001e-176 Mearth, Gyr=2.001e-173 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / GJ 1214 b: Mdot=0.000e+00 g/s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / GJ 436 b: Mdot=0.000e+00 g/s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / HD 209458 b: Mdot=4.532e+03 g/s, Myr=2.395e-11 Mearth, Gyr=2.395e-08 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / 55 Cnc e: Mdot=7.041e+00 g/s, Myr=3.720e-14 Mearth, Gyr=3.720e-11 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / HD 56414 b: Mdot=0.000e+00 g/s, Myr=0.000e+00 Mearth, Gyr=0.000e+00 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / WASP-174 b: Mdot=2.186e+06 g/s, Myr=1.155e-08 Mearth, Gyr=1.155e-05 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / 51 Peg b: Mdot=3.126e+03 g/s, Myr=1.652e-11 Mearth, Gyr=1.652e-08 Mearth
+TOTAL_INCLUDED_SPECIES for real_reference_systems / KELT-9 b: Mdot=7.748e-42 g/s, Myr=4.094e-56 Mearth, Gyr=4.094e-53 Mearth
+Total elapsed time: 1320.7 s
