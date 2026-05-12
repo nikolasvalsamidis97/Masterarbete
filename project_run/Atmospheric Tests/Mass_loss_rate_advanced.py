@@ -20,7 +20,8 @@ os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 os.environ.setdefault("MPLCONFIGDIR", str(pathlib.Path(tempfile.gettempdir()) / "matplotlib_mass_loss_advanced"))
 os.environ.setdefault("XDG_CACHE_HOME", str(pathlib.Path(tempfile.gettempdir()) / "xdg_cache_mass_loss_advanced"))
 
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.append(str(PROJECT_ROOT))
 
 from project_classes.Atom import Atom
 from project_classes.BroadeningProfile import BroadeningProfile
@@ -255,7 +256,7 @@ def get_star(star_key: str) -> Star:
     if star_key not in star_cache:
         params = STAR_TEMPLATES[star_key]
         star_cache[star_key] = Star(
-            params["path"],
+            resolve_spectrum_path(params["path"]),
             params["radius"],
             params["mass"],
             vsini=params["vsini"],
@@ -814,10 +815,17 @@ def get_system_exobase_planet_key(system: AdvancedSystem) -> str:
     return system.exobase_planet_key or system.planet_key
 
 
+def resolve_spectrum_path(path: str | pathlib.Path) -> str:
+    spectrum_path = pathlib.Path(path).expanduser()
+    if spectrum_path.is_absolute():
+        return str(spectrum_path)
+    return str(PROJECT_ROOT / spectrum_path)
+
+
 def build_system_star(system: AdvancedSystem) -> Star:
     star_case = get_system_star_case(system)
     return Star(
-        star_case["path"],
+        resolve_spectrum_path(star_case["path"]),
         star_case["radius"],
         star_case["mass"],
         vsini=star_case["vsini"],
