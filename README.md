@@ -2,6 +2,8 @@
 
 This repository contains the numerical framework and project scripts used for the master thesis **Radiation-pressure-driven loss of planetary atmospheres**. The code computes photon pressure, beta-coefficients, atmospheric beta=1 diagnostics, and idealized radiation-pressure-driven mass-loss estimates for atoms and molecules in stellar and planetary environments.
 
+The thesis document is available on Overleaf: <https://www.overleaf.com/read/qwvcvxjvnrgy#4982f7>
+
 The repository is organized so that the reusable physical model lives in `project_classes/`, shared helpers live in `project_utils/`, reusable input definitions live in `Templates/`, and thesis-specific calculations live in `Projects/`.
 
 ## Repository Layout
@@ -38,6 +40,34 @@ Every project folder has its own `README.md` with the relevant script names and 
 `Templates/TS/Spectral_type/` contains the BT-NextGen spectral type grid used by the stellar templates. These spectra are tracked in Git so that a fresh clone can run the available template-based scripts without a separate stellar-spectrum download.
 
 `Templates/TS/Beta pic Spectra/` contains the beta Pictoris spectra used for the Fernandez et al. comparison.
+
+## Python Dependencies
+
+Starting from a clean Python installation, the thesis code uses the following external packages:
+
+| Package | Used for |
+| --- | --- |
+| `numpy` | Arrays, numerical grids, interpolation, and vectorized calculations. |
+| `pandas` | Tables, CSV/TXT processing, and generated result summaries. |
+| `scipy` | Numerical integration and special functions used in line profiles. |
+| `matplotlib` | Plot generation. |
+| `astropy` | Units, constants, tables, spectra I/O, and astronomy utilities. |
+| `astroquery` | NIST atomic line-data queries. |
+| `synphot` | Synthetic photometry and stellar-spectrum scaling. |
+| `requests` | HTTP requests for SVO filter data and related remote resources. |
+| `periodictable` | Atomic masses. |
+| `molmass` | Molecular masses. |
+| `radis` | ExoMol/HITRAN molecular line-data access. |
+| `tables` | HDF5/PyTables support for cached molecular data. |
+| `pytictoc` | Timing utility used by one validation/stress-test script. |
+
+Install all external dependencies with:
+
+```bash
+python -m pip install numpy pandas scipy matplotlib astropy astroquery synphot requests periodictable molmass radis tables pytictoc
+```
+
+`pip` automatically skips reinstalling packages that are already available in the active Python environment.
 
 ## Running Scripts
 
