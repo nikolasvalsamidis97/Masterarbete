@@ -1,7 +1,7 @@
 from project_classes.BroadeningProfile import BroadeningProfile
 from project_classes.BroadeningProfileMolecule import BroadeningProfileMolecule
 from project_classes.Star import Star
-from project_func.errors import _not_quantity
+from project_utils.errors import _not_quantity
 from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt

@@ -2,7 +2,7 @@ import numpy as np
 import periodictable as pt
 from astropy import units as u
 from astropy import constants as const
-from project_func.errors import _not_quantity
+from project_utils.errors import _not_quantity
 from astroquery.nist import Nist
 import pandas as pd
 

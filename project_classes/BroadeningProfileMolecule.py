@@ -1,5 +1,5 @@
 from project_classes.Molecule import Molecule
-from project_func.errors import _not_quantity
+from project_utils.errors import _not_quantity
 from astropy import constants as const
 from astropy import units as u
 import numpy as np
@@ -10,6 +10,7 @@ from radis.io.hitran import fetch_hitran
 import pathlib
 import hashlib
 import json
+from project_utils.paths import weight_cache_dir
 
 
 class BroadeningProfileMolecule:
@@ -248,7 +249,7 @@ class BroadeningProfileMolecule:
                     root = root / parts[0]
             return root / "weight_cache"
 
-        return pathlib.Path("Tables") / "weight_cache" / self.molecule.species
+        return weight_cache_dir() / self.molecule.species
 
     def _format_cache_temperature_label(self, Temp_atm):
         T_val = Temp_atm.to_value(u.K) if isinstance(Temp_atm, u.Quantity) else _not_quantity("Temp_atm")

@@ -1,5 +1,5 @@
 import astropy.units as u
-from project_func.errors import _not_quantity
+from project_utils.errors import _not_quantity
 from molmass import Formula
 from radis.api.exomolapi import MdbExomol
 import numpy as np

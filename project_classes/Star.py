@@ -1,4 +1,4 @@
-from project_func.errors import _not_quantity
+from project_utils.errors import _not_quantity
 import numpy as np
 from astropy import units as u
 from astropy import constants as const
