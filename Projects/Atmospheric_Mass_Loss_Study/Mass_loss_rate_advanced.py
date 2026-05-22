@@ -110,7 +110,7 @@ DT_LENGTH_FLOOR_CM = 1.0e5
 MAX_STEP_LENGTH_FRACTION = 0.05
 MAX_STEPS = 8000
 MAX_TIME_S = 5.0e7
-EXOBASE_MODEL_ID = "dynamic_collision_free_v1"
+EXOBASE_MODEL_ID = "dynamic_collision_free_v2"
 
 WAVEMIN = 150 * u.AA
 WAVEMAX = 50000 * u.AA
