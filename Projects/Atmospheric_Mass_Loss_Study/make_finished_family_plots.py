@@ -91,6 +91,10 @@ SURFACE_GRAVITY_SWEEP_PLOT_VALUES_M_S2 = tuple(float(value) for value in range(1
 
 def read_total_rows(family_name: str) -> list[dict[str, str]]:
     path = RESULTS_DIR / FAMILY_FILES[family_name]
+    if not path.exists():
+        print(f"Skipping {family_name}: missing {path}")
+        return []
+
     with path.open() as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     return [row for row in rows if row["species"] == "TOTAL_INCLUDED_SPECIES"]
@@ -587,6 +591,7 @@ def plot_surface_gravity_sweep(axis, rows: list[dict[str, str]]) -> None:
 
 
 def save_family_figure(filename: str, plotter, rows: list[dict[str, str]], figsize=(8.5, 5.8)) -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     figure, axis = plt.subplots(figsize=figsize)
     plotter(axis, rows)
     figure.tight_layout()
@@ -606,13 +611,26 @@ def main() -> None:
         allowed_values=SURFACE_GRAVITY_SWEEP_PLOT_VALUES_M_S2,
     )
 
-    save_family_figure("solar_system_analogues_total_mass_loss.pdf", plot_solar_system_fixed, solar_rows)
-    save_family_figure("distance_sweep_total_mass_loss.pdf", plot_distance_sweep, distance_rows)
-    save_family_figure("real_reference_systems_total_mass_loss.pdf", plot_real_reference_systems, real_rows)
-    save_family_figure("p0_sweep_total_mass_loss.pdf", plot_p0_sweep, p0_rows)
-    save_family_figure("mu_sweep_total_mass_loss.pdf", plot_mu_sweep, mu_rows)
-    save_family_figure("surface_gravity_sweep_total_mass_loss.pdf", plot_surface_gravity_sweep, gravity_rows)
+    plot_jobs = [
+        ("solar_system_analogues_total_mass_loss.pdf", plot_solar_system_fixed, solar_rows),
+        ("distance_sweep_total_mass_loss.pdf", plot_distance_sweep, distance_rows),
+        ("real_reference_systems_total_mass_loss.pdf", plot_real_reference_systems, real_rows),
+        ("p0_sweep_total_mass_loss.pdf", plot_p0_sweep, p0_rows),
+        ("mu_sweep_total_mass_loss.pdf", plot_mu_sweep, mu_rows),
+        ("surface_gravity_sweep_total_mass_loss.pdf", plot_surface_gravity_sweep, gravity_rows),
+    ]
 
+    for filename, plotter, rows in plot_jobs:
+        if not rows:
+            print(f"Skipping {filename}: no total rows available.")
+            continue
+        save_family_figure(filename, plotter, rows)
+
+    if not all(rows for _filename, _plotter, rows in plot_jobs):
+        print("Skipping finished_families_total_mass_loss_summary.pdf: not all family result files are available.")
+        return
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     figure, axes = plt.subplots(2, 3, figsize=(18, 11))
     plot_solar_system_fixed(axes[0, 0], solar_rows)
     plot_distance_sweep(axes[0, 1], distance_rows)
