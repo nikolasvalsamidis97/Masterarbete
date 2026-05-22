@@ -22,12 +22,22 @@ Templates/TS/models_*/
 # Generated thesis outputs
 Projects/**/results/
 
+# Required input table for the Rp-exobase study. Keep this one result-derived
+# table tracked so fresh clones can run the available project scripts.
+!Projects/Atmospheric_Exobase_Calculation/results/
+Projects/Atmospheric_Exobase_Calculation/results/*
+!Projects/Atmospheric_Exobase_Calculation/results/Tables/
+Projects/Atmospheric_Exobase_Calculation/results/Tables/*
+!Projects/Atmospheric_Exobase_Calculation/results/Tables/Exobase/
+Projects/Atmospheric_Exobase_Calculation/results/Tables/Exobase/*
+!Projects/Atmospheric_Exobase_Calculation/results/Tables/Exobase/exobase_table_planets.csv
+
 # Local figures that should not be versioned
 Illustrations/
 
 # Removed legacy layout. Keep these ignored if an old script recreates them.
-Plots/
-Tables/
-project_run/
-project_func/
-trash/
+/Plots/
+/Tables/
+/project_run/
+/project_func/
+/trash/

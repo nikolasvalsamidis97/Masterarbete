@@ -7,7 +7,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.patches import Rectangle
 from matplotlib.ticker import FuncFormatter
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
@@ -275,6 +275,23 @@ def discrete_distance_value_map(values: list[float]) -> tuple[dict[float, tuple[
     return value_to_color, cmap
 
 
+def format_tex_integer(value: float) -> str:
+    return f"{int(round(float(value))):,}".replace(",", r"\,")
+
+
+def title_teff_label(summary_rows: list[dict[str, object]]) -> str:
+    teff_values = sorted(
+        {
+            float(row["threshold_teff_K"])
+            for row in summary_rows
+            if np.isfinite(float(row["threshold_teff_K"]))
+        }
+    )
+    if len(teff_values) == 1:
+        return rf"$T_{{\rm eff}}={format_tex_integer(teff_values[0])}\ \mathrm{{K}}$"
+    return r"$T_{\rm eff}$ grid"
+
+
 def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, output_path: pathlib.Path) -> bool:
     if not summary_rows:
         if output_path.exists():
@@ -296,9 +313,7 @@ def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, ou
         print(f"No finite threshold values available; removed stale plot at {output_path}")
         return False
 
-    teff_values = [float(row["threshold_teff_K"]) for row in summary_rows if np.isfinite(float(row["threshold_teff_K"]))]
     distance_values = [float(row["threshold_distance_AU"]) for row in summary_rows if np.isfinite(float(row["threshold_distance_AU"]))]
-    teff_to_color, teff_cmap = discrete_value_map(teff_values, TEMP_CMAP_NAME)
     distance_to_color, distance_cmap = discrete_distance_value_map(distance_values)
 
     fig_width = max(12, 1.1 * len(planet_order) + 5)
@@ -330,18 +345,10 @@ def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, ou
                 continue
 
             ax.add_patch(
-                Polygon(
-                    [(x0, y0), (x0, y0 + 1), (x0 + 1, y0 + 1)],
-                    closed=True,
-                    facecolor=teff_to_color[teff_value],
-                    edgecolor="white",
-                    linewidth=0.8,
-                )
-            )
-            ax.add_patch(
-                Polygon(
-                    [(x0, y0), (x0 + 1, y0), (x0 + 1, y0 + 1)],
-                    closed=True,
+                Rectangle(
+                    (x0, y0),
+                    1.0,
+                    1.0,
                     facecolor=distance_to_color[distance_value],
                     edgecolor="white",
                     linewidth=0.8,
@@ -366,23 +373,11 @@ def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, ou
 
     fig.subplots_adjust(right=0.84)
 
-    if teff_values:
-        teff_norm = colors.BoundaryNorm(np.arange(len(teff_to_color) + 1), teff_cmap.N)
-        sm_teff = plt.cm.ScalarMappable(norm=teff_norm, cmap=teff_cmap)
-        sm_teff.set_array([])
-        cax_teff = fig.add_axes([0.855, 0.58, 0.022, 0.20])
-        cbar_teff = fig.colorbar(sm_teff, cax=cax_teff)
-        ordered_teff = sorted(teff_to_color)
-        cbar_teff.set_ticks(np.arange(len(ordered_teff)) + 0.5)
-        cbar_teff.set_ticklabels([f"{value / 1e4:g}" for value in ordered_teff])
-        cbar_teff.ax.tick_params(labelsize=CMAP_TICK_SIZE)
-        cbar_teff.set_label(r"$T_{\rm eff}$ [$10^4$ K]", fontsize=LABEL_SIZE)
-
     if distance_values:
         distance_norm = colors.BoundaryNorm(np.arange(len(distance_to_color) + 1), distance_cmap.N)
         sm_distance = plt.cm.ScalarMappable(norm=distance_norm, cmap=distance_cmap)
         sm_distance.set_array([])
-        cax_distance = fig.add_axes([0.855, 0.28, 0.022, 0.20])
+        cax_distance = fig.add_axes([0.855, 0.38, 0.022, 0.28])
         cbar_distance = fig.colorbar(sm_distance, cax=cax_distance)
         ordered_distance = sorted(distance_to_color)
         cbar_distance.set_ticks(np.arange(len(ordered_distance)) + 0.5)
@@ -634,11 +629,10 @@ def main():
         save_summary_csv(summary_rows, summary_csv_path)
         save_ranking_tables(summary_rows, raw_file)
 
-        title_prefix = species_title_from_rows(summary_rows)
         pdf_path = raw_file.with_name(f"{raw_file.stem}_threshold_by_planet.pdf")
         plot_written = plot_threshold_heatmap(
             summary_rows,
-            f"{title_prefix}: Threshold for below-exobase $\\beta = 1$",
+            f"Threshold for below-exobase $\\beta = 1$ at {title_teff_label(summary_rows)}",
             pdf_path,
         )
         print(f"Saved summary CSV to {summary_csv_path}")

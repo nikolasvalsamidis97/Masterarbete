@@ -26,7 +26,7 @@ from project_classes.Star import Star
 from project_utils.exobase_table_path import resolve_exobase_table_path
 from Templates.Atoms.atom_species import ATOM_SPECIES
 from Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
-from Templates.Planets.planet_templates import PLANET_TEMPLATES, get_planet_template
+from Templates.Planets.planet_templates_updated import PLANET_TEMPLATES, get_planet_template
 from Templates.Stars.stars_templates import STAR_TEMPLATES, infer_teff_from_star_template
 
 
@@ -36,7 +36,7 @@ SKIP_ATOMS = False
 SKIP_MOLECULES = True
 RUN_ALL_ABSORBERS_IF_UNSPECIFIED = True
 START_FRESH_RUN = True
-FRESH_RUN_LABEL = "fixed_teff_8000_atoms_all_distances"
+FRESH_RUN_LABEL = "fixed_teff_10000_atoms_all_distances"
 USE_COMPOSITION_MIXING_RATIOS = False
 
 
@@ -59,7 +59,7 @@ SELECTED_PLANET_SPECIES = {
 
 DISTANCE_LIST = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 100.0] * u.AU
 SELECTED_STARS = None
-TARGET_TEFFS_K = [8000]
+TARGET_TEFFS_K = [10000]
 
 # Fast Rp-exobase mode: evaluate only at the exobase radius.
 EVALUATION_MODE = "rexo_only"
@@ -69,11 +69,12 @@ ATOMIC_COLUMN_CHUNK_SIZE = 8
 # Set to "case" to compute independent planet/species/star cases in full parallel.
 PARALLEL_TASK_MODE = "case"
 STAR_MAX_WORKERS = 2
+DEFAULT_CASE_MAX_WORKERS = 64
 DEFAULT_CASE_WORKER_MEMORY_GB = 2.0
 CASE_MAX_WORKERS_REQUESTED = int(
     os.environ.get(
         "RP_EXO_MAX_WORKERS",
-        os.environ.get("SLURM_CPUS_PER_TASK", str(max(1, (os.cpu_count() or 2) - 1))),
+        os.environ.get("SLURM_CPUS_PER_TASK", str(DEFAULT_CASE_MAX_WORKERS)),
     )
 )
 CASE_WORKER_MEMORY_GB = float(
