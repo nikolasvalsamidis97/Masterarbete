@@ -7,6 +7,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import freeze_support
 
 import astropy.units as u
@@ -68,11 +69,15 @@ ATOMIC_COLUMN_CHUNK_SIZE = 8
 # Set to "case" to compute independent planet/species/star cases in full parallel.
 PARALLEL_TASK_MODE = "case"
 STAR_MAX_WORKERS = 2
-CASE_MAX_WORKERS = int(
+DEFAULT_CASE_WORKER_MEMORY_GB = 2.0
+CASE_MAX_WORKERS_REQUESTED = int(
     os.environ.get(
         "RP_EXO_MAX_WORKERS",
         os.environ.get("SLURM_CPUS_PER_TASK", str(max(1, (os.cpu_count() or 2) - 1))),
     )
+)
+CASE_WORKER_MEMORY_GB = float(
+    os.environ.get("RP_EXO_WORKER_MEMORY_GB", str(DEFAULT_CASE_WORKER_MEMORY_GB))
 )
 # If True, evaluate distances from smallest to largest and stop after the
 # first fail for a given (planet, species, star), marking all larger
@@ -717,6 +722,176 @@ def compute_star_rows_worker(args):
     return star_key, rows
 
 
+def detect_available_memory_gb():
+    meminfo_path = pathlib.Path("/proc/meminfo")
+    if meminfo_path.exists():
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return float(parts[1]) / (1024.0 * 1024.0)
+
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        available_pages = os.sysconf("SC_AVPHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+    return (float(page_size) * float(available_pages)) / (1024.0 ** 3)
+
+
+def configured_case_worker_count():
+    requested_workers = max(1, CASE_MAX_WORKERS_REQUESTED)
+    if os.environ.get("RP_EXO_DISABLE_MEMORY_CAP", "").lower() in {"1", "true", "yes"}:
+        return requested_workers, None
+
+    available_memory_gb = detect_available_memory_gb()
+    if available_memory_gb is None or CASE_WORKER_MEMORY_GB <= 0:
+        return requested_workers, available_memory_gb
+
+    memory_limited_workers = max(1, int(available_memory_gb // CASE_WORKER_MEMORY_GB))
+    return min(requested_workers, memory_limited_workers), available_memory_gb
+
+
+def case_task_has_missing_distance(task, completed_keys):
+    selected_planet, selected_species, star_key, distance_values_au, *_ = task
+    return any(
+        checkpoint_key(selected_planet, selected_species, star_key, dist_value_au)
+        not in completed_keys
+        for dist_value_au in distance_values_au
+    )
+
+
+def remaining_case_tasks(tasks, completed_keys):
+    return [
+        task for task in tasks
+        if case_task_has_missing_distance(task, completed_keys)
+    ]
+
+
+def integrate_case_rows(
+    new_rows,
+    completed_keys,
+    row_lookup,
+    all_rows,
+    star_keys_sorted,
+    distance_values_au,
+):
+    filtered_rows = []
+    for row in new_rows:
+        row_key = checkpoint_key(
+            row["planet"],
+            row["species"],
+            row["star"],
+            float(row["distance_AU"]),
+        )
+        if row_key in completed_keys:
+            continue
+        filtered_rows.append(row)
+        completed_keys.add(row_key)
+        row_lookup[row_key] = row
+
+    if filtered_rows:
+        all_rows.extend(filtered_rows)
+        persist_progress(all_rows, star_keys_sorted, distance_values_au)
+    return len(filtered_rows)
+
+
+def run_case_task_batch_once(
+    tasks,
+    max_workers,
+    completed_keys,
+    row_lookup,
+    all_rows,
+    star_keys_sorted,
+    distance_values_au,
+    progress_label,
+):
+    max_workers = max(1, min(max_workers, len(tasks)))
+    run_start_time = time.perf_counter()
+    submitted_count = 0
+    completed_count = 0
+    task_iter = iter(tasks)
+    futures = {}
+
+    def submit_next(executor):
+        nonlocal submitted_count
+        for task in task_iter:
+            if not case_task_has_missing_distance(task, completed_keys):
+                continue
+            futures[executor.submit(compute_star_rows_worker, task)] = task
+            submitted_count += 1
+            return True
+        return False
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for _ in range(max_workers):
+            if not submit_next(executor):
+                break
+
+        while futures:
+            for future in as_completed(list(futures)):
+                futures.pop(future)
+                _star_key, new_rows = future.result()
+                completed_count += 1
+                integrate_case_rows(
+                    new_rows,
+                    completed_keys,
+                    row_lookup,
+                    all_rows,
+                    star_keys_sorted,
+                    distance_values_au,
+                )
+
+                if completed_count % 10 == 0 or completed_count == len(tasks):
+                    elapsed_s = time.perf_counter() - run_start_time
+                    print(
+                        f"{progress_label}: completed {completed_count}/{len(tasks)} "
+                        f"case tasks in {elapsed_s:.1f} s"
+                    )
+
+                submit_next(executor)
+                break
+
+
+def run_case_task_batch_with_retries(
+    tasks,
+    max_workers,
+    completed_keys,
+    row_lookup,
+    all_rows,
+    star_keys_sorted,
+    distance_values_au,
+    progress_label,
+):
+    remaining_tasks = remaining_case_tasks(tasks, completed_keys)
+    workers = min(max(1, max_workers), len(remaining_tasks)) if remaining_tasks else 0
+
+    while remaining_tasks:
+        try:
+            run_case_task_batch_once(
+                remaining_tasks,
+                workers,
+                completed_keys,
+                row_lookup,
+                all_rows,
+                star_keys_sorted,
+                distance_values_au,
+                progress_label,
+            )
+            return
+        except (OSError, BrokenProcessPool) as exc:
+            if workers <= 1:
+                raise
+            next_workers = max(1, workers // 2)
+            print(
+                f"{progress_label}: worker pool failed with {workers} workers "
+                f"({exc}). Retrying with {next_workers} workers."
+            )
+            gc.collect()
+            remaining_tasks = remaining_case_tasks(remaining_tasks, completed_keys)
+            workers = min(next_workers, len(remaining_tasks))
+
+
 def requested_species_for_planet(selected_planet, requested_species):
     planet_case = get_planet_template(selected_planet)
     if requested_species is None:
@@ -908,8 +1083,9 @@ def main():
     }
 
     if PARALLEL_TASK_MODE == "case":
-        tasks = []
+        planet_task_groups = []
         for selected_planet, requested_species in SELECTED_PLANET_SPECIES.items():
+            planet_tasks = []
             _, resolved_species = requested_species_for_planet(selected_planet, requested_species)
             for selected_species in resolved_species:
                 for star_key in star_keys_sorted:
@@ -920,7 +1096,7 @@ def main():
                     )
                     if not has_missing_distance:
                         continue
-                    tasks.append(
+                    planet_tasks.append(
                         (
                             selected_planet,
                             selected_species,
@@ -930,38 +1106,38 @@ def main():
                             run_signature,
                         )
                     )
+            if planet_tasks:
+                planet_task_groups.append((selected_planet, planet_tasks))
 
+        total_tasks = sum(len(tasks) for _planet, tasks in planet_task_groups)
+        case_max_workers, available_memory_gb = configured_case_worker_count()
+        memory_note = ""
+        if available_memory_gb is not None:
+            memory_note = (
+                f", available_memory={available_memory_gb:.1f} GB, "
+                f"worker_memory_budget={CASE_WORKER_MEMORY_GB:.1f} GB"
+            )
         print(
-            f"Running full case parallel mode with {len(tasks)} missing "
-            f"planet/species/star tasks and max_workers={CASE_MAX_WORKERS}."
+            f"Running planet-batched case parallel mode with {total_tasks} missing "
+            f"planet/species/star tasks, requested_workers={CASE_MAX_WORKERS_REQUESTED}, "
+            f"max_workers={case_max_workers}{memory_note}."
         )
-        if tasks:
-            run_start_time = time.perf_counter()
-            with ProcessPoolExecutor(max_workers=min(CASE_MAX_WORKERS, len(tasks))) as executor:
-                futures = [executor.submit(compute_star_rows_worker, task) for task in tasks]
-                for done_count, future in enumerate(as_completed(futures), start=1):
-                    _star_key, new_rows = future.result()
-                    filtered_rows = []
-                    for row in new_rows:
-                        row_key = checkpoint_key(
-                            row["planet"],
-                            row["species"],
-                            row["star"],
-                            float(row["distance_AU"]),
-                        )
-                        if row_key in completed_keys:
-                            continue
-                        filtered_rows.append(row)
-                        completed_keys.add(row_key)
-                        row_lookup[row_key] = row
-
-                    if filtered_rows:
-                        all_rows.extend(filtered_rows)
-                        persist_progress(all_rows, star_keys_sorted, distance_values_au)
-
-                    if done_count % 10 == 0 or done_count == len(futures):
-                        elapsed_s = time.perf_counter() - run_start_time
-                        print(f"Completed {done_count}/{len(futures)} case tasks in {elapsed_s:.1f} s")
+        for planet_index, (selected_planet, planet_tasks) in enumerate(planet_task_groups, start=1):
+            print(
+                f"Planet {planet_index}/{len(planet_task_groups)}: {selected_planet} "
+                f"with {len(planet_tasks)} missing case tasks."
+            )
+            run_case_task_batch_with_retries(
+                planet_tasks,
+                case_max_workers,
+                completed_keys,
+                row_lookup,
+                all_rows,
+                star_keys_sorted,
+                distance_values_au,
+                progress_label=f"{selected_planet}",
+            )
+            persist_progress(all_rows, star_keys_sorted, distance_values_au)
 
         persist_progress(all_rows, star_keys_sorted, distance_values_au)
         print(f"Saved raw data to {RAW_OUTPUT_PATH}")
