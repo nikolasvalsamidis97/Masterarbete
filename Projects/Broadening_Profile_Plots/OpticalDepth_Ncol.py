@@ -7,6 +7,7 @@ from project_classes.Star import Star
 from astropy import units as u
 from astropy import constants as const
 from matplotlib import pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 
 
@@ -21,7 +22,6 @@ Na = Atom('Na I', 5800 * u.AA, 6000*u.AA)
 
 # 2. Hämtar breddninsprofiler med molekylen breddningsparameter vlim och Npts samt typ av profil
 bval = [0.1, 0.3] * u.km/u.s
-colors = ["black", "black"]
 vlim = 2 * u.km/u.s
 Npts = 1000
 
@@ -32,40 +32,46 @@ domain1 = 'velocity'
 domain2 = 'wavelength'
 
 Ncols = np.logspace(8, 16, 10) * u.cm**-2
+column_colors = plt.get_cmap("tab10").colors
 
-def normIntensity(N):
-  return np.exp(-(N*sig))
+def normIntensity(N, sig):
+  return np.exp(-(N*sig).to_value(u.dimensionless_unscaled))
 
-from matplotlib.ticker import MaxNLocator
-
-fig, axes = plt.subplots(1, len(bval), figsize=(10, 4), sharey=True)
+fig, axes = plt.subplots(1, len(bval), figsize=(10, 4), sharey=True, constrained_layout=True)
 
 # Common title for the whole figure
-fig.suptitle(r"Voigt-broadened normalized intensity", fontsize=SUPTITLE_SIZE)
+fig.suptitle("Line profiles for various column densities", fontsize=SUPTITLE_SIZE)
 
-for ax, b, color in zip(axes, bval, colors):
-    alpha = 1
+for ax, b in zip(axes, bval):
     Na_broadening = BroadeningProfile(Na, b, Npts, 'Voigt')
     sig = Na_broadening.sigmaArray_sym[line, :]
-    v   = Na_broadening.v_grid_sym[0, :]
+    v = Na_broadening.v_grid_sym[0, :].to_value(u.km / u.s)
 
-    for N in Ncols:
-        alpha -= 0.09
-        ax.plot(v, normIntensity(N), linewidth=0.7, color=color, alpha=alpha)
+    for i, N in enumerate(Ncols):
+        ax.plot(
+            v,
+            normIntensity(N, sig),
+            linewidth=1.5,
+            color=column_colors[i % len(column_colors)],
+            alpha=0.95,
+        )
 
     # Subtitle for each panel: broadening parameter
-    ax.set_title(rf"$\Delta v_D = {b}$", fontsize=PANEL_TITLE_SIZE)
-    ax.set_xlabel(rf"Relative velocity {bval.unit}", fontsize=AXIS_LABEL_SIZE)
+    ax.set_title(
+        rf"$\Delta \mathrm{{v}}_\mathrm{{D}} = {b.to_value(u.km / u.s):.1f}\,\mathrm{{km\,s^{{-1}}}}$",
+        fontsize=PANEL_TITLE_SIZE,
+    )
+    ax.set_xlabel(r"Relative velocity [$\mathrm{km\,s^{-1}}$]", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
 
     # Fewer x-axis ticks
     ax.xaxis.set_major_locator(MaxNLocator(5))
 
 # Shared y-label on the left
-axes[0].set_ylabel(r"Normalized intensity $I = e^{-(N \, \sigma_v)}$", fontsize=AXIS_LABEL_SIZE)
+axes[0].set_ylabel("Relative intensity", fontsize=AXIS_LABEL_SIZE)
 
-# Let matplotlib handle spacing
-fig.tight_layout()
+OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+fig.savefig(OUTPUT_PATH, bbox_inches="tight")
 
-fig.savefig(OUTPUT_PATH)
-plt.show()
+if plt.get_backend().lower() != "agg":
+    plt.show()

@@ -225,7 +225,7 @@ def plot_solar_system_fixed(axis, rows: list[dict[str, str]]) -> None:
                 zorder=5,
             )
 
-    styled_axes(axis, "Solar System Analogues", "", "Mass-loss rate [log(g s$^{-1}$)]")
+    styled_axes(axis, "Solar System Analogues", "", r"Mass-loss rate [$\log_{10}(\mathrm{g\,s^{-1}})$]")
     axis.grid(True, which="major", axis="y", alpha=0.25)
     axis.grid(True, which="minor", axis="y", alpha=0.12)
     axis.set_xticks(positions)
@@ -350,7 +350,7 @@ def plot_real_reference_systems(axis, rows: list[dict[str, str]]) -> None:
                 zorder=5,
             )
 
-    styled_axes(axis, "Real Reference Systems", "", "Mass-loss rate [log(g s$^{-1}$)]")
+    styled_axes(axis, "Real Reference Systems", "", r"Mass-loss rate [$\log_{10}(\mathrm{g\,s^{-1}})$]")
     axis.grid(True, which="major", axis="y", alpha=0.25)
     axis.grid(True, which="minor", axis="y", alpha=0.12)
     axis.set_xticks(positions)
@@ -482,7 +482,7 @@ def plot_positive_sweep(
 
     ylabel = "Mass-loss rate [g s$^{-1}$]"
     if yscale == "log":
-        ylabel = "Mass-loss rate [log(g s$^{-1}$)]"
+        ylabel = r"Mass-loss rate [$\log_{10}(\mathrm{g\,s^{-1}})$]"
     styled_axes(axis, title, xlabel, ylabel)
     if positive:
         axis.grid(True, which="major", axis="both", alpha=0.25)

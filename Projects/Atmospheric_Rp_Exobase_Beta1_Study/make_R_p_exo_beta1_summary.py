@@ -49,6 +49,13 @@ DISTANCE_DISCRETE_COLORS = [
     "#252525",
     "#08519c",
 ]
+PERIODIC_ELEMENTS_THROUGH_FE = [
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
+    "Sc", "Ti", "V", "Cr", "Mn", "Fe",
+]
+ELEMENT_ORDER = {element: index for index, element in enumerate(PERIODIC_ELEMENTS_THROUGH_FE)}
+IONIZATION_STAGE_ORDER = {"I": 0, "II": 1, "III": 2, "IV": 3}
 
 
 def pretty_planet_name(name: str) -> str:
@@ -81,9 +88,13 @@ def species_sort_key(species: str) -> tuple:
     parts = str(species).split()
     if len(parts) == 2:
         element, stage = parts
-        stage_order = {"I": 0, "II": 1, "III": 2, "IV": 3}
-        if stage in stage_order:
-            return (0, element, stage_order[stage])
+        if stage in IONIZATION_STAGE_ORDER:
+            return (
+                0,
+                IONIZATION_STAGE_ORDER[stage],
+                ELEMENT_ORDER.get(element, len(ELEMENT_ORDER)),
+                str(species),
+            )
     return (1, pretty_species_label(species))
 
 

@@ -163,6 +163,10 @@ def format_plain_number(value: float) -> str:
     return text
 
 
+def format_nearest_ten(value: float) -> str:
+    return str(int(round(float(value) / 10.0) * 10))
+
+
 def format_mu(value: float) -> str:
     return f"{float(value):.2f}"
 
@@ -288,7 +292,7 @@ def build_table_tex() -> str:
         r"\setlength{\tabcolsep}{4pt}",
         r"\renewcommand{\arraystretch}{1.0}",
         r"\begin{longtable}{llcccccccccccp{" + COMPOSITION_COL_WIDTH + r"}c}",
-        r"\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations. The final column gives literature sources for the stellar and planetary parameters and for the atmospheric-composition basis; $\epsilon$, $\mu$, $P_0$, and composition are adopted model quantities.}\label{tab:real_mass_loss_reference_systems} \\",
+        r"\caption{Real reference systems adopted in the mass-loss study. The table lists the adopted stellar and planet parameters together with the atmospheric composition used in the calculations.}\label{tab:real_mass_loss_reference_systems} \\",
         r"\toprule",
         r"Planet & Type & $T_{\rm eff}$ [K] & $R_\star$ & $M_\star$ & $v\sin i$ & $\epsilon$ & $R_{\rm p}$ & $M_{\rm p}$ & $a$ [AU] & $T$ [K] & $\mu$ & $P_0$ [bar] & Composition & Sources \\",
         r"\midrule",
@@ -328,7 +332,7 @@ def build_table_tex() -> str:
                     [
                         latex_escape(name).replace(" ", "~"),
                         format_planet_type(system_def),
-                        format_plain_number(float(star["teff_K"])),
+                        format_nearest_ten(float(star["teff_K"])),
                         format_plain_number(star["radius"].to_value(const.R_sun)) + r" $R_\odot$",
                         format_plain_number(star["mass"].to_value(const.M_sun)) + r" $M_\odot$",
                         format_plain_number(star["vsini"].to_value(star["vsini"].unit)),

@@ -95,6 +95,10 @@ def pretty_species_name(species: str) -> str:
     return charge_map.get(stage, str(species))
 
 
+def broadening_label(b_value, vsini_value: float) -> str:
+    b_display = 0.0 if b_value <= B_NARROW else b_value.to_value(u.km / u.s)
+    return rf"$b = {b_display:.0f}$ km/s, $v \sin i = {vsini_value:.0f}$ km/s"
+
 
 def compute_beta_curve(species: str, star_key: str, b_value, rotation_on: bool):
     star = get_star(star_key)
@@ -204,13 +208,14 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
     vsini_value = star_ref.vsini.to_value(u.km / u.s)
+    vsini_off = 0.0
     if ncol_none.size > 0:
         ax.plot(
             ncol_none,
             beta_none,
             linewidth=LINEWIDTH,
             linestyle="-",
-            label="No broadening",
+            label=broadening_label(B_NARROW, vsini_off),
         )
     if ncol_line.size > 0:
         ax.plot(
@@ -218,7 +223,7 @@ def main() -> None:
             beta_line,
             linewidth=LINEWIDTH,
             linestyle="--",
-            label=rf"$b = {B_LINE.to_value(u.km/u.s):.0f}$ km/s",
+            label=broadening_label(B_LINE, vsini_off),
         )
     if ncol_rot.size > 0:
         ax.plot(
@@ -226,7 +231,7 @@ def main() -> None:
             beta_rot,
             linewidth=LINEWIDTH,
             linestyle=":",
-            label=rf"$v \sin i = {vsini_value:.0f}$ km/s",
+            label=broadening_label(B_NARROW, vsini_value),
         )
     if ncol_both.size > 0:
         ax.plot(
@@ -234,9 +239,9 @@ def main() -> None:
             beta_both,
             linewidth=LINEWIDTH,
             linestyle="-.",
-            label=rf"$b = {B_LINE.to_value(u.km/u.s):.0f}$ km/s + $v \sin i = {vsini_value:.0f}$ km/s",
+            label=broadening_label(B_LINE, vsini_value),
         )
-    ax.axhline(1.0, linestyle=":", linewidth=1.2, color="0.4", label=r"$\beta = 1$")
+    ax.axhline(1.0, linestyle="--", linewidth=1.2, color="black", label=r"$\beta = 1$")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -246,8 +251,8 @@ def main() -> None:
     ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.set_xlabel(r"$\log\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$\log(\beta)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(r"$\log_{10}\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"$\log_{10}(\beta)$", fontsize=AXIS_LABEL_SIZE)
     ax.set_title(
         rf"$\beta$ vs column density | {pretty_species_name(SPECIES)} | $T_{{\rm eff}}={teff_star.to_value(u.K):.0f}$ K",
         fontsize=TITLE_SIZE,
@@ -255,7 +260,7 @@ def main() -> None:
     ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_SIZE)
     ax.tick_params(axis="both", which="minor", labelsize=TICK_LABEL_SIZE - 1)
     ax.grid(True, which="major", alpha=0.35)
-    ax.legend(loc="lower left", framealpha=0.3, fontsize=LEGEND_SIZE)
+    ax.legend(loc="upper right", framealpha=0.3, fontsize=LEGEND_SIZE)
 
     x_arrays = [arr for arr in (ncol_none, ncol_line, ncol_rot, ncol_both) if arr.size > 0]
     y_arrays = [arr for arr in (beta_none, beta_line, beta_rot, beta_both) if arr.size > 0]
@@ -274,7 +279,7 @@ def main() -> None:
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved figure to {output_path}")
 
-    if SHOW_FIGURE:
+    if SHOW_FIGURE and plt.get_backend().lower() != "agg":
         plt.show()
     else:
         plt.close(fig)

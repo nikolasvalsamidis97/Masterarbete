@@ -77,6 +77,13 @@ def log10_exponent_label(value: float, _position: float) -> str:
     return f"{int(rounded)}"
 
 
+def thin_space_integer(value: float) -> str:
+    rounded = int(round(value))
+    if abs(rounded) >= 10000:
+        return f"{rounded:,}".replace(",", r"\,")
+    return f"{rounded}"
+
+
 
 def parse_series_values(value: Any) -> List[float]:
     if isinstance(value, (int, float)):
@@ -186,7 +193,7 @@ def main() -> None:
                 y_plot,
                 linewidth=LINEWIDTH,
                 color=TEMP_COLORS.get(temp_key, None),
-                label=rf"$T={temp_value:.0f}$ K",
+                label=rf"$T_{{\rm exc}}={thin_space_integer(temp_value)}\,\mathrm{{K}}$",
             )
             plotted_any = True
             global_x_arrays.append(x_plot)
@@ -228,7 +235,7 @@ def main() -> None:
         ax.yaxis.set_minor_formatter(mticker.NullFormatter())
         ax.set_ylim(Y_MIN, Y_MAX)
 
-    axes[0].set_ylabel(r"$\log_{10}\beta$", fontsize=AXIS_LABEL_SIZE)
+    axes[0].set_ylabel(r"$\log_{10}(\beta)$", fontsize=AXIS_LABEL_SIZE)
     for ax in axes:
         for spine in ax.spines.values():
             spine.set_linewidth(0.8)
@@ -250,7 +257,7 @@ def main() -> None:
 
     distance_au = first_metadata.get("distance_AU", None)
     if isinstance(stellar_teff, (int, float)):
-        title = rf"$\beta$ vs column density for Fe ionization stages | $T_{{\rm eff}}={float(stellar_teff):.0f}$ K"
+        title = rf"$\beta$ vs column density for Fe ionization stages | $T_{{\rm eff}}={thin_space_integer(float(stellar_teff))}\,\mathrm{{K}}$"
     else:
         title = r"$\beta$ vs column density for Fe ionization stages"
 
@@ -263,7 +270,7 @@ def main() -> None:
             bbox_to_anchor=(0.88, 0.5),
             framealpha=0.9,
             fontsize=LEGEND_SIZE,
-            title="temperature",
+            title=r"$T_{\rm eff}$",
             title_fontsize=LEGEND_SIZE,
         )
 
@@ -275,7 +282,7 @@ def main() -> None:
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved plot to {output_path}")
 
-    if SHOW_FIGURE:
+    if SHOW_FIGURE and plt.get_backend().lower() != "agg":
         plt.show()
     else:
         plt.close(fig)

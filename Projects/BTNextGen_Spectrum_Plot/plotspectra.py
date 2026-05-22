@@ -63,7 +63,7 @@ plt.plot(star.lam_star, star.flux_star_rot, label="Model spectrum", linewidth=0.
 ax = plt.gca()
 plt.xlabel(f"Wavelength [{star.lam_star.unit.to_string('latex_inline')}]", fontsize=AXIS_LABEL_SIZE)
 plt.ylabel(rf"Flux [{star.flux_star_rot.unit.to_string('latex_inline')}]", fontsize=AXIS_LABEL_SIZE)
-plt.title("BT-NextGen (T=8000 K, log(g)=4.0, [Fe/H]=0.0)", fontsize=TITLE_SIZE)
+plt.title(r"BT-NextGen (T=8000 K, $\log_{10}(g)=4.0$, [Fe/H]=0.0)", fontsize=TITLE_SIZE)
 plt.xlim(1500, 10000)
 ax.xaxis.set_major_formatter(FuncFormatter(wavelength_tick_label))
 ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_SIZE)

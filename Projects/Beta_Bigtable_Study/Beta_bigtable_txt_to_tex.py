@@ -13,6 +13,7 @@ RAW_MOLECULES_FILE = OUTPUT_DIR / "beta_bigtable_molecules.txt"
 OUTPUT_ATOMS_TEX = OUTPUT_DIR / "beta_bigtable_atoms_to_log.tex"
 OUTPUT_MOLECULES_TEX = OUTPUT_DIR / "beta_bigtable_molecules_to_log.tex"
 EXCLUDED_TEFFS_K = {19000}
+MIN_DISPLAY_LOG_BETA_SIGMA = 0.01
 
 
 def latex_species_name(species: str) -> str:
@@ -55,6 +56,13 @@ def format_fixed_or_dash(value: float, decimals: int) -> str:
     return f"{value:.{decimals}f}"
 
 
+def format_tex_integer(value: int | float) -> str:
+    rounded = int(round(float(value)))
+    if abs(rounded) >= 10000:
+        return f"{rounded:,}".replace(",", r"\,")
+    return str(rounded)
+
+
 def format_compact_or_dash(value: float, decimals: int = 2) -> str:
     if not np.isfinite(value):
         return "-"
@@ -85,7 +93,13 @@ def build_atom_row_values(row: pd.Series) -> List[str]:
     log_beta = safe_log10(float(row["beta"]))
     log_beta_err = symmetric_log10_error(float(row["beta"]), float(row["beta_err"]))
     log_n_half = safe_log10(float(row["n_half_beta_cm2"]))
-    beta_text, beta_err_text = format_value_and_error(log_beta, log_beta_err)
+    beta_text = format_fixed_or_dash(log_beta, 2)
+    beta_err_display = (
+        max(log_beta_err, MIN_DISPLAY_LOG_BETA_SIGMA)
+        if np.isfinite(log_beta_err)
+        else np.nan
+    )
+    beta_err_text = format_fixed_or_dash(beta_err_display, 2)
     n_half_text = format_compact_or_dash(log_n_half, decimals=2)
     return [beta_text, beta_err_text, n_half_text]
 
@@ -116,7 +130,8 @@ def make_longtable_block(
     n_cols = 1 + n_subcols * len(teff_headers)
     col_spec = build_col_spec(len(teff_headers), n_subcols)
     top_header = " & ".join(
-        [species_header] + [rf"\multicolumn{{{n_subcols}}}{{c}}{{{teff} K}}" for teff in teff_headers]
+        [species_header]
+        + [rf"\multicolumn{{{n_subcols}}}{{c}}{{{format_tex_integer(teff)} K}}" for teff in teff_headers]
     )
     sub_header = " & ".join([""] + subheaders * len(teff_headers))
 
@@ -252,17 +267,21 @@ def build_atoms_tex(df: pd.DataFrame) -> str:
     return build_category_tex(
         df,
         species_header="Ion",
-        subheaders=[r"$\log\beta$", r"$\sigma_{\log\beta}$", r"$\log N_{\beta/2}$"],
+        subheaders=[
+            r"$\log_{10}(\beta)$",
+            r"$\sigma_{\log_{10}(\beta)}$",
+            r"$\log_{10}(N_{\beta/2})$",
+        ],
         row_builder=build_atom_row_values,
         block_title_builder=lambda b_label, part_index: (
             f"Atoms: $b = {b_label}$ km s$^{{-1}}$ "
             f"($\\beta$ at $N_{{\\rm col}}=0$; Part {part_index})"
         ),
         caption_builder=lambda b_label, part_index: (
-            "Atomic $\\log\\beta$-values at $N_{\\rm col}=0$, logarithmic "
-            "$\\beta$-errors, and the column density where "
+            "Atomic $\\log_{10}(\\beta)$-values at $N_{\\rm col}=0$, "
+            "$\\log_{10}(\\beta)$-errors, and the column density where "
             "$\\beta = \\beta(N_{\\rm col}=0)/2$, written as "
-            "$\\log N_{\\beta/2}$, for selected stellar temperatures at "
+            "$\\log_{10}(N_{\\beta/2})$, for selected stellar temperatures at "
             f"$b={b_label}\\ \\mathrm{{km\\,s^{{-1}}}}$ (Part {part_index})."
         ),
         label_prefix="tab: beta_bigtable_atoms",

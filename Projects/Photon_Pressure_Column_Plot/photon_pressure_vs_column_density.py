@@ -84,14 +84,17 @@ ax.xaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
 ax.xaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
 ax.xaxis.set_minor_formatter(NullFormatter())
 
-ax.set_xlabel(r"$\log\!\left(N_{\mathrm{col}}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel(r"$\log_{10}\!\left(N_{\mathrm{col}}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(r"Photon force [$\mathrm{N}\times 10^{-26}$]", fontsize=AXIS_LABEL_SIZE)
-ax.set_title("Photon force vs column density (Na I) for different Doppler widths", fontsize=TITLE_SIZE)
+ax.set_title(rf"Photon force vs column density ($\mathrm{{Na^0}}$) for different Doppler widths", fontsize=TITLE_SIZE)
 ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
 
 ax.grid(True, which="both", alpha=0.3)
 ax.legend(ncol=2, fontsize=LEGEND_SIZE)
 
 fig.tight_layout()
+OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 plt.savefig(OUTPUT_PATH)
-plt.show()
+
+if plt.get_backend().lower() != "agg":
+    plt.show()

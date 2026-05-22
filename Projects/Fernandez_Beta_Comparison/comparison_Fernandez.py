@@ -248,7 +248,7 @@ def compute_beta_arrays(star_obj, broadening_profiles, beta_values_Fernandez,
     return common, my_beta, my_err, fern_beta, fern_err
 
 
-def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, title=None, save_name=None, xlabel=r'$\log(\beta)$ (This work)', ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)'):
+def plot_compare(my_beta, my_err, fern_beta, fern_err, zoom_beta_gt_1=False, title=None, save_name=None, xlabel=r'$\log_{10}(\beta)$ (This work)', ylabel=r'$\log_{10}(\beta)$ (Fernandez et al. 2006)'):
     fig, ax = plt.subplots(figsize=(7, 7))
 
     ax.errorbar(
@@ -345,10 +345,10 @@ plot_compare(my_beta_B, my_err_B, fern_beta_B, fern_err_B, zoom_beta_gt_1=True, 
 
 
 # 5) Fernandez vs Model, (+4% flux error)
-plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=False, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error)", save_name="Betacomp/Bt-NextGen_vs_Fernandez", xlabel=r'$\log(\beta)$ (Bt-NextGen)', ylabel=r'$\log(\beta)$ (Fernandez spectrum)')
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=False, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error)", save_name="Betacomp/Bt-NextGen_vs_Fernandez", xlabel=r'$\log_{10}(\beta)$ (Bt-NextGen)', ylabel=r'$\log_{10}(\beta)$ (Fernandez spectrum)')
 
 # 5) Fernandez vs Model, (+4% flux error)
-plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=True, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error, β>1)", save_name="Betacomp/Bt-NextGen_vs_Fernandez_zoom", xlabel=r'$\log(\beta)$ (Bt-NextGen)', ylabel=r'$\log(\beta)$ (Fernandez spectrum)')
+plot_compare(my_beta_A, my_err_A, my_beta_B, my_err_B, zoom_beta_gt_1=True, title="Bt-NextGen vs Fernandez Spectrum (+4% flux error, β>1)", save_name="Betacomp/Bt-NextGen_vs_Fernandez_zoom", xlabel=r'$\log_{10}(\beta)$ (Bt-NextGen)', ylabel=r'$\log_{10}(\beta)$ (Fernandez spectrum)')
 
 # -----------------------------
 # Paired (stacked) comparison figures (2 + 2 + 2)
@@ -359,8 +359,8 @@ def plot_compare_two_cases(
     my_beta_bot, my_err_bot, fern_beta_bot, fern_err_bot,
     zoom_beta_gt_1=False,
     save_name=None,
-    xlabel=r'$\log(\beta)$ (This work)',
-    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
+    xlabel=r'$\log_{10}(\beta)$ (This work)',
+    ylabel=r'$\log_{10}(\beta)$ (Fernandez et al. 2006)',
 ):
     """
     Two-panel (vertical) comparison figure with shared axes:
@@ -454,8 +454,8 @@ plot_compare_two_cases(
     my_beta_B, my_err_B, fern_beta_B, fern_err_B,
     zoom_beta_gt_1=False,
     save_name="Betacomp/Validation_pair_full",
-    xlabel=r'$\log(\beta)$ (This work)',
-    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
+    xlabel=r'$\log_{10}(\beta)$ (This work)',
+    ylabel=r'$\log_{10}(\beta)$ (Fernandez et al. 2006)',
 )
 
 # Paired figure: zoom β>1
@@ -464,6 +464,6 @@ plot_compare_two_cases(
     my_beta_B, my_err_B, fern_beta_B, fern_err_B,
     zoom_beta_gt_1=True,
     save_name="Betacomp/Validation_pair_zoom",
-    xlabel=r'$\log(\beta)$ (This work)',
-    ylabel=r'$\log(\beta)$ (Fernandez et al. 2006)',
+    xlabel=r'$\log_{10}(\beta)$ (This work)',
+    ylabel=r'$\log_{10}(\beta)$ (Fernandez et al. 2006)',
 )

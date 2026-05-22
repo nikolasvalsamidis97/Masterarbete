@@ -1,6 +1,7 @@
 import csv
 import gc
 import json
+import os
 import pathlib
 import sys
 import time
@@ -34,11 +35,19 @@ SKIP_ATOMS = False
 SKIP_MOLECULES = True
 RUN_ALL_ABSORBERS_IF_UNSPECIFIED = True
 START_FRESH_RUN = True
-FRESH_RUN_LABEL = "fresh_run_atoms_only_3"
+FRESH_RUN_LABEL = "fixed_teff_8000_atoms_all_distances"
 USE_COMPOSITION_MIXING_RATIOS = False
 
 
 stellar_models = STAR_TEMPLATES
+
+PERIODIC_ELEMENTS_THROUGH_FE = [
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
+    "Sc", "Ti", "V", "Cr", "Mn", "Fe",
+]
+ELEMENT_ORDER = {element: index for index, element in enumerate(PERIODIC_ELEMENTS_THROUGH_FE)}
+IONIZATION_STAGE_ORDER = {"I": 0, "II": 1, "III": 2, "IV": 3}
 
 DEFAULT_PLANET_KEYS = list(PLANET_TEMPLATES.keys())
 SELECTED_PLANET_SPECIES = {
@@ -47,17 +56,24 @@ SELECTED_PLANET_SPECIES = {
     if planet_key in PLANET_TEMPLATES
 }
 
-DISTANCE_LIST = [0.1, 0.5, 1.0, 5.0, 10.0, 100.0] * u.AU
+DISTANCE_LIST = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 100.0] * u.AU
 SELECTED_STARS = None
-TARGET_TEFFS_K = [3000, 5000, 6000, 8000, 10000, 15000, 20000, 30000, 50000]
+TARGET_TEFFS_K = [8000]
 
 # Fast Rp-exobase mode: evaluate only at the exobase radius.
 EVALUATION_MODE = "rexo_only"
 ATOMIC_COLUMN_CHUNK_SIZE = 8
 # Set to "serial" to disable parallelism completely.
-# Set to "star" to compute different stellar templates in parallel.
-PARALLEL_TASK_MODE = "star"
+# Set to "star" to compute different stellar templates in parallel within each species.
+# Set to "case" to compute independent planet/species/star cases in full parallel.
+PARALLEL_TASK_MODE = "case"
 STAR_MAX_WORKERS = 2
+CASE_MAX_WORKERS = int(
+    os.environ.get(
+        "RP_EXO_MAX_WORKERS",
+        os.environ.get("SLURM_CPUS_PER_TASK", str(max(1, (os.cpu_count() or 2) - 1))),
+    )
+)
 # If True, evaluate distances from smallest to largest and stop after the
 # first fail for a given (planet, species, star), marking all larger
 # distances as failed by monotonicity.
@@ -204,7 +220,6 @@ def current_run_signature(star_keys_sorted, distance_values_au):
             "evaluation_mode": EVALUATION_MODE,
             "atomic_column_chunk_size": int(ATOMIC_COLUMN_CHUNK_SIZE),
             "parallel_task_mode": PARALLEL_TASK_MODE,
-            "star_max_workers": int(STAR_MAX_WORKERS),
             "distance_pruning_assume_monotonic": bool(DISTANCE_PRUNING_ASSUME_MONOTONIC),
         },
         sort_keys=True,
@@ -366,10 +381,26 @@ def species_matches_run_filters(species):
     return False
 
 
+def atomic_species_sort_key(species: str) -> tuple:
+    parts = str(species).split()
+    if len(parts) != 2:
+        return (len(IONIZATION_STAGE_ORDER), len(ELEMENT_ORDER), str(species))
+
+    element, stage = parts
+    return (
+        IONIZATION_STAGE_ORDER.get(stage, len(IONIZATION_STAGE_ORDER)),
+        ELEMENT_ORDER.get(element, len(ELEMENT_ORDER)),
+        str(species),
+    )
+
+
 def ordered_all_absorber_species():
     atomic_species = sorted(
-        species for species in ATOM_SPECIES
-        if species_matches_run_filters(species)
+        (
+            species for species in ATOM_SPECIES
+            if species_matches_run_filters(species)
+        ),
+        key=atomic_species_sort_key,
     )
     molecular_species = sorted(
         species for species in MOLECULE_TEMPLATES
@@ -488,9 +519,11 @@ def clear_species_runtime_caches(species):
 def should_parallelize_species(species: str) -> bool:
     if PARALLEL_TASK_MODE == "serial":
         return False
+    if PARALLEL_TASK_MODE == "case":
+        return False
     if PARALLEL_TASK_MODE != "star":
         raise ValueError(
-            f"Unknown PARALLEL_TASK_MODE={PARALLEL_TASK_MODE!r}. Use 'serial' or 'star'."
+            f"Unknown PARALLEL_TASK_MODE={PARALLEL_TASK_MODE!r}. Use 'serial', 'star', or 'case'."
         )
     if is_molecular_species(species):
         return False
@@ -684,6 +717,43 @@ def compute_star_rows_worker(args):
     return star_key, rows
 
 
+def requested_species_for_planet(selected_planet, requested_species):
+    planet_case = get_planet_template(selected_planet)
+    if requested_species is None:
+        if RUN_ALL_ABSORBERS_IF_UNSPECIFIED:
+            resolved_species = ordered_all_absorber_species()
+            print(
+                f"No species specified for {selected_planet}; using all filtered absorbers: {resolved_species}"
+            )
+        else:
+            composition_species = list(planet_case["composition"].keys())
+            resolved_species = [
+                species
+                for species in composition_species
+                if species_matches_run_filters(species) and species not in {"O2", "OH"}
+            ]
+            print(
+                f"No species specified for {selected_planet}; using filtered planet composition species: {resolved_species}"
+            )
+    else:
+        resolved_species = [
+            species for species in requested_species
+            if species_matches_run_filters(species)
+        ]
+        print(
+            f"Using explicitly requested filtered species for {selected_planet}: {resolved_species}"
+        )
+
+    if not resolved_species:
+        raise ValueError(
+            f"No species selected for {selected_planet}. "
+            f"Check SELECTED_ATOMIC_SPECIES={SELECTED_ATOMIC_SPECIES}, "
+            f"SELECTED_MOLECULAR_SPECIES={SELECTED_MOLECULAR_SPECIES}, "
+            f"SKIP_ATOMS={SKIP_ATOMS}, and SKIP_MOLECULES={SKIP_MOLECULES}."
+        )
+    return planet_case, resolved_species
+
+
 def make_raw_row(
     planet_key,
     species,
@@ -836,6 +906,67 @@ def main():
         checkpoint_key(row["planet"], row["species"], row["star"], float(row["distance_AU"])): row
         for row in all_rows
     }
+
+    if PARALLEL_TASK_MODE == "case":
+        tasks = []
+        for selected_planet, requested_species in SELECTED_PLANET_SPECIES.items():
+            _, resolved_species = requested_species_for_planet(selected_planet, requested_species)
+            for selected_species in resolved_species:
+                for star_key in star_keys_sorted:
+                    has_missing_distance = any(
+                        checkpoint_key(selected_planet, selected_species, star_key, dist_value_au)
+                        not in completed_keys
+                        for dist_value_au in distance_values_au
+                    )
+                    if not has_missing_distance:
+                        continue
+                    tasks.append(
+                        (
+                            selected_planet,
+                            selected_species,
+                            star_key,
+                            distance_values_au,
+                            exobase_heights,
+                            run_signature,
+                        )
+                    )
+
+        print(
+            f"Running full case parallel mode with {len(tasks)} missing "
+            f"planet/species/star tasks and max_workers={CASE_MAX_WORKERS}."
+        )
+        if tasks:
+            run_start_time = time.perf_counter()
+            with ProcessPoolExecutor(max_workers=min(CASE_MAX_WORKERS, len(tasks))) as executor:
+                futures = [executor.submit(compute_star_rows_worker, task) for task in tasks]
+                for done_count, future in enumerate(as_completed(futures), start=1):
+                    _star_key, new_rows = future.result()
+                    filtered_rows = []
+                    for row in new_rows:
+                        row_key = checkpoint_key(
+                            row["planet"],
+                            row["species"],
+                            row["star"],
+                            float(row["distance_AU"]),
+                        )
+                        if row_key in completed_keys:
+                            continue
+                        filtered_rows.append(row)
+                        completed_keys.add(row_key)
+                        row_lookup[row_key] = row
+
+                    if filtered_rows:
+                        all_rows.extend(filtered_rows)
+                        persist_progress(all_rows, star_keys_sorted, distance_values_au)
+
+                    if done_count % 10 == 0 or done_count == len(futures):
+                        elapsed_s = time.perf_counter() - run_start_time
+                        print(f"Completed {done_count}/{len(futures)} case tasks in {elapsed_s:.1f} s")
+
+        persist_progress(all_rows, star_keys_sorted, distance_values_au)
+        print(f"Saved raw data to {RAW_OUTPUT_PATH}")
+        print(f"Saved summary data to {SUMMARY_OUTPUT_PATH}")
+        return
 
     for selected_planet, requested_species in SELECTED_PLANET_SPECIES.items():
         planet_case = get_planet_template(selected_planet)

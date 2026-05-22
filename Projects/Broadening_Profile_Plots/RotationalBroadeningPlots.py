@@ -15,6 +15,7 @@ SPECTRUM_PATH = PROJECT_ROOT / "Templates" / "TS" / "Spectral_type" / "F" / "F4"
 AXIS_LABEL_SIZE = 15
 TICK_LABEL_SIZE = 13
 Y_SCALE = 1e7
+ANGSTROM_LABEL = "Å"
 
 ############################################################################################
 ######################################### KODGUIDE #########################################
@@ -56,9 +57,9 @@ width = 0.8
 alpha = 0.5
 
 plt.figure(figsize=[8,5])
-plt.title(rf"Rotationally broadened spectra ({Na.species}: {Na_5891:.4f} {lam_star.unit.to_string('latex_inline')})")
+plt.title(f"Rotationally broadened spectra ({Na.species}: {Na_5891:.4f} {ANGSTROM_LABEL})")
 
-plt.plot(lam_star, flux_star_unrot / Y_SCALE, color="black", label="Stellar flux")
+plt.plot(lam_star, flux_star_unrot / Y_SCALE, color="black", label="Non-rotating")
 
 plt.plot(lam_star, flux_star_rot / Y_SCALE, color="red",label=rf"$vsini$ = {vsini}, $\epsilon$ = {epsilon}")
 plt.plot(lam_star, flux_star_rot2 / Y_SCALE, color="red", linestyle = ":", alpha=alpha,label=rf"$vsini$ = {vsini}, $\epsilon$ = {epsilon2}")
@@ -67,7 +68,7 @@ plt.plot(lam_star, flux_star_rot3 / Y_SCALE, color="blue",label=rf"$vsini$ = {vs
 plt.plot(lam_star, flux_star_rot4 / Y_SCALE, color="blue", linestyle = ":", alpha=alpha, label=rf"$vsini$ = {vsini2}, $\epsilon$ = {epsilon2}")
 
 
-plt.xlabel(rf"Wavelength [{lam_star.unit.to_string('latex_inline')}]", fontsize=AXIS_LABEL_SIZE)
+plt.xlabel(f"Wavelength [{ANGSTROM_LABEL}]", fontsize=AXIS_LABEL_SIZE)
 plt.ylabel(rf"Stellar flux $\times 10^{{7}}$ [{flux_star_rot.unit.to_string('latex_inline')}]", fontsize=AXIS_LABEL_SIZE)
 plt.xlim(Na_5891-width, Na_5891+width)
 plt.ylim(0.2, 1.6)
@@ -78,5 +79,8 @@ plt.xticks(
 )
 plt.yticks(fontsize=TICK_LABEL_SIZE)
 plt.legend()
+OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 plt.savefig(OUTPUT_PATH)
-plt.show()
+
+if plt.get_backend().lower() != "agg":
+    plt.show()

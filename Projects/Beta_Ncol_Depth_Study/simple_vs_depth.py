@@ -76,6 +76,13 @@ def log10_exponent_label(value: float, _position: float) -> str:
     return f"{int(rounded)}"
 
 
+def thin_space_integer(value: float) -> str:
+    rounded = int(round(value))
+    if abs(rounded) >= 10000:
+        return f"{rounded:,}".replace(",", r"\,")
+    return f"{rounded}"
+
+
 def pretty_species_name(species: str) -> str:
     parts = str(species).split()
     if len(parts) != 2:
@@ -112,8 +119,7 @@ def main() -> None:
         r_local = R_OVER_RSTAR * star.radius.to(u.cm)
         distance_local = r_local.to(u.AU)
         teff_star = infer_teff_from_star_template(star_key) * u.K
-        g_star = ((6.67430e-11 * u.m**3 / (u.kg * u.s**2)) * star.mass.to(u.kg) / star.radius.to(u.m)**2).to(u.m / u.s**2)
-        g_star_rounded = int(np.round(g_star.to_value(u.m / u.s**2) / 10.0) * 10)
+        teff_label = thin_space_integer(teff_star.to_value(u.K))
 
         # Evaluate the radiative force for a line of sight with the chosen column
         # density and compare it to the stellar gravitational force.
@@ -142,7 +148,7 @@ def main() -> None:
             ncol_plot,
             beta_plot,
             linewidth=LINEWIDTH,
-            label=rf"$T_{{\rm eff}}={teff_star.to_value(u.K):.0f}$ K, $g={g_star_rounded}$ m s$^{{-2}}$",
+            label=rf"$T_{{\rm eff}}={teff_label}\,\mathrm{{K}}$",
         )
         plotted_any = True
 
@@ -165,8 +171,8 @@ def main() -> None:
     ax.yaxis.set_major_formatter(FuncFormatter(log10_exponent_label))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.yaxis.set_minor_formatter(NullFormatter())
-    ax.set_xlabel(r"$\log\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel(r"$\log(\beta)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(r"$\log_{10}\!\left(N_{\rm col}\,[\mathrm{cm}^{-2}]\right)$", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel(r"$\log_{10}(\beta)$", fontsize=AXIS_LABEL_SIZE)
     ax.set_title(
         rf"$\beta$ vs column density | {pretty_species_name(SPECIES)}",
         fontsize=TITLE_SIZE,
@@ -185,7 +191,7 @@ def main() -> None:
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved figure to {output_path}")
 
-    if SHOW_FIGURE:
+    if SHOW_FIGURE and plt.get_backend().lower() != "agg":
         plt.show()
     else:
         plt.close(fig)
