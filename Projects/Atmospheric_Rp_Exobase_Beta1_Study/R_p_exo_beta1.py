@@ -188,6 +188,21 @@ def load_exobase_heights(table_path: pathlib.Path) -> dict[tuple[str, str], floa
     return heights
 
 
+def require_exobase_heights(table_path: pathlib.Path) -> dict[tuple[str, str], float]:
+    heights = load_exobase_heights(table_path)
+    if not table_path.exists():
+        raise FileNotFoundError(
+            f"Missing exobase table: {table_path}. "
+            "Copy or generate this file before running the Rp-exobase study."
+        )
+    if not heights:
+        raise ValueError(
+            f"Loaded no exobase heights from {table_path}. "
+            "Check that the table has planet, species, and z_exobase_km columns."
+        )
+    return heights
+
+
 def neutral_exobase_species(species: str) -> str:
     parts = str(species).split()
     if len(parts) != 2:
@@ -1047,7 +1062,8 @@ def persist_progress(all_rows, star_keys_sorted, distance_values_au):
 
 
 def main():
-    exobase_heights = load_exobase_heights(EXOBASE_TABLE)
+    exobase_heights = require_exobase_heights(EXOBASE_TABLE)
+    print(f"Loaded {len(exobase_heights)} exobase heights from {EXOBASE_TABLE}")
 
     if SELECTED_STARS is None:
         star_keys_sorted = select_star_keys_by_target_teff(TARGET_TEFFS_K)

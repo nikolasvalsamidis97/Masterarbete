@@ -175,9 +175,11 @@ def build_summary_rows(rows: list[dict[str, str]]) -> list[dict[str, object]]:
             distance = float(row["distance_AU"])
             hit_matrix[teff_index[teff], distance_index[distance]] = float(row["beta1_hit_below_exobase"])
             try:
-                z_exobase_values.append(float(row["z_exobase_km"]))
+                z_exobase = float(row["z_exobase_km"])
             except (TypeError, ValueError):
                 continue
+            if np.isfinite(z_exobase):
+                z_exobase_values.append(z_exobase)
 
         finite_mask = np.isfinite(hit_matrix)
         hit_mask = finite_mask & (hit_matrix >= 0.5)
@@ -273,9 +275,12 @@ def discrete_distance_value_map(values: list[float]) -> tuple[dict[float, tuple[
     return value_to_color, cmap
 
 
-def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, output_path: pathlib.Path) -> None:
+def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, output_path: pathlib.Path) -> bool:
     if not summary_rows:
-        return
+        if output_path.exists():
+            output_path.unlink()
+        print(f"No threshold rows available; removed stale plot at {output_path}")
+        return False
 
     planet_order = sorted({row["planet"] for row in summary_rows}, key=planet_sort_key)
     lookup = {(row["species"], row["planet"]): row for row in summary_rows}
@@ -286,7 +291,10 @@ def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, ou
     }
     species_order = sorted(species_with_data, key=species_sort_key)
     if not species_order:
-        return
+        if output_path.exists():
+            output_path.unlink()
+        print(f"No finite threshold values available; removed stale plot at {output_path}")
+        return False
 
     teff_values = [float(row["threshold_teff_K"]) for row in summary_rows if np.isfinite(float(row["threshold_teff_K"]))]
     distance_values = [float(row["threshold_distance_AU"]) for row in summary_rows if np.isfinite(float(row["threshold_distance_AU"]))]
@@ -384,6 +392,7 @@ def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, ou
 
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
+    return True
 
 
 def species_title_from_rows(rows: list[dict[str, object]]) -> str:
@@ -627,13 +636,16 @@ def main():
 
         title_prefix = species_title_from_rows(summary_rows)
         pdf_path = raw_file.with_name(f"{raw_file.stem}_threshold_by_planet.pdf")
-        plot_threshold_heatmap(
+        plot_written = plot_threshold_heatmap(
             summary_rows,
             f"{title_prefix}: Threshold for below-exobase $\\beta = 1$",
             pdf_path,
         )
         print(f"Saved summary CSV to {summary_csv_path}")
-        print(f"Saved threshold plot to {pdf_path}")
+        if plot_written:
+            print(f"Saved threshold plot to {pdf_path}")
+        else:
+            print(f"Skipped threshold plot for {raw_file}; no finite thresholds were found.")
 
 
 if __name__ == "__main__":
