@@ -430,6 +430,7 @@ def plot_positive_sweep(
     y_plain_scale_power: int | None = None,
     y_log_exponents_only: bool = False,
     context_side: str = "left",
+    xlim: tuple[float, float] | None = None,
 ) -> None:
     sorted_rows = sorted(rows, key=lambda row: to_float(row[x_key]))
     x_all = [to_float(row[x_key]) for row in sorted_rows]
@@ -493,6 +494,8 @@ def plot_positive_sweep(
     if x_ticks_at_data:
         axis.set_xticks(x_all)
         axis.set_xticklabels([plain_tick_text(x) for x in x_all])
+    if xlim is not None:
+        axis.set_xlim(*xlim)
     if y_log_exponents_only:
         axis.yaxis.set_major_locator(LogLocator(base=10.0, subs=(1.0,)))
         axis.yaxis.set_minor_locator(LogLocator(base=10.0, subs=tuple(range(2, 10))))
@@ -548,6 +551,7 @@ def plot_p0_sweep(axis, rows: list[dict[str, str]]) -> None:
         yscale="linear",
         context_lines=["Super earth", r"$T_{\rm eff}=6000$ K", "0.05 AU"],
         context_side="left",
+        xlim=(1.0e-6, 100.0),
     )
 
 

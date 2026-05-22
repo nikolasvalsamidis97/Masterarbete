@@ -40,14 +40,15 @@ CMAP_TICK_SIZE = 32
 TEMP_CMAP_NAME = "YlOrRd"
 DISTANCE_CMAP_NAME = "PuBuGn"
 DISTANCE_DISCRETE_COLORS = [
-    "#08306b",
-    "#2171b5",
-    "#41ab5d",
-    "#feb24c",
-    "#f03b20",
-    "#7a0177",
-    "#252525",
+    "#053061",
     "#08519c",
+    "#252525",
+    "#7a0177",
+    "#f03b20",
+    "#feb24c",
+    "#41ab5d",
+    "#2171b5",
+    "#08306b",
 ]
 PERIODIC_ELEMENTS_THROUGH_FE = [
     "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",

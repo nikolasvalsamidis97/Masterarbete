@@ -142,7 +142,17 @@ SURFACE_GRAVITY_DISTANCE_AU = 0.1
 P0_SWEEP_PLANET_KEY = "super_earth_rocky"
 P0_SWEEP_STAR_KEY = "F8"
 P0_SWEEP_DISTANCE_AU = 0.05
-P0_SWEEP_VALUES_BAR = np.array([1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2])
+P0_SWEEP_VALUES_BAR = np.array([
+    1.0e-6,
+    1.0e-5,
+    1.0e-4,
+    1.0e-3,
+    1.0e-2,
+    1.0e-1,
+    1.0,
+    10.0,
+    100.0,
+])
 P0_SWEEP_TEST_FAMILY = "p0_sweep"
 P0_SWEEP_OUTPUT_DIR = OUTPUT_DIR
 
