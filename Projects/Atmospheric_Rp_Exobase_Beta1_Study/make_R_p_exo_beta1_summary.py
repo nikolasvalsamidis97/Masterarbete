@@ -17,7 +17,9 @@ from Templates.Molecules.molecules_template import MOLECULE_TEMPLATES
 from Templates.Planets.planet_templates import PLANET_TEMPLATES
 
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "results" / "Plots" / "Teff_study" / "R_p_exo_beta1"
+PROJECT_DIR = pathlib.Path(__file__).resolve().parent
+OUTPUT_DIR = PROJECT_DIR / "results" / "Plots" / "Teff_study" / "R_p_exo_beta1"
+TABLE_OUTPUT_DIR = PROJECT_DIR / "results" / "Tables" / "Teff_study" / "R_p_exo_beta1"
 RAW_FILES = [
     OUTPUT_DIR / "R_p_exo_beta1_atoms.txt",
     OUTPUT_DIR / "R_p_exo_beta1_molecules.txt",
@@ -39,17 +41,13 @@ X_TICK_SIZE = 32
 CMAP_TICK_SIZE = 32
 TEMP_CMAP_NAME = "YlOrRd"
 DISTANCE_CMAP_NAME = "PuBuGn"
-DISTANCE_DISCRETE_COLORS = [
-    "#053061",
-    "#08519c",
-    "#252525",
-    "#7a0177",
-    "#f03b20",
-    "#feb24c",
-    "#41ab5d",
-    "#2171b5",
-    "#08306b",
-]
+DISTANCE_COLOR_BY_AU = {
+    0.01: "#cb181d",
+    0.05: "#feb24c",
+    0.1: "#41ab5d",
+    0.5: "#6baed6",
+    1.0: "#08306b",
+}
 PERIODIC_ELEMENTS_THROUGH_FE = [
     "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
     "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
@@ -67,6 +65,21 @@ def pretty_planet_name(name: str) -> str:
     }
     if name in short_names:
         return short_names[name]
+    return str(name).replace("_", " ").title()
+
+
+def pretty_planet_table_name(name: str) -> str:
+    table_names = {
+        "alkali_exosphere_rocky": "Alkali Exosphere Rocky",
+        "metal_rich_secondary": "Metal Rich",
+        "super_earth_rocky": "Super Earth",
+    }
+    if name in table_names:
+        return table_names[name]
+    return str(name).replace("_", " ").title()
+
+
+def pretty_category_name(name: str) -> str:
     return str(name).replace("_", " ").title()
 
 
@@ -264,14 +277,24 @@ def discrete_distance_value_map(values: list[float]) -> tuple[dict[float, tuple[
         cmap = colors.ListedColormap(["#ffffff"])
         return {}, cmap
 
-    if len(clean_values) > len(DISTANCE_DISCRETE_COLORS):
+    missing_values = [
+        value for value in clean_values
+        if not any(np.isclose(value, known_value) for known_value in DISTANCE_COLOR_BY_AU)
+    ]
+    if missing_values:
         raise ValueError(
-            f"Not enough distinct distance colors for {len(clean_values)} values. "
-            f"Extend DISTANCE_DISCRETE_COLORS in {__file__}."
+            f"No distance colors configured for {missing_values}. "
+            f"Extend DISTANCE_COLOR_BY_AU in {__file__}."
         )
 
-    rgba_colors = [colors.to_rgba(color) for color in DISTANCE_DISCRETE_COLORS[: len(clean_values)]]
-    value_to_color = {value: color for value, color in zip(clean_values, rgba_colors)}
+    value_to_color = {}
+    for value in clean_values:
+        known_value = next(
+            known for known in DISTANCE_COLOR_BY_AU
+            if np.isclose(value, known)
+        )
+        value_to_color[value] = colors.to_rgba(DISTANCE_COLOR_BY_AU[known_value])
+    rgba_colors = [value_to_color[value] for value in clean_values]
     cmap = colors.ListedColormap(rgba_colors)
     return value_to_color, cmap
 
@@ -291,6 +314,13 @@ def title_teff_label(summary_rows: list[dict[str, object]]) -> str:
     if len(teff_values) == 1:
         return rf"$T_{{\rm eff}}={format_tex_integer(teff_values[0])}\ \mathrm{{K}}$"
     return r"$T_{\rm eff}$ grid"
+
+
+def caption_teff_phrase(teff_values: list[float]) -> str:
+    clean_values = sorted({float(value) for value in teff_values if np.isfinite(value)})
+    if len(clean_values) == 1:
+        return rf"$T_{{\rm eff}}={format_tex_integer(clean_values[0])}\ \mathrm{{K}}$"
+    return r"the stellar-temperature grid"
 
 
 def plot_threshold_heatmap(summary_rows: list[dict[str, object]], title: str, output_path: pathlib.Path) -> bool:
@@ -543,6 +573,93 @@ def write_csv_rows(path: pathlib.Path, fieldnames: list[str], rows: list[dict[st
             writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 
+def latex_escape(text: object) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(char, char) for char in str(text))
+
+
+def write_planet_ranking_latex(
+    path: pathlib.Path,
+    rows: list[dict[str, object]],
+    teff_values: list[float],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    caption = (
+        "Planet templates ranked by the largest threshold orbital distances for which "
+        rf"$\beta=1$ is reached below the exobase for the atomic species grid at "
+        f"{caption_teff_phrase(teff_values)}."
+    )
+    lines = [
+        r"\begin{table}",
+        r"\centering",
+        rf"\caption{{{caption}}}",
+        r"\label{tab:rp_exo_beta1_planet_ranking}",
+        r"\begin{tabular}{rll}",
+        r"\toprule",
+        r"Rank & Planet template & Category \\",
+        r"\midrule",
+    ]
+    for row in rows[:8]:
+        planet_name = latex_escape(pretty_planet_table_name(str(row["planet"])))
+        category_name = latex_escape(pretty_category_name(str(row["category"])))
+        lines.append(rf"{int(row['rank'])} & {planet_name} & {category_name} \\")
+    lines.extend([
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\end{table}",
+        "",
+    ])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_species_ranking_latex(
+    path: pathlib.Path,
+    species_rows_by_stage: dict[str, list[dict[str, object]]],
+    teff_values: list[float],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    caption = (
+        "Atomic species ranked by the largest threshold orbital distances for which "
+        rf"$\beta=1$ is reached below the exobase at {caption_teff_phrase(teff_values)}, "
+        "separated into neutral, singly ionized and doubly ionized categories."
+    )
+    lines = [
+        r"\begin{table}",
+        r"\centering",
+        rf"\caption{{{caption}}}",
+        r"\label{tab:rp_exo_beta1_atomic_species_ranking}",
+        r"\begin{tabular}{rlll}",
+        r"\toprule",
+        r"Rank & Neutral & Singly ionized & Doubly ionized \\",
+        r"\midrule",
+    ]
+    stages = ["I", "II", "III"]
+    for index in range(10):
+        labels = []
+        for stage in stages:
+            rows = species_rows_by_stage.get(stage, [])
+            labels.append(pretty_species_label(str(rows[index]["species"])) if index < len(rows) else "")
+        lines.append(rf"{index + 1} & {labels[0]} & {labels[1]} & {labels[2]} \\")
+    lines.extend([
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\end{table}",
+        "",
+    ])
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def save_ranking_tables(summary_rows: list[dict[str, object]], raw_file: pathlib.Path) -> None:
     filtered_rows = finite_threshold_rows(summary_rows)
     if not filtered_rows:
@@ -567,6 +684,7 @@ def save_ranking_tables(summary_rows: list[dict[str, object]], raw_file: pathlib
     species_temperature_fields = species_base_fields + temperature_count_columns(teff_values)
 
     stage_name_map = {"I": "neutral", "II": "singly_ionized", "III": "doubly_ionized"}
+    species_distance_rankings: dict[str, list[dict[str, object]]] = {}
     for stage, rows in species_groups.items():
         rows_distance = [dict(row) for row in sorted(rows, key=lambda row: ranking_key_distance(row, distance_values))]
         rows_temperature = [dict(row) for row in sorted(rows, key=lambda row: ranking_key_temperature(row, teff_values))]
@@ -578,6 +696,7 @@ def save_ranking_tables(summary_rows: list[dict[str, object]], raw_file: pathlib
         for rank, row in enumerate(rows_temperature, start=1):
             row["rank"] = rank
 
+        species_distance_rankings[stage] = rows_distance
         distance_path = raw_file.with_name(f"{raw_file.stem}_species_rank_by_distance_{stage_name_map[stage]}.csv")
         temperature_path = raw_file.with_name(f"{raw_file.stem}_species_rank_by_temperature_{stage_name_map[stage]}.csv")
         write_csv_rows(distance_path, species_distance_fields, rows_distance)
@@ -614,6 +733,13 @@ def save_ranking_tables(summary_rows: list[dict[str, object]], raw_file: pathlib
     write_csv_rows(overall_temperature_path, planet_temperature_fields, planets_temperature)
     print(f"Saved planet distance ranking to {overall_distance_path}")
     print(f"Saved planet temperature ranking to {overall_temperature_path}")
+
+    planet_latex_path = TABLE_OUTPUT_DIR / f"{raw_file.stem}_planet_rank_top8.tex"
+    species_latex_path = TABLE_OUTPUT_DIR / f"{raw_file.stem}_atomic_species_rank_top10.tex"
+    write_planet_ranking_latex(planet_latex_path, planets_distance, teff_values)
+    write_species_ranking_latex(species_latex_path, species_distance_rankings, teff_values)
+    print(f"Saved planet ranking LaTeX table to {planet_latex_path}")
+    print(f"Saved atomic species ranking LaTeX table to {species_latex_path}")
 
 
 def main():
