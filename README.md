@@ -2,7 +2,7 @@
 
 This repository contains the numerical framework and project scripts used for the master thesis **Radiation-pressure-driven loss of planetary atmospheres**. The code computes photon pressure, beta-coefficients, atmospheric beta=1 diagnostics, and idealized radiation-pressure-driven mass-loss estimates for atoms and molecules in stellar and planetary environments.
 
-The thesis document is available on Overleaf: <https://www.overleaf.com/read/qwvcvxjvnrgy#4982f7>
+The thesis document is available on Overleaf: <https://www.diva-portal.org/smash/get/diva2:2067232/FULLTEXT01.pdf>
 
 The repository is organized so that the reusable physical model lives in `project_classes/`, shared helpers live in `project_utils/`, reusable input definitions live in `Templates/`, and thesis-specific calculations live in `Projects/`.
 
